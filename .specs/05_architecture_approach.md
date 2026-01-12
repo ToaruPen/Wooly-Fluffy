@@ -9,7 +9,7 @@
 
 - 常設PC: Mac mini (M4, 16GB mem, 256GB storage)
 - 表示: モニターにマスコットを常時表示（ぬいぐるみ筐体は将来差し替え）
-- 運用: ローカル1台で完結（同一端末上でKIOSK/STAFFを提供）
+- 運用: ローカル1台で完結（サーバは同一端末。KIOSKはモニター、STAFFは別端末ブラウザからアクセス可能）
 
 ## コンポーネント案（境界）
 
@@ -20,7 +20,7 @@
 - `STAFF UI`（職員用）
   - `pending` 一覧 → Confirm/Deny
   - 緊急で `ROOM` へ戻す
-  - （未確定）アクセス制御（子どもが触れない）
+  - アクセス制御: 原則は別端末のブラウザから操作（OS不問、同一LAN）。MVPでもパスコード等で保護する（詳細は `.specs/90_open_questions.md`）
 - `Conversation Orchestrator`（中核）
   - `ROOM` / `PERSONAL(name)` の状態遷移
   - inactivity `3分` で `ROOM` 復帰
@@ -36,6 +36,7 @@
   - 起動時復旧（必ず `ROOM` から開始＝安全側）
   - TTL掃除（`pending` の期限切れ削除）
   - ヘルスチェック（STT/LLMが落ちてもUIが固まらない）
+  - （予定）`confirmed` / `ROOM` の暗号化バックアップ作成（クラウド退避）
 
 ## データフロー（MVP）
 

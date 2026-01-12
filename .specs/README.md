@@ -17,6 +17,7 @@
 - `04_data_policy_and_memory_model.md`: データ最小化方針、保存対象、簡易データモデル案
 - `05_architecture_approach.md`: 同期会話と非同期処理を分けた全体アーキテクチャ案（Provider境界/失敗時フォールバック含む）
 - `06_tech_stack_options.md`: 技術スタック候補メモ（境界と候補、探索項目）
+- `07_tech_stack_plan.md`: 採用予定の技術スタック（一次情報URL/ライセンス付き）
 - `90_open_questions.md`: 未確定事項（次の議論の入口）
 
 ## 参考（SoT外）

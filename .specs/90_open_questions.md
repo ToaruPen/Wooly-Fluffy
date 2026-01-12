@@ -4,7 +4,7 @@
 
 ## 1) 運用/安全（優先）
 
-- STAFF UIのアクセス制御（パスコード/別端末/物理分離など、最小の事故対策を決める）
+- STAFF UIのアクセス制御（方針は「別端末ブラウザ（OS不問）」。残り：パスコード/自動ロック/LAN内限定のやり方を決める）
 - 緊急停止（ミュート/停止）の運用（UIでできること、物理側で担保すること）
 - 同名が出た時の現場運用（ニックネームの作り方、改名手順）
 
@@ -17,11 +17,11 @@
 
 - `ROOM` の短期セッション保持時間（RAMで何分持つか。ディスク保存はしない）
 - 削除要求への対応手順（誰が、どの画面で、何を消すか）
-- バックアップ/復旧（Time Machine等）を使う場合の扱い（削除と整合する運用）
+- バックアップ/復旧（正はローカルSQLite。`confirmed`/`ROOM` を暗号化してクラウド退避する場合の保持期間・削除手順。Time Machine等との整合も含む）
 
 ## 4) 技術スタック選定（探索項目）
 
-- UI: ローカルWeb（FastAPI/React等）以外（Electron/Tauri/Unity等）の比較と採否
+- UI/Backend: ローカルWeb（React + Node/TypeScript）を採用予定。Electron/Tauri/Unity等はMVP後に必要性を再検討
 - STT: クラウドWhisper系 / ローカルwhisper.cpp / その他OSS の比較（騒音環境・遅延・運用）
 - TTS: speechSynthesis / VOICEVOX等 の採否（ライセンス/クレジット運用含む）
 - LLM: クラウド vs ローカル（Ollama/llama.cpp等）と、ネット断時のフォールバック設計
