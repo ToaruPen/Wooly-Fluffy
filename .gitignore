@@ -2,3 +2,8 @@
 __MACOSX/
 ._*
 .specs.zip
+node_modules/
+coverage/
+dist/
+/.skilled-reviews/
+/.skilled-review/

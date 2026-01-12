@@ -25,6 +25,7 @@
 - `決定` Backend: Node.js（TypeScript）
 - `決定` Frontend: React（TypeScript）
 - `予定` Frontend build: Vite（SPA。`/kiosk` と `/staff` を分離）
+- `決定` Styling: CSS Modules（当面は通常のCSS。Tailwindは必要なら後で検討）
 - `決定` DB: SQLite
 
 ### 1.2.1 画面/端末（運用）
@@ -34,6 +35,13 @@
 - `保留（将来）` 2画面運用: 同一Macに第2モニターがある場合は、STAFF を第2画面に常時表示してもよい
 - `予定` STAFF 画面はパスコード等で保護し、自動ロックを入れる（詳細は `docs/memo/90_open_questions.md`）
 - `保留（将来）` 施設外/別拠点からの遠隔アクセス（VPN/SSHトンネル等）
+
+### 1.2.2 開発ツール（MVP）
+
+- `決定` パッケージマネージャ: npm（`package-lock.json` を正）
+- `決定` テスト: Vitest
+- `決定` カバレッジ: 100%（各パッケージごとに閾値を設定して落とす）
+- `決定` deadcode 検出: `knip`（候補抽出→目視確認→テストの上で削除）
 
 ### 1.3 音声入力（Push-to-talk）
 
@@ -110,6 +118,14 @@
   https://github.com/facebook/react/blob/main/LICENSE
 - Vite: MIT License  
   https://raw.githubusercontent.com/vitejs/vite/main/LICENSE
+- Vitest: MIT License  
+  https://raw.githubusercontent.com/vitest-dev/vitest/main/LICENSE
+- @vitest/coverage-v8: MIT License  
+  https://raw.githubusercontent.com/vitest-dev/vitest/main/LICENSE
+- DefinitelyTyped (@types/node): MIT License  
+  https://raw.githubusercontent.com/DefinitelyTyped/DefinitelyTyped/master/LICENSE
+- knip: ISC License  
+  https://raw.githubusercontent.com/webpro-nl/knip/main/license
 - SQLite: Public Domain  
   https://sqlite.org/copyright.html
 - Google Chrome（kiosk運用時）: 利用規約（プロプライエタリ）  

@@ -25,6 +25,8 @@
 - 成果物
   - `server`（Orchestrator APIの枠、healthcheck）
   - `web`（KIOSK/STAFF ルーティング枠、画面が出る）
+    - 初期は CSS Modules で実装（必要なら後で Tailwind にピボット可能。ただし後ろ倒しほど移行コストは増える）
+    - Web品質: React/TypeScript向け lint（例: ESLint + React Hooks）と deadcode 検出（`knip`）を `web` でも運用する（候補抽出→目視確認→テスト）
   - SQLiteの接続/マイグレーション枠（空でもよい）
 - Evidence
   - ローカル起動手順が `README` 相当で再現できる
@@ -75,6 +77,9 @@
 - STAFF（必須）
   - パスコード等の最低限の保護（詳細は後で詰めるが、MVPでも“無保護”は避ける）
   - 診断（疎通）ページ（DB/Providerの状態が分かる）
+- Web品質（将来導入予定）
+  - React/TypeScript向け lint（例: ESLint + React Hooks など）を導入して、初期から破綻しにくくする（依存追加は合意の上で）
+  - deadcode 検出（`knip`）を `web` も含めて運用し、「候補抽出→目視確認→テスト」で安全に削除できるようにする
 - Evidence
   - 現場手順（起動/復旧/最低限の操作）が1枚で説明できる
 
