@@ -41,3 +41,4 @@
 ## Skills（Codex CLI）
 
 - ユーザーが明示したスキル（例: `/commit`, `/check`, `/plan`）は優先してその手順に従う
+- 実装は基本として `impl-np` を使用する（`implement-cycle` は `review-cycle` がquotaを大量消費するため、ユーザーの明示が無い限り使用しない）
