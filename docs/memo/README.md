@@ -1,13 +1,13 @@
 # docs/memo/
 
-このフォルダは、学童向け「マスコットLLM」プロジェクトの **これまでの会話で確定した仕様** と、**未確定で追加議論が必要な点** を、新しいチャットへ引き継ぐために短くまとめたメモです。
+このディレクトリは **ToDo / 検討メモ / 実装順** を置く場所です（SoT外）。
 
-仕様の詳細・原本（SoT）は `.specs/*.md` にあります（必要なら `.specs/` を `.specs.zip` に固めて共有できます）。この `docs/memo` は「次に実装/調査を進めるための要点」に寄せています。
+- 仕様の原本（SoT）は `.specs/` を正とする
+- ここで検討して「決定」になった内容は、`.specs/` 側へ反映する
 
 ## ファイル一覧
 
-- `01_overview.md`: 目的 / 前提 / MVPの範囲（A→B0→B→C）
-- `02_confirmed_spec.md`: 仕様の確定事項（モード/同意/記憶/データ最小化/UI役割）
-- `03_architecture_boundaries.md`: 差し替え前提の境界設計（Provider設計、データフロー、失敗時の挙動）
-- `04_tech_stack_findings.md`: 技術スタックの暫定方針・調査結果（推奨案A/B）と注意点
-- `90_open_questions.md`: 未確定事項と、次の議論の入口
+- `90_open_questions.md`: 未確定事項（ToDo）
+- `91_tech_stack_options.md`: 技術スタック候補（探索メモ）
+- `92_roadmap_backlog.md`: ロードマップ/バックログ（ToDo）
+- `93_implementation_roadmap.md`: 実装ロードマップ（ToDo）

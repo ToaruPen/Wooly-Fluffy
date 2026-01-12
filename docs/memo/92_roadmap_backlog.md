@@ -1,4 +1,6 @@
-# ロードマップ / バックログ（SoT）
+# ロードマップ / バックログ（ToDo）
+
+> このファイルはToDo（SoT外）。決定事項は `.specs/` に反映する。
 
 このドキュメントは「MVPの範囲を守りつつ、将来やりたいことを見える化」して、技術スタック選定の前提（将来要件/制約）を固定するためのバックログです。
 
@@ -14,7 +16,7 @@ MVPの範囲は `.specs/02_usecases_and_mvp.md` を正とします（A→B0ま�
 
 ## Next（MVP後に優先して検討）
 
-- NFC導入（B）での識別置換（`.specs/02_usecases_and_mvp.md` / `.specs/90_open_questions.md`）
+- NFC導入（B）での識別置換（`.specs/02_usecases_and_mvp.md` / `docs/memo/90_open_questions.md`）
 - STAFFアクセス制御の具体（パスコード/自動ロック/LAN内限定など）の確定
 - 暗号化クラウドバックアップの具体（バックアップ先/保持/削除手順）の確定
 - （任意）2画面運用（同一Macの第2モニターにSTAFFを常時表示）

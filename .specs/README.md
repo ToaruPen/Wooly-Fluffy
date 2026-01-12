@@ -16,13 +16,10 @@
 - `03_modes_identification_and_consent.md`: モード設計、識別（音声名乗り→将来NFC）、同意（職員Confirm）フロー
 - `04_data_policy_and_memory_model.md`: データ最小化方針、保存対象、簡易データモデル案
 - `05_architecture_approach.md`: 同期会話と非同期処理を分けた全体アーキテクチャ案（Provider境界/失敗時フォールバック含む）
-- `06_tech_stack_options.md`: 技術スタック候補メモ（境界と候補、探索項目）
-- `07_tech_stack_plan.md`: 採用予定の技術スタック（一次情報URL/ライセンス付き）
-- `08_roadmap_backlog.md`: ロードマップ/バックログ（将来やりたいこと・制約の見える化）
-- `90_open_questions.md`: 未確定事項（次の議論の入口）
+- `06_tech_stack_plan.md`: 採用予定の技術スタック（一次情報URL/ライセンス付き）
 
 ## 参考（SoT外）
 
 - `gakudo_plush_llm_plan_context.md`（repo root）: これまでの議論まとめ（広めの検討範囲。SoTではない）
 - （任意）`.specs.zip`（repo root）: `.specs/` を zip した共有用スナップショット（必要なら `zip -r .specs.zip .specs` で生成。最新性は `.specs/` を優先）
-- `docs/memo/`（repo root）: 引き継ぎ向けの要点メモ（最新性は `.specs/` を優先）
+- `docs/memo/`（repo root）: ToDo/検討メモ/実装順（SoT外。決定したら `.specs/` に反映）

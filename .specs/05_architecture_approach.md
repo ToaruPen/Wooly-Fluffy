@@ -20,7 +20,7 @@
 - `STAFF UI`（職員用）
   - `pending` 一覧 → Confirm/Deny
   - 緊急で `ROOM` へ戻す
-  - アクセス制御: 原則は別端末のブラウザから操作（OS不問、同一LAN）。MVPでもパスコード等で保護する（詳細は `.specs/90_open_questions.md`）
+  - アクセス制御: 原則は別端末のブラウザから操作（OS不問、同一LAN）。MVPでもパスコード等で保護する（詳細は `docs/memo/90_open_questions.md`）
 - `Conversation Orchestrator`（中核）
   - `ROOM` / `PERSONAL(name)` の状態遷移
   - inactivity `3分` で `ROOM` 復帰
