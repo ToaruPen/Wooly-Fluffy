@@ -22,5 +22,5 @@
 ## 参考（SoT外）
 
 - `gakudo_plush_llm_plan_context.md`（repo root）: これまでの議論まとめ（広めの検討範囲。SoTではない）
-- `.specs.zip`（repo root）: 外部調査/共有用のスナップショット（最新性は `.specs/` を優先）
+- （任意）`.specs.zip`（repo root）: `.specs/` を zip した共有用スナップショット（必要なら `zip -r .specs.zip .specs` で生成。最新性は `.specs/` を優先）
 - `docs/memo/`（repo root）: 引き継ぎ向けの要点メモ（最新性は `.specs/` を優先）
