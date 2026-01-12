@@ -68,6 +68,24 @@
 - `予定` ローカル推論ランタイム候補:
   - `Ollama` / `llama.cpp`（モデルライセンスは別管理）
 
+### 1.7 （将来）Vision（Webカメラ）
+
+- `保留（将来）` Webカメラによる「状況認識」を追加できるようにする
+- 制約（決定）: 画像/動画は保存しない、個人識別（顔認証など）はしない（雰囲気/人数/表情の“粗い分類”に限定）
+- 実装は `VisionProvider` として境界化し、TS中核（Orchestrator）へは「シグナル」だけ渡す（詳細は `.specs/08_roadmap_backlog.md`）
+- 取得したいシグナル（例）: `present` / `people_count_approx` / `mood`（笑顔っぽい等の粗いカテゴリ）
+
+### 1.8 （将来）KIOSKアバター（Live2D / 3D）
+
+- `保留（将来）` KIOSK表示のアバターを、Live2Dまたは3Dに拡張する
+- 注意: SDK/モデル/素材の利用条件（配布/クレジット/改変可否）をSoTへ紐づける
+- 予定: 3Dも許容する（盛り上がり優先）。ただし常設PC上で同時に音声/LLMも動くため、モデル/描画は軽量前提（低ポリ、FPS制御、重いポストプロセスは避ける）
+
+### 1.9 （将来）タッチ操作（ボードゲーム等）
+
+- `保留（将来）` タッチ対応モニターで、画面上のボードゲーム（例: オセロ）を直接操作できるようにする
+- 方針: ルール処理は決定的ロジック、LLMは進行・実況・盛り上げ役に限定（`.specs/02_usecases_and_mvp.md`）
+
 ## 2) データ最小化（“境界仕様”のたたき台）
 
 クラウド送信の有無に関わらず、実装境界として「送信/保存」を最小化する（詳細は `.specs/04_data_policy_and_memory_model.md`）。
@@ -144,6 +162,31 @@
   https://raw.githubusercontent.com/OHF-Voice/piper1-gpl/main/COPYING
 - rhasspy/piper-voices（モデル配布）: license=MIT（モデルカード）  
   https://huggingface.co/rhasspy/piper-voices
+
+### 3.6 （将来）Vision（Webカメラ）
+
+- MediaPipe: Apache License 2.0  
+  https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/LICENSE
+- MediaPipe Tasks Vision（JS）: Apache License 2.0（上記MediaPipeと同系）  
+  https://github.com/google-ai-edge/mediapipe/tree/master/mediapipe/tasks/web/vision
+- TensorFlow.js: Apache License 2.0  
+  https://raw.githubusercontent.com/tensorflow/tfjs/master/LICENSE
+
+### 3.7 （将来）3D/レンダリング（KIOSKアバター）
+
+- three.js: MIT License  
+  https://raw.githubusercontent.com/mrdoob/three.js/dev/LICENSE
+- Babylon.js: Apache License 2.0  
+  https://raw.githubusercontent.com/BabylonJS/Babylon.js/master/license.md
+- three-vrm（VRMの取り込み。参考）: MIT License  
+  https://raw.githubusercontent.com/pixiv/three-vrm/dev/LICENSE
+
+### 3.8 （将来）タッチ/ゲーム（参考）
+
+- PixiJS: MIT License  
+  https://raw.githubusercontent.com/pixijs/pixijs/dev/LICENSE
+- Phaser: MIT License  
+  https://raw.githubusercontent.com/phaserjs/phaser/master/LICENSE.md
 
 ## 4) 調査メモ（参照）
 

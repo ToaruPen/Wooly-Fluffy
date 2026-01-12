@@ -30,6 +30,7 @@
   - `TTSProvider`: text → audio（またはUI側でspeechSynthesis）
   - `ChatProvider`: {mode, persona, short_context, confirmed_memories…} → assistant_text
   - `MemoryExtractor`: user_text（+必要ならassistant_text）→ memory_candidate（ホワイトリスト準拠）
+  - （将来）`VisionProvider`: camera → scene_signals（保存しない/個人識別しない前提で `present` / `people_count_approx` / `mood`（表情の粗い分類）など）
 - `Store`（永続）
   - SQLite等（`children`, `memory_items`）
 - `Housekeeping`（常設運用）
