@@ -3,6 +3,20 @@
 このディレクトリは、学童向け「マスコットLLM」プロジェクトの Source of Truth（SoT）です。  
 実装・設計の判断は原則ここを正とし、仕様が動いたらこの中を更新します。
 
+## 読む順番（おすすめ）
+
+1. `01_principles.md`（守る価値観/ガードレール）
+2. `02_usecases_and_mvp.md`（何を作るか: A→B0）
+3. `03_modes_identification_and_consent.md`（モード/同意フロー）
+4. `04_data_policy_and_memory_model.md`（何を保存する/しない）
+5. `05_architecture_approach.md`（全体構成・境界）
+6. `06_orchestrator_contract.md`（中核ロジック契約）
+7. `07_http_api_and_realtime_contract.md`（HTTP/SSE 契約）
+8. `08_staff_access_control.md`（STAFF の最小アクセス制御）
+9. `09_sqlite_schema_and_housekeeping.md`（SQLite/TTL/掃除）
+10. `10_tech_stack_plan.md`（採用予定スタックの一次情報/ライセンス）
+11. `99_implementation_roadmap.md`（実装ロードマップ / マイルストーン）
+
 ## 運用ルール
 
 - 決定事項は「決定」と明示する
@@ -11,13 +25,21 @@
 
 ## ファイル一覧
 
-- `01_principles.md`: 価値観・優先順位・ガードレール（何を守るか）
-- `02_usecases_and_mvp.md`: ユースケース分解と段階的MVP（A→B0→B→C）
-- `03_modes_identification_and_consent.md`: モード設計、識別（音声名乗り→将来NFC）、同意（職員Confirm）フロー
-- `04_data_policy_and_memory_model.md`: データ最小化方針、保存対象、簡易データモデル案
-- `05_architecture_approach.md`: 同期会話と非同期処理を分けた全体アーキテクチャ案（Provider境界/失敗時フォールバック含む）
-- `06_tech_stack_plan.md`: 採用予定の技術スタック（一次情報URL/ライセンス付き）
-- `07_orchestrator_contract.md`: Orchestrator（状態/イベント/Effect/タイマー）の契約（MVP A→B0）
+- **製品仕様（何を守る/何を作る）**
+  - `01_principles.md`: 価値観・優先順位・ガードレール（何を守るか）
+  - `02_usecases_and_mvp.md`: ユースケース分解と段階的MVP（A→B0→B→C）
+  - `03_modes_identification_and_consent.md`: モード設計、識別（音声名乗り→将来NFC）、同意（職員Confirm）フロー
+  - `04_data_policy_and_memory_model.md`: データ最小化方針、保存対象、記憶モデル案
+- **実装契約（壊れやすい境界を固定する）**
+  - `05_architecture_approach.md`: 全体アーキテクチャ（Provider境界/失敗時フォールバック含む）
+  - `06_orchestrator_contract.md`: Orchestrator（状態/イベント/Effect/タイマー）の契約（MVP A→B0）
+  - `07_http_api_and_realtime_contract.md`: HTTP API（KIOSK/STAFF）と Realtime（SSE）契約（MVP A→B0）
+  - `08_staff_access_control.md`: STAFF 画面/操作の最小アクセス制御（共有パスコード/自動ロック/LAN内限定）
+  - `09_sqlite_schema_and_housekeeping.md`: SQLite の最小スキーマと TTL 掃除（pending 24h 等）
+- **採用予定（一次情報）**
+  - `10_tech_stack_plan.md`: 採用予定の技術スタック（一次情報URL/ライセンス付き）
+- **実装計画（順番/マイルストーン）**
+  - `99_implementation_roadmap.md`: 実装ロードマップ（MVP → 段階導入）
 
 ## 参考（SoT外）
 

@@ -69,10 +69,13 @@ Orchestrator は「Event を受け取り、次状態と Effect 列」を返す�
 - `phase`: `idle | listening | waiting_stt | waiting_chat | asking_consent | waiting_inner_task`
 - `last_action_at_ms`: `number`（`.specs/03` の「最後の操作」起点で更新）
 - `consent_deadline_at_ms`: `number | null`（`「覚えていい？」` から `30秒`）
+- `memory_candidate`: `null | { kind: "likes" | "food" | "play" | "hobby", value: string, source_quote?: string }`
+  - 同意の対象は常に **同時に1件**。`memory_candidate !== null` の間は新規候補を積まない（破棄してよい）
 - `in_flight`:
   - `stt_request_id?: string`
   - `chat_request_id?: string`
-  - `inner_task_request_id?: string`
+  - `consent_inner_task_request_id?: string`
+  - `memory_extract_request_id?: string`
 
 ## 6) Events（決定）
 
@@ -103,16 +106,34 @@ Orchestrator は I/O を直接実行せず、Effect として要求する。
   - `KIOSK_RECORD_START`
   - `KIOSK_RECORD_STOP`
 - Provider 呼び出し
-  - `CALL_STT(request_id: string, audio_ref: string)`
+  - `CALL_STT(request_id: string)`
   - `CALL_CHAT(request_id: string, input: {...})`
-  - `CALL_INNER_TASK(request_id: string, task: "consent_decision", input: {...})`
+  - `CALL_INNER_TASK(request_id: string, task: "consent_decision" | "memory_extract", input: {...})`
 - UI/出力
   - `SAY(text: string)`（TTS or 表示の抽象。失敗時は表示のみ等にフォールバック）
   - `SET_MODE(mode: "ROOM" | "PERSONAL", personal_name?: string)`
   - `SHOW_CONSENT_UI(visible: boolean)`
 - 永続（M2で有効化）
-  - `STORE_WRITE_PENDING(...)`
-  - `STORE_WRITE_CONFIRMED(...)`
+  - `STORE_WRITE_PENDING(input: { personal_name: string, kind: "likes" | "food" | "play" | "hobby", value: string, source_quote?: string })`
+
+### 7.1 `CALL_STT` と音声データの扱い（決定）
+
+- Orchestrator は音声データ（録音バイト列）や `audio_ref` を **扱わない**
+- `CALL_STT` の実行側は、直前の `KIOSK_RECORD_START/STOP` に対応する音声（例: KIOSK からアップロードされた音声）を使って STT を呼び出す
+  - 音声（録音ファイル）をディスクに永続保存しない（`.specs/04_data_policy_and_memory_model.md` を正）
+  - 実装都合で一時ファイルを作る場合でも、**短命で確実に削除**する
+
+### 7.2 `pending/confirmed` の責務分界（決定）
+
+- Orchestrator は `pending` の作成（`STORE_WRITE_PENDING`）までを担う
+- `confirmed` / `rejected` への更新は **STAFF 側の操作として Store/API 層で実行**する（Orchestrator は Effect を持たない）
+
+### 7.3 `STORE_WRITE_PENDING` の最小要件（決定）
+
+- `STORE_WRITE_PENDING` は「子どもが `はい` と言った候補」を `pending` として保存する
+  - `status=pending`
+  - `expires_at=24h`（`.specs/04_data_policy_and_memory_model.md` を正）
+- `source_quote` は職員確認の補助（任意の短い根拠）。`confirmed` には原則残さない（データ最小化）
 
 ## 8) 優先順位 / 競合（決定）
 
@@ -141,6 +162,17 @@ Orchestrator は I/O を直接実行せず、Effect として要求する。
   - `{"task":"consent_decision","answer":"yes"|"no"|"unknown"}`
 - JSON検証に失敗、または `InnerTaskProvider` がタイムアウト/失敗した場合
   - `unknown` として扱い、既存の待ち（最大 `30秒`）へ戻す
+
+### 10.1 `memory_extract`（決定）
+
+記憶候補（ホワイトリスト準拠）の抽出も内側で行い、次の最小 JSON を返す。
+
+- 最小スキーマ（決定）:
+  - `{"task":"memory_extract","candidate":null|{"kind":"likes"|"food"|"play"|"hobby","value":string,"source_quote"?:string}}`
+- 返す候補は **最大1件**（`candidate` は単数）。複数候補を返す拡張は後続で検討する
+- `source_quote` は任意の短い根拠（全文ログは保存しない）
+- JSON検証に失敗、または `InnerTaskProvider` がタイムアウト/失敗した場合
+  - `candidate=null` として扱う（会話は継続し、同意フローへ入らない）
 
 ## 11) `SAY` の扱い（割り込み/停止）（決定）
 

@@ -12,7 +12,7 @@
   - `.specs/README.md`
   - `README.md`
   - `docs/memo/README.md`
-  - `docs/memo/93_implementation_roadmap.md`（実装ロードマップ / SoT外）
+  - `.specs/99_implementation_roadmap.md`（実装ロードマップ / SoT）
 
 ## HOW (Workflow / 作業手順)
 - Install: `npm install`
@@ -24,7 +24,7 @@
 - 仕様/失敗時の挙動は `.specs/` を優先（未定義・曖昧ならユーザーに確認してから進める）
 - データ最小化/ログ方針: `.specs/01_principles.md`, `.specs/04_data_policy_and_memory_model.md`（会話本文/音声/STT全文は保存しない）
 - Provider 統合は timeout/cancel と retry 方針を持たせる（`.specs/05_architecture_approach.md`）
-- 依存追加/主要変更は事前合意が前提。採用理由URL/ライセンスは `.specs/06_tech_stack_plan.md` に記録
+- 依存追加/主要変更は事前合意が前提。採用理由URL/ライセンスは `.specs/10_tech_stack_plan.md` に記録
 - Secrets はコミットしない（環境変数/ローカル設定）
 
 ## Codex CLI Notes

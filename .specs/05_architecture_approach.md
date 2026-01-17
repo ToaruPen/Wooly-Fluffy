@@ -35,8 +35,9 @@
   - `TTSProvider`: text → audio（またはUI側でspeechSynthesis）
   - `ChatProvider`（外側モデル）: {mode, persona, short_context, confirmed_memories…} → assistant_text
   - `InnerTaskProvider`（内側モデル）: 非決定的処理（分類/抽出/要約など）→ **スキーマ固定のJSON**（コード側で検証して採用）
-  - `MemoryExtractor`: user_text（+必要ならassistant_text）→ memory_candidate（ホワイトリスト準拠。実装は `InnerTaskProvider` でよい）
+  - `MemoryExtractor`: user_text（+必要ならassistant_text）→ memory_candidate（ホワイトリスト準拠。MVPでは `InnerTaskProvider` の task（例: `memory_extract`）として実装する）
   - `VisionProvider`: camera → scene_signals（保存しない/個人識別しない前提で `present` / `face_target_point` / `people_count_approx` / `mood`（表情の粗い分類）など）
+    - 映像フレームは端末内で処理して破棄し、必要なら **シグナル（JSON）のみ**を境界の外へ渡す（フレームは送らない）
     - Orchestratorは「会話内容の事実」や「感情の断定」に使わない（非言語リアクション、順番促し、待機→挨拶の補助などに限定）
 - `Store`（永続）
   - SQLite等（`children`, `memory_items`）
@@ -55,11 +56,11 @@
    - `「ルーム」` → `ROOM`
 4. Orchestrator → `ChatProvider` で返答生成
 5. 返答を音声化（`TTSProvider` or UI側）して再生（またはテキストのみ表示）
-6. `PERSONAL` 中に `MemoryExtractor` が候補を出す
+6. `PERSONAL` 中に `MemoryExtractor`（= `InnerTaskProvider` の `memory_extract`）が候補を出す
    - 候補が出たら「覚えていい？」へ
    - 子ども「いいえ」→破棄（職員UIへ載せない）
    - 子ども「はい」→ `pending` をStoreへ保存 → STAFF UIへ
-   - 職員Confirm → `confirmed`（想起対象）
+   - 職員Confirm/Deny → Store の `pending` を `confirmed/rejected` に更新（想起対象は `confirmed` のみ）
 
 ## KIOSKの非言語リアクション（予定/決定）
 

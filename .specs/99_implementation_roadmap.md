@@ -1,14 +1,15 @@
 # 実装ロードマップ（MVP → 段階導入）
 
-> このファイルはToDo（SoT外）。決定事項は `.specs/` に反映する。
+このドキュメントは SoT（`.specs/`）として、**何をどの順で実装するか**（実装ロードマップ）を固定します。  
+仕様が動いた場合は、先に `.specs/` を更新し、その上でこのロードマップも更新します。
 
 このドキュメントは、SoT（`.specs/`）に基づいて「何をどの順で実装するか」を固定するためのロードマップです。  
 スコープはまず **MVP（A→B0）** を最短で安全に成立させることに置きます。
 
 ## スコープ（このロードマップの対象）
 
-- 仕様: `.specs/02_usecases_and_mvp.md`（A→B0）、`.specs/03_modes_identification_and_consent.md`、`.specs/04_data_policy_and_memory_model.md`、`.specs/05_architecture_approach.md`、`.specs/07_orchestrator_contract.md`
-- 中核実装: TypeScript（Node.js LTS）+ React（Vite）+ SQLite（`.specs/06_tech_stack_plan.md`）
+- 仕様（SoT）: `.specs/01_principles.md`, `.specs/02_usecases_and_mvp.md`（A→B0）, `.specs/03_modes_identification_and_consent.md`, `.specs/04_data_policy_and_memory_model.md`, `.specs/05_architecture_approach.md`, `.specs/06_orchestrator_contract.md`, `.specs/07_http_api_and_realtime_contract.md`, `.specs/08_staff_access_control.md`, `.specs/09_sqlite_schema_and_housekeeping.md`
+- 中核実装: TypeScript（Node.js LTS）+ React（Vite）+ SQLite（`.specs/10_tech_stack_plan.md`）
 - 運用: KIOSK（モニター1画面）+ STAFF（別端末ブラウザ、OS不問、同一LAN）
 
 ## スコープ外（この段階ではやらない）
@@ -23,11 +24,14 @@
 狙い: 「動く箱」を先に用意して、以降の機能追加を小さく積み上げる。
 
 - 成果物
-  - `server`（Orchestrator APIの枠、healthcheck）
+  - `server`（APIの枠、healthcheck）
+    - `/api/v1` のルーティング枠（404/エラーの統一）
+    - Realtime（SSE）の接続枠（KIOSK/STAFFの2本に分離。詳細は `.specs/07_http_api_and_realtime_contract.md`）
   - `web`（KIOSK/STAFF ルーティング枠、画面が出る）
     - 初期は CSS Modules で実装（必要なら後で Tailwind にピボット可能。ただし後ろ倒しほど移行コストは増える）
     - Web品質: React/TypeScript向け lint（例: ESLint + React Hooks）と deadcode 検出（`knip`）を `web` でも運用する（候補抽出→目視確認→テスト）
   - SQLiteの接続/マイグレーション枠（空でもよい）
+    - `DB_PATH` の既定は `var/wooly-fluffy.sqlite3`（`.specs/09_sqlite_schema_and_housekeeping.md`）
 - Evidence
   - ローカル起動手順が `README` 相当で再現できる
 
@@ -36,11 +40,13 @@
 狙い: もっとも壊れやすい“仕様”（モード/同意/タイムアウト/フォールバック）をテストで固定する。
 
 - 実装対象（SoT）
-  - Orchestrator契約: `.specs/07_orchestrator_contract.md`
+  - Orchestrator契約: `.specs/06_orchestrator_contract.md`
   - モード/同意: `.specs/03_modes_identification_and_consent.md`
   - `ROOM` / `PERSONAL(name)` 遷移
   - `3分` 無操作で `ROOM` へ戻る（明示アナウンスしない）
   - `「覚えていい？」` → 子ども `はい/いいえ` の分岐
+  - 記憶候補の抽出（`memory_extract`）は内側LLM（`InnerTaskProvider`）のJSON契約で扱う
+  - 同意の対象は常に同時に1件（複数候補の並行はしない）
   - 緊急停止/復帰（`STAFF_EMERGENCY_STOP` / `STAFF_RESUME`）
   - 失敗時フォールバック（STT/LLM/TTS/DBが落ちても止めない）
 - Evidence（必須）
@@ -50,22 +56,33 @@
 
 狙い: 「保存してよいものだけを保存する」をデータ層で強制し、運用の核を成立させる。
 
-- 実装対象（`.specs/04_data_policy_and_memory_model.md`）
-  - `pending`（24h TTL）/ `confirmed`
-  - TTL掃除ジョブ（Housekeeping）
-  - 削除/編集はSTAFF側から（詳細手順は後続で詰める）
+- 実装対象（SoT）
+  - データ方針: `.specs/04_data_policy_and_memory_model.md`
+  - SQLiteスキーマ/TTL/掃除: `.specs/09_sqlite_schema_and_housekeeping.md`
+  - `pending`（24h TTL）/ `confirmed` / `rejected` / `deleted`
+  - `pending` の確認補助として `source_quote` は任意で保持してよい（全文ログは保存しない）
+    - `confirmed` では `source_quote` を保持しない（`NULL`）
+  - Housekeeping（TTL掃除）で期限切れを物理削除する（起動時 + 定期）
 - Evidence
-  - 統合テストで `pending` → staff confirm → `confirmed` まで通る
-  - TTLで `pending` が消えることをテストで担保
+  - 統合テストで `pending` → staff confirm → `confirmed` が通る
+  - 統合テストで `pending` → staff deny → `rejected` が通る
+  - TTLで `pending/rejected/deleted` が消えることをテストで担保
 
 ### M3: API（KIOSK/STAFF）とProvider境界（スタブでOK）
 
 狙い: STT/LLM/TTS をまだ繋がなくても、KIOSK↔STAFFの最小導線を成立させる。
 
-- 実装対象（`.specs/05_architecture_approach.md`）
-  - KIOSK: mode/state取得、発話入力（当面はテキストでも可）、応答表示
-  - STAFF: pending一覧、Confirm/Deny、Force ROOM
-  - Provider境界（スタブ実装）: STT/Chat/TTS/MemoryExtractor
+- 実装対象（SoT）
+  - API/Realtime（SSE）: `.specs/07_http_api_and_realtime_contract.md`
+  - STAFFアクセス制御: `.specs/08_staff_access_control.md`
+  - KIOSK/STAFF の Realtime は **SSE**（将来WebSocketへ移行できるメッセージ形を維持）
+  - KIOSK:
+    - `kiosk.command.*` に従って録音開始/停止・音声アップロード・表示/発話を行う
+  - STAFF:
+    - ログイン（共有パスコード）/ 自動ロック（3分）/ keepalive
+    - pending一覧、Confirm/Deny、Force ROOM、緊急停止/復帰
+  - Provider境界（スタブ実装）:
+    - STT / Chat / InnerTask（`consent_decision`, `memory_extract`）
 - Evidence
   - Providerが落ちる/遅い/空返答でもUIが固まらず、定型フォールバックへ落ちる
 
@@ -79,7 +96,8 @@
   - フォールバック（音声が無理ならテキスト表示のみでも進む）
 - STAFF（必須）
   - PTT（hold-to-talk。ホットキーは `Space` 長押しを基本、画面ボタンはフォールバック。将来は物理ボタンも可）
-  - パスコード等の最低限の保護（詳細は後で詰めるが、MVPでも“無保護”は避ける）
+  - パスコード等の最低限の保護（`.specs/08_staff_access_control.md` を正）
+    - 無操作3分でロック（keepaliveで担保）
   - 診断（疎通）ページ（DB/Providerの状態が分かる）
 - Web品質（将来導入予定）
   - React/TypeScript向け lint（例: ESLint + React Hooks など）を導入して、初期から破綻しにくくする（依存追加は合意の上で）
@@ -123,10 +141,12 @@
 
 - いま決める（実装が詰まるので固定）
   - MVPはA→B0、KIOSK1画面 + STAFF別端末ブラウザ
-  - Orchestrator契約（状態/イベント/タイムアウト/緊急停止）は `.specs/07_orchestrator_contract.md` を正とする
-  - Provider境界（InnerTask JSON、timeout/cancel/retry）は `.specs/07_orchestrator_contract.md` を正とする
-  - 残り: API/DTO（KIOSK/STAFF）とSTAFF UIのアクセス制御（LAN内限定）
+  - Orchestrator契約（状態/イベント/タイムアウト/緊急停止）は `.specs/06_orchestrator_contract.md` を正とする
+  - API/Realtime（SSE）契約（KIOSK/STAFF分離、WS移行可能なメッセージ形）は `.specs/07_http_api_and_realtime_contract.md` を正とする
+  - STAFFアクセス制御（共有パスコード/自動ロック3分/LAN内限定）は `.specs/08_staff_access_control.md` を正とする
+  - SQLite（スキーマ/TTL/Housekeeping）は `.specs/09_sqlite_schema_and_housekeeping.md` を正とする
   - ログ最小化（本文/音声/カメラを残さない）
 - 後で決める（差し替え前提）
   - STT/LLM/TTSの既定（ローカル/クラウド、モデル選定）
+  - 音声アップロードの具体フォーマット（`audio/webm` / `audio/wav` などの採用）
   - Vision/3D/タッチ（`docs/memo/92_roadmap_backlog.md`）

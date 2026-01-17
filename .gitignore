@@ -5,3 +5,7 @@ __MACOSX/
 node_modules/
 coverage/
 dist/
+var/
+*.sqlite
+*.sqlite3
+*.db
