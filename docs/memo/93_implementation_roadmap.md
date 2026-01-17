@@ -7,7 +7,7 @@
 
 ## スコープ（このロードマップの対象）
 
-- 仕様: `.specs/02_usecases_and_mvp.md`（A→B0）、`.specs/03_modes_identification_and_consent.md`
+- 仕様: `.specs/02_usecases_and_mvp.md`（A→B0）、`.specs/03_modes_identification_and_consent.md`、`.specs/04_data_policy_and_memory_model.md`、`.specs/05_architecture_approach.md`、`.specs/07_orchestrator_contract.md`
 - 中核実装: TypeScript（Node.js LTS）+ React（Vite）+ SQLite（`.specs/06_tech_stack_plan.md`）
 - 運用: KIOSK（モニター1画面）+ STAFF（別端末ブラウザ、OS不問、同一LAN）
 
@@ -35,10 +35,13 @@
 
 狙い: もっとも壊れやすい“仕様”（モード/同意/タイムアウト/フォールバック）をテストで固定する。
 
-- 実装対象（`.specs/03_modes_identification_and_consent.md`）
+- 実装対象（SoT）
+  - Orchestrator契約: `.specs/07_orchestrator_contract.md`
+  - モード/同意: `.specs/03_modes_identification_and_consent.md`
   - `ROOM` / `PERSONAL(name)` 遷移
   - `3分` 無操作で `ROOM` へ戻る（明示アナウンスしない）
   - `「覚えていい？」` → 子ども `はい/いいえ` の分岐
+  - 緊急停止/復帰（`STAFF_EMERGENCY_STOP` / `STAFF_RESUME`）
   - 失敗時フォールバック（STT/LLM/TTS/DBが落ちても止めない）
 - Evidence（必須）
   - Orchestratorの主要仕様がユニットテストで担保されている（タイマーはfake timersで検証）
@@ -120,7 +123,9 @@
 
 - いま決める（実装が詰まるので固定）
   - MVPはA→B0、KIOSK1画面 + STAFF別端末ブラウザ
-  - Provider境界（API/DTO/タイムアウト/フォールバック）
+  - Orchestrator契約（状態/イベント/タイムアウト/緊急停止）は `.specs/07_orchestrator_contract.md` を正とする
+  - Provider境界（InnerTask JSON、timeout/cancel/retry）は `.specs/07_orchestrator_contract.md` を正とする
+  - 残り: API/DTO（KIOSK/STAFF）とSTAFF UIのアクセス制御（LAN内限定）
   - ログ最小化（本文/音声/カメラを残さない）
 - 後で決める（差し替え前提）
   - STT/LLM/TTSの既定（ローカル/クラウド、モデル選定）

@@ -17,6 +17,7 @@
 - `04_data_policy_and_memory_model.md`: データ最小化方針、保存対象、簡易データモデル案
 - `05_architecture_approach.md`: 同期会話と非同期処理を分けた全体アーキテクチャ案（Provider境界/失敗時フォールバック含む）
 - `06_tech_stack_plan.md`: 採用予定の技術スタック（一次情報URL/ライセンス付き）
+- `07_orchestrator_contract.md`: Orchestrator（状態/イベント/Effect/タイマー）の契約（MVP A→B0）
 
 ## 参考（SoT外）
 
