@@ -2,3 +2,6 @@
 __MACOSX/
 ._*
 .specs.zip
+node_modules/
+coverage/
+dist/

@@ -13,14 +13,19 @@
 
 ## コンポーネント案（境界）
 
-- `KIOSK UI`（子ども用）
-  - マスコット表示 + 会話
-  - Push-to-talk
-  - （推奨）「はい/いいえ」ボタン
+- `KIOSK`（子ども用表示）
+  - （予定）ブラウザ（WebGL）で VRM ビューアを常時表示する
+  - 入力は原則 Push-to-talk（hold-to-talk）。**PTT操作はSTAFF側**（MVPは `Space` 長押し、画面ボタンはフォールバック）に寄せる
+  - （予定）Webカメラは **デフォルトOFF**（STAFF 側の操作で ON/OFF）で非言語シグナルを作る
+    - フレームはローカル処理して破棄（保存しない/外部送信しない）
+    - STAFF UI には映像プレビューを出さず、運用上は「シグナル」のみ扱う
+    - 物理的に遮断できる（プライバシーシャッター/カバー等）構成で運用する（ソフトOFFだけに依存しない）
+  - （推奨）「はい/いいえ」ボタン（STT誤認対策。PTT以外の入力は必要最小にする）
 - `STAFF UI`（職員用）
   - `pending` 一覧 → Confirm/Deny
   - 緊急で `ROOM` へ戻す
-  - アクセス制御: 原則は別端末のブラウザから操作（OS不問、同一LAN）。MVPでもパスコード等で保護する（詳細は `docs/memo/90_open_questions.md`）
+  - KIOSKのメタ制御（緊急停止、カメラON/OFFなど）
+  - アクセス制御: 原則は別端末のブラウザから操作（OS不問、同一LAN）。共有パスコード + 自動ロックで保護する
 - `Conversation Orchestrator`（中核）
   - `ROOM` / `PERSONAL(name)` の状態遷移
   - inactivity `3分` で `ROOM` 復帰
@@ -28,9 +33,10 @@
 - Provider（差し替え対象）
   - `STTProvider`: audio → text
   - `TTSProvider`: text → audio（またはUI側でspeechSynthesis）
-  - `ChatProvider`: {mode, persona, short_context, confirmed_memories…} → assistant_text
-  - `MemoryExtractor`: user_text（+必要ならassistant_text）→ memory_candidate（ホワイトリスト準拠）
-  - （将来）`VisionProvider`: camera → scene_signals（保存しない/個人識別しない前提で `present` / `people_count_approx` / `mood`（表情の粗い分類）など）
+  - `ChatProvider`（外側モデル）: {mode, persona, short_context, confirmed_memories…} → assistant_text
+  - `InnerTaskProvider`（内側モデル）: 非決定的処理（分類/抽出/要約など）→ **スキーマ固定のJSON**（コード側で検証して採用）
+  - `MemoryExtractor`: user_text（+必要ならassistant_text）→ memory_candidate（ホワイトリスト準拠。実装は `InnerTaskProvider` でよい）
+  - `VisionProvider`: camera → scene_signals（保存しない/個人識別しない前提で `present` / `face_target_point` / `people_count_approx` / `mood`（表情の粗い分類）など）
     - Orchestratorは「会話内容の事実」や「感情の断定」に使わない（非言語リアクション、順番促し、待機→挨拶の補助などに限定）
 - `Store`（永続）
   - SQLite等（`children`, `memory_items`）
@@ -42,8 +48,8 @@
 
 ## データフロー（MVP）
 
-1. PTT押下 → KIOSKが録音開始（待機時は無反応）
-2. PTT離す → `STTProvider` → text
+1. STAFFがPTT開始（hold-to-talk） → Orchestrator → KIOSKが録音開始（待機時は無反応）
+2. STAFFがPTT終了 → Orchestrator → KIOSKが録音停止 → `STTProvider` → text
 3. Orchestrator がモード解釈
    - `「パーソナル、<name>」` → `PERSONAL(name)`
    - `「ルーム」` → `ROOM`
@@ -54,6 +60,28 @@
    - 子ども「いいえ」→破棄（職員UIへ載せない）
    - 子ども「はい」→ `pending` をStoreへ保存 → STAFF UIへ
    - 職員Confirm → `confirmed`（想起対象）
+
+## KIOSKの非言語リアクション（予定/決定）
+
+### 目線追従（Vision → LookAt）
+
+- KIOSK側で Webカメラを使用し（STAFF 操作で ON になっている間）、顔の**位置**を検出して VRM の注視点（LookAt）に使う
+  - 個人識別はしない（顔認証/個人ID付与はしない）。画像は保存しない/外部送信しない
+- 複数人が映る場合は「現在のターゲットを優先」し、安定性のために短期のターゲットロック/ヒステリシスを入れる
+  - 例（初期値）:
+    - 現ターゲットが見えている限り維持
+    - 別の顔が「十分大きい」状態が **0.5秒** 続いたら切替（例: `challenger_area > current_area * 1.3`）
+    - 現ターゲットが **0.3秒** 見えなければ解除し、最大サイズを新ターゲットにする
+- 追従の強さは状態で変える（会話していない時は弱める）
+  - `conversation_active = ptt_pressed || tts_playing || (now - last_conversation_event) < 2s`
+  - `conversation_active` の間は追従を強め、そうでない時は弱める（“通過反応（弱）”と“ロック反応（強）”の2段階を想定）
+
+### 口パク（TTS → LipSync）
+
+- MVPは **振幅ベース**（音声の振幅から `mouthOpen` を作る）で実装する
+  - VRMの表情（口形）は `A/I/U/E/O` を想定したインターフェースにする（MVPは `A` のみ使用）
+- 将来の拡張として **音素/viseme ベース**（タイミング付きの口形）へ差し替え可能にする
+- 口パク/表情は LLM に依存しない（会話体験のレイテンシに影響させない）
 
 ## 失敗時の挙動（止めない / 決定）
 
