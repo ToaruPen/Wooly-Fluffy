@@ -5,5 +5,3 @@ __MACOSX/
 node_modules/
 coverage/
 dist/
-/.skilled-reviews/
-/.skilled-review/

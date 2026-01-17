@@ -11,3 +11,4 @@
 - `91_tech_stack_options.md`: 技術スタック候補（探索メモ）
 - `92_roadmap_backlog.md`: ロードマップ/バックログ（ToDo）
 - `93_implementation_roadmap.md`: 実装ロードマップ（ToDo）
+- `94_llm_provider_comparison.md`: LLM Provider比較（Google/OpenAI/DeepSeek）

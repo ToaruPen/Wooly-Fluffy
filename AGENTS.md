@@ -1,44 +1,32 @@
-# AGENTS.md（Repo ルール / コード規約）
+# AGENTS.md
 
-このファイルは **リポジトリ運用ルール / コード規約のみ** を短く固定する。  
-具体的な仕様（挙動/要件）は書かない（SoTは `.specs/`）。
+## WHY (Project Goal / 目的)
+- 学童向け「マスコットLLM」プロジェクトの実装リポジトリ。最小の HTTP healthcheck server とテスト基盤を含む（`README.md`）。
 
-## Sources（優先順位）
+## WHAT (Repo Map / 構成)
+- SoT（要件/決定事項）: `.specs/`（判断の正。仕様変更がある場合は先に更新）
+- メモ/ToDo（SoT外）: `docs/memo/`（検討→「決定」になったら `.specs/` へ反映）
+- 実装: `server/`（Node/TypeScript の最小 HTTP サーバ。詳細は `server/AGENTS.md`）
+- Node: npm workspaces（lockfile は `package-lock.json`）
+- 主要ドキュメント:
+  - `.specs/README.md`
+  - `README.md`
+  - `docs/memo/README.md`
+  - `docs/memo/93_implementation_roadmap.md`（実装ロードマップ / SoT外）
 
-- SoT（要件/決定事項）: `.specs/`
-- ToDo/検討/実装順（SoT外）: `docs/memo/`
+## HOW (Workflow / 作業手順)
+- Install: `npm install`
+- Checks: `npm run typecheck` / `npm run lint` / `npm run test` / `npm run coverage` / `npm run deadcode`
+- Run server: `npm run -w server start`（defaults: `HOST=127.0.0.1`, `PORT=3000`）
+- Coverage: `server/vitest.config.ts` で 100% を要求（落ちたらテストを追加/修正）
 
-## MUST（必須）
+## Guardrails (Safety & Change Policy)
+- 仕様/失敗時の挙動は `.specs/` を優先（未定義・曖昧ならユーザーに確認してから進める）
+- データ最小化/ログ方針: `.specs/01_principles.md`, `.specs/04_data_policy_and_memory_model.md`（会話本文/音声/STT全文は保存しない）
+- Provider 統合は timeout/cancel と retry 方針を持たせる（`.specs/05_architecture_approach.md`）
+- 依存追加/主要変更は事前合意が前提。採用理由URL/ライセンスは `.specs/06_tech_stack_plan.md` に記録
+- Secrets はコミットしない（環境変数/ローカル設定）
 
-- 仕様が変わるなら **先に `.specs/` を更新**してから実装する
-- 曖昧さ/未確定がある場合は **ユーザーと対話して確定**してから進める（推測で埋めない）
-- 実装を開始する前に、必ず `estimation` スキルで見積もりを行う（スコープ/不確実点/リスクを先に揃える）
-- 秘密情報（APIキー等）は **コミットしない**（環境変数/ローカル設定）
-- データ最小化: 音声/会話本文/カメラ画像・動画は **保存しない / ログに出さない**
-- ログ/メトリクス: 本文無し（件数、遅延、成功/失敗など）のみに限定する
-- デバッグ詳細: **明示フラグ + 短TTL + STAFF限定**で扱う
-- Provider呼び出し: `timeout` / `cancel` / `retry方針` を必ず持つ
-- 失敗時の挙動: SoTで定義した「失敗時の挙動」に従う（未定義なら失敗を明示し、安直に埋めない）
-- STAFF安全: 「隠しURL」前提にしない（認証/自動ロック/LAN内限定）。インターネットへ公開しない
-- 依存追加: 新規ライブラリ/フレームワーク追加は **事前にユーザー合意**が必要  
-  - 主要依存を追加/変更したら `.specs/06_tech_stack_plan.md` に根拠URL/ライセンスを追記する
-- ツールチェーン: NodeはLTS系、パッケージマネージャは単一に固定（切替はユーザー合意）
-- テスト: 実装とテスト更新はセット／テストカバレッジ **100% 厳守**  
-  - DoD: `typecheck` / `lint` / `test` / `coverage=100%` が通る
-
-## MUST NOT（禁止）
-
-- 新規アーキテクチャ/新規レイヤーの導入（必要なら先にユーザー合意）
-- 安直な fallback（推測で埋める／勝手に別経路へ切替える／失敗を握りつぶす）
-
-## SHOULD（推奨）
-
-- TypeScriptは `strict` 前提（安易に `any` を使わない）
-- 外部入力（HTTP/Provider/環境変数）は runtime validation（例: `zod`）
-- 命名: `camelCase`（変数/関数）、`PascalCase`（型/クラス/React）、`kebab-case`（ファイル）
-- コミット: 「絵文字 + Conventional Commits」
-
-## Skills（Codex CLI）
-
-- ユーザーが明示したスキル（例: `/commit`, `/check`, `/plan`）は優先してその手順に従う
-- 実装は基本として `impl-np` を使用する（`implement-cycle` は `review-cycle` がquotaを大量消費するため、ユーザーの明示が無い限り使用しない）
+## Codex CLI Notes
+- ユーザーが指定した Skill（例: `/plan`, `/check`, `/commit`）を優先
+- 実装時は `estimation` → `impl-np` をデフォルト手順として扱う
