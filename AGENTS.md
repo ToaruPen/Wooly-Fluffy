@@ -12,6 +12,7 @@
   - `.specs/README.md`
   - `README.md`
   - `docs/memo/README.md`
+  - `docs/memo/93_milestone_checklist.md`（マイルストーン実装チェックリスト / 抜け漏れ防止）
   - `.specs/99_implementation_roadmap.md`（実装ロードマップ / SoT）
 
 ## HOW (Workflow / 作業手順)
@@ -19,6 +20,7 @@
 - Checks: `npm run typecheck` / `npm run lint` / `npm run test` / `npm run coverage` / `npm run deadcode`
 - Run server: `npm run -w server start`（defaults: `HOST=127.0.0.1`, `PORT=3000`）
 - Coverage: `server/vitest.config.ts` で 100% を要求（落ちたらテストを追加/修正）
+- 各マイルストーン開始/仕上げで `docs/memo/93_milestone_checklist.md` を確認し、抜けや気づきを追記（決定事項は `.specs/` へ反映）
 
 ## Guardrails (Safety & Change Policy)
 - 仕様/失敗時の挙動は `.specs/` を優先（未定義・曖昧ならユーザーに確認してから進める）

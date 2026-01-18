@@ -6,10 +6,12 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      statements: 100,
-      branches: 100,
-      functions: 100,
-      lines: 100,
+      thresholds: {
+        statements: 100,
+        branches: 100,
+        functions: 100,
+        lines: 100,
+      },
       all: true,
       include: ["src/**/*.ts"],
       exclude: ["src/**/*.test.ts", "src/main.ts"]

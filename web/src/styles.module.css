@@ -1,0 +1,39 @@
+.page {
+  min-height: 100vh;
+  padding: 32px;
+  background: radial-gradient(circle at top left, #fff7e2 0%, #f4e3bf 45%, #e9d2a7 100%);
+  color: #2b241d;
+  font-family: "Georgia", "Times New Roman", serif;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.label {
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b4f2a;
+}
+
+.content {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #d8c39a;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+}
+
+.snapshot {
+  margin-top: 12px;
+  padding: 16px;
+  background: #2b241d;
+  color: #f8edd7;
+  border-radius: 12px;
+  font-size: 14px;
+  overflow: auto;
+}
