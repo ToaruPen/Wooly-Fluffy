@@ -19,6 +19,21 @@
 
 ## マイルストーン
 
+### 共通 DoD（全マイルストーン）
+
+- ローカルで次が green
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run test`
+  - `npm run coverage`（100%）
+  - `npm run deadcode`
+- CI（GitHub Actions）が green
+  - `.github/workflows/ci.yml`（pull request / `main` push）
+  - `npm audit --audit-level=high --omit=dev`（prod deps の high/critical をブロック）
+  - `server` / `web` の build が通る
+- 定期監査
+  - `.github/workflows/security-audit.yml`（週次 + 手動）で dev deps 含む `npm audit --audit-level=high` を確認する
+
 ### M0: 開発可能な最小骨格（UI/Server/DBの空配線）
 
 狙い: 「動く箱」を先に用意して、以降の機能追加を小さく積み上げる。
