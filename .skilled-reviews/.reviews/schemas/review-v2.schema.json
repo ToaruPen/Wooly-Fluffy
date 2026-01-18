@@ -3,6 +3,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "schema_version",
+    "scope_id",
     "facet",
     "facet_slug",
     "status",

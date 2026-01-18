@@ -1,0 +1,15 @@
+write_allow = [
+  "package.json",
+  "README.md",
+  "knip.json",
+  "knip.jsonc",
+  "server/**",
+  "web/**",
+]
+
+write_deny = [
+  ".git/**",
+  ".specs/**",
+  "docs/**",
+  ".skilled-reviews/**",
+]
