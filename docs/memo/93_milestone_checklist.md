@@ -49,14 +49,31 @@
 
 ## M1: Orchestrator（状態機械）を純粋ロジックとして確定 + ユニットテスト
 
-- [ ] Orchestrator を「純粋ロジック」として実装する（HTTP/DB/タイマーの実体に依存しない）
-- [ ] `.specs/06_orchestrator_contract.md` の状態/イベント/Effect を実装で表現できている
-- [ ] `ROOM` / `PERSONAL(name)` 遷移がテストで担保されている
-- [ ] `3分` 無操作で `ROOM` へ戻る（fake timers で検証）
-- [ ] 同意フロー（「覚えていい？」→ yes/no）がテストで担保されている
-- [ ] 同意の対象は常に1件（複数候補の並行をしない）を担保できている
-- [ ] 緊急停止/復帰（`STAFF_EMERGENCY_STOP` / `STAFF_RESUME`）がテストで担保されている
-- [ ] 失敗時フォールバック（STT/LLM/TTS/DB が落ちても止めない）がテストで担保されている
+- [x] Orchestrator を「純粋ロジック」として実装する（HTTP/DB/タイマーの実体に依存しない）
+- [x] `.specs/06_orchestrator_contract.md` の状態/イベント/Effect を実装で表現できている
+- [x] `ROOM` / `PERSONAL(name)` 遷移がテストで担保されている
+- [x] `3分` 無操作で `ROOM` へ戻る（`TICK` + `now` 注入で検証）
+- [x] 同意フロー（「覚えていい？」→ yes/no）がテストで担保されている
+- [x] 同意の対象は常に1件（複数候補の並行をしない）を担保できている
+- [x] 緊急停止/復帰（`STAFF_EMERGENCY_STOP` / `STAFF_RESUME`）がテストで担保されている
+- [x] 失敗時フォールバック（STT/Chat/InnerTask 失敗でも止めない）をテストで担保（DB/TTS は M1 では I/O 未接続）
+
+### M1 Evidence / Notes（2026-01-18）
+
+- Branch: `feat/m1-orchestrator`
+- 実装:
+  - `server/src/orchestrator.ts`
+  - `server/src/orchestrator.test.ts`
+- 実行した確認:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run test`
+  - `npm run coverage`
+  - `npm run deadcode`
+- Review artifact:
+  - `.skilled-reviews/.reviews/reviewed_scopes/m1-orchestrator/20260118_215040/code-review.json`
+- 気づき:
+  - `stop_output` のような「出力停止」は `.specs/06` の Effects 一覧に無いため、M1 では新規 Effect 追加はせず（必要なら SoT 更新で合意）
 
 ## M2: Store（SQLite）+ pending TTL + staff confirm（データパス）
 

@@ -20,6 +20,16 @@ npm run coverage
 npm run deadcode
 ```
 
+## CI (GitHub Actions)
+- `.github/workflows/ci.yml`: runs on pull requests and pushes to `main`.
+  - `npm ci`
+  - `npm audit --audit-level=high --omit=dev` (prod deps only)
+  - `npm run typecheck`, `npm run lint`
+  - `npm run -w server build`, `npm run -w web build`
+  - `npm run coverage`, `npm run deadcode`
+- `.github/workflows/security-audit.yml`: runs weekly (Mon 03:00 UTC) and via manual trigger.
+  - `npm audit --audit-level=high` (including dev deps)
+
 ## Run server
 ```
 npm run -w server start
