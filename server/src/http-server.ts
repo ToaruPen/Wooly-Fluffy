@@ -1,5 +1,6 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
+import { initialKioskSnapshot, initialStaffSnapshot } from "./orchestrator.js";
 
 const healthBody = JSON.stringify({ status: "ok" });
 
@@ -23,25 +24,9 @@ const sendError = (
   sendJson(res, statusCode, createErrorBody(code, message));
 };
 
-const kioskSnapshot = {
-  state: {
-    mode: "ROOM",
-    personal_name: null,
-    phase: "idle",
-    consent_ui_visible: false
-  }
-};
+const kioskSnapshot = initialKioskSnapshot;
 
-const staffSnapshot = {
-  state: {
-    mode: "ROOM",
-    personal_name: null,
-    phase: "idle"
-  },
-  pending: {
-    count: 0
-  }
-};
+const staffSnapshot = initialStaffSnapshot;
 
 const writeSseHeaders = (res: ServerResponse) => {
   res.statusCode = 200;
