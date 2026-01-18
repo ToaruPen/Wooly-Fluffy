@@ -9,3 +9,19 @@ var/
 *.sqlite
 *.sqlite3
 *.db
+
+# Codex skilled review artifacts (allowlist)
+.skilled-reviews/**
+!.skilled-reviews/
+!.skilled-reviews/.estimation/
+!.skilled-reviews/.estimation/**
+!.skilled-reviews/.implementation/
+!.skilled-reviews/.implementation/impl-guardrails.toml
+!.skilled-reviews/.reviews/
+!.skilled-reviews/.reviews/schemas/
+!.skilled-reviews/.reviews/schemas/*.json
+!.skilled-reviews/.reviews/reviewed_scopes/
+!.skilled-reviews/.reviews/reviewed_scopes/**/
+!.skilled-reviews/.reviews/reviewed_scopes/**/code-review.json
+.skilled-reviews/.implementation/impl-runs/
+.skilled-reviews/.reviews/reviewed_scopes/**/.current_run

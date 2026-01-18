@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "scope_id": "m0-bootstrap",
+  "facet": "Overall review (code-review)",
+  "facet_slug": "overall",
+  "status": "Approved",
+  "findings": [],
+  "overall_correctness": "patch is correct",
+  "overall_explanation": "No actionable issues found in the provided diff; changes appear consistent with the described requirements and include tests for the new behavior.",
+  "overall_confidence_score": 0.62,
+  "questions": [],
+  "uncertainty": []
+}
