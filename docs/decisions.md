@@ -367,6 +367,7 @@ App / DB / Kiosk:
 - Vitest: https://raw.githubusercontent.com/vitest-dev/vitest/main/LICENSE
 - ESLint: https://raw.githubusercontent.com/eslint/eslint/main/LICENSE
 - SQLite: https://sqlite.org/copyright.html
+- better-sqlite3: https://raw.githubusercontent.com/WiseLibs/better-sqlite3/master/LICENSE
 
 STT:
 - whisper.cpp: https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE
