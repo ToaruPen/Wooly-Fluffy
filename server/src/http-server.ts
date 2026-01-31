@@ -1,5 +1,6 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import {
   createInitialState,
   createKioskSnapshot,
@@ -10,6 +11,7 @@ import {
   type OrchestratorState
 } from "./orchestrator.js";
 import type { createStore } from "./store.js";
+import { isLanAddress } from "./access-control.js";
 
 const healthBody = JSON.stringify({ status: "ok" });
 
@@ -55,6 +57,61 @@ type Store = ReturnType<typeof createStore>;
 
 type CreateHttpServerOptions = {
   store: Store;
+  now_ms?: () => number;
+  get_remote_address?: (req: IncomingMessage) => string;
+};
+
+type StaffSession = {
+  expires_at_ms: number;
+};
+
+const STAFF_SESSION_COOKIE_NAME = "wf_staff_session";
+const STAFF_SESSION_TTL_MS = 180_000;
+
+const parseCookies = (cookieHeader: string): Record<string, string> => {
+  const result: Record<string, string> = {};
+  for (const part of cookieHeader.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (!key) {
+      continue;
+    }
+    result[key] = value;
+  }
+  return result;
+};
+
+const getStaffSessionToken = (req: IncomingMessage): string | null => {
+  const cookieHeader = req.headers.cookie;
+  const text = (typeof cookieHeader === "string" ? cookieHeader : "").trim();
+  if (!text) {
+    return null;
+  }
+  const cookies = parseCookies(text);
+  const token = cookies[STAFF_SESSION_COOKIE_NAME];
+  return token ? token : null;
+};
+
+const isPasscodeMatch = (actual: string, expected: string): boolean => {
+  const a = Buffer.from(actual, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) {
+    return false;
+  }
+  return timingSafeEqual(a, b);
+};
+
+const createSessionCookie = (token: string): string => {
+  const maxAge = Math.floor(STAFF_SESSION_TTL_MS / 1000);
+  return `${STAFF_SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 };
 
 const writeSseHeaders = (res: ServerResponse) => {
@@ -212,8 +269,39 @@ const mapPendingToDto = (item: {
 
 export const createHttpServer = (options: CreateHttpServerOptions) => {
   const { store } = options;
+  const nowMs = options.now_ms ?? (() => Date.now());
+  const getRemoteAddress =
+    options.get_remote_address ?? ((req: IncomingMessage) => String(req.socket.remoteAddress));
 
-  let state: OrchestratorState = createInitialState(Date.now());
+  const staffSessions = new Map<string, StaffSession>();
+
+  const validateStaffSession = (token: string): boolean => {
+    const session = staffSessions.get(token);
+    if (!session) {
+      return false;
+    }
+    if (session.expires_at_ms <= nowMs()) {
+      staffSessions.delete(token);
+      return false;
+    }
+    return true;
+  };
+
+  const createStaffSession = (): string => {
+    const token = randomUUID();
+    staffSessions.set(token, { expires_at_ms: nowMs() + STAFF_SESSION_TTL_MS });
+    return token;
+  };
+
+  const keepaliveStaffSession = (token: string): boolean => {
+    if (!validateStaffSession(token)) {
+      return false;
+    }
+    staffSessions.set(token, { expires_at_ms: nowMs() + STAFF_SESSION_TTL_MS });
+    return true;
+  };
+
+  let state: OrchestratorState = createInitialState(nowMs());
   let saySeq = 0;
   const pendingStt = new Set<string>();
 
@@ -337,6 +425,88 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
     const path = parsePath(req.url!);
 
+    const requireStaffLan = (): boolean => {
+      const remoteAddress = getRemoteAddress(req);
+      if (isLanAddress(remoteAddress)) {
+        return true;
+      }
+      sendError(res, 403, "forbidden", "Forbidden");
+      return false;
+    };
+
+    const requireStaffSession = (): string | null => {
+      const token = getStaffSessionToken(req);
+      if (!token) {
+        sendError(res, 401, "unauthorized", "Unauthorized");
+        return null;
+      }
+      if (!validateStaffSession(token)) {
+        sendError(res, 401, "unauthorized", "Unauthorized");
+        return null;
+      }
+      return token;
+    };
+
+    if (path === "/api/v1/staff/auth/login") {
+      if (!requireStaffLan()) {
+        return;
+      }
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+
+      readJson(req, 128_000)
+        .then((body) => {
+          const parsed = body as { passcode?: unknown };
+          if (typeof parsed.passcode !== "string") {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return;
+          }
+          const expected = process.env.STAFF_PASSCODE;
+          if (typeof expected !== "string" || expected.length === 0) {
+            sendError(res, 500, "misconfigured", "Server misconfigured");
+            return;
+          }
+          if (!isPasscodeMatch(parsed.passcode, expected)) {
+            sendError(res, 401, "unauthorized", "Unauthorized");
+            return;
+          }
+
+          const token = createStaffSession();
+          res.setHeader("set-cookie", createSessionCookie(token));
+          sendJson(res, 200, okBody);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.message === "body_too_large") {
+            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
+            return;
+          }
+          safeSendError(res, 400, "invalid_json", "Invalid JSON");
+        });
+      return;
+    }
+
+    if (path === "/api/v1/staff/auth/keepalive") {
+      if (!requireStaffLan()) {
+        return;
+      }
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+
+      const token = getStaffSessionToken(req);
+      if (!token || !keepaliveStaffSession(token)) {
+        sendError(res, 401, "unauthorized", "Unauthorized");
+        return;
+      }
+
+      res.setHeader("set-cookie", createSessionCookie(token));
+      sendJson(res, 200, okBody);
+      return;
+    }
+
     if (path === "/api/v1/kiosk/stream") {
       if (req.method !== "GET") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
@@ -358,8 +528,14 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path === "/api/v1/staff/stream") {
+      if (!requireStaffLan()) {
+        return;
+      }
       if (req.method !== "GET") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      if (!requireStaffSession()) {
         return;
       }
       openSse(
@@ -393,10 +569,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
-          processEvent(
-            { type: "UI_CONSENT_BUTTON", answer: parsed.answer },
-            Date.now()
-          );
+          processEvent({ type: "UI_CONSENT_BUTTON", answer: parsed.answer }, nowMs());
           sendJson(res, 200, okBody);
         })
         .catch((err: unknown) => {
@@ -410,8 +583,14 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path === "/api/v1/staff/event") {
+      if (!requireStaffLan()) {
+        return;
+      }
       if (req.method !== "POST") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      if (!requireStaffSession()) {
         return;
       }
       readJson(req, 128_000)
@@ -428,7 +607,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
-          processEvent({ type } as OrchestratorEvent, Date.now());
+          processEvent({ type } as OrchestratorEvent, nowMs());
           sendJson(res, 200, okBody);
         })
         .catch((err: unknown) => {
@@ -442,8 +621,14 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path === "/api/v1/staff/pending") {
+      if (!requireStaffLan()) {
+        return;
+      }
       if (req.method !== "GET") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      if (!requireStaffSession()) {
         return;
       }
       const items = store.listPending().map(mapPendingToDto);
@@ -452,8 +637,14 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/confirm")) {
+      if (!requireStaffLan()) {
+        return;
+      }
       if (req.method !== "POST") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      if (!requireStaffSession()) {
         return;
       }
       const id = path.slice("/api/v1/staff/pending/".length, -"/confirm".length);
@@ -468,8 +659,14 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/deny")) {
+      if (!requireStaffLan()) {
+        return;
+      }
       if (req.method !== "POST") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      if (!requireStaffSession()) {
         return;
       }
       const id = path.slice("/api/v1/staff/pending/".length, -"/deny".length);
@@ -509,7 +706,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           pendingStt.delete(stt_request_id);
 
           const text = state.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき";
-          processEvent({ type: "STT_RESULT", request_id: stt_request_id, text }, Date.now());
+          processEvent({ type: "STT_RESULT", request_id: stt_request_id, text }, nowMs());
           sendJson(res, 202, okBody);
         })
         .catch((err: unknown) => {
@@ -526,7 +723,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   });
 
   const tickTimer = setInterval(() => {
-    processEvent({ type: "TICK" }, Date.now());
+    processEvent({ type: "TICK" }, nowMs());
   }, 1000);
   tickTimer.unref();
   server.on("close", () => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { request } from "http";
+import type { IncomingHttpHeaders } from "http";
 import type { Server } from "http";
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
@@ -8,13 +9,14 @@ import { ServerResponse } from "http";
 let server: Server;
 let port: number;
 let store: ReturnType<typeof createStore>;
+let staffCookie = "";
 
 const sendRequest = (
   method: string,
   path: string,
   options?: { headers?: Record<string, string>; body?: string | Buffer }
 ) =>
-  new Promise<{ status: number; body: string }>((resolve, reject) => {
+  new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>((resolve, reject) => {
     const req = request(
       { host: "127.0.0.1", port, method, path },
       (res) => {
@@ -24,7 +26,7 @@ const sendRequest = (
           body += chunk;
         });
         res.on("end", () => {
-          resolve({ status: res.statusCode ?? 0, body });
+          resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
         });
       }
     );
@@ -40,6 +42,32 @@ const sendRequest = (
     }
     req.end();
   });
+
+const cookieFromSetCookie = (setCookie: string): string => {
+  const [first] = setCookie.split(";", 1);
+  if (!first) {
+    throw new Error("missing_set_cookie");
+  }
+  return first;
+};
+
+const loginStaff = async (): Promise<string> => {
+  const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passcode: "test-pass" })
+  });
+  if (response.status !== 200) {
+    throw new Error(`staff_login_failed:${response.status}`);
+  }
+  const setCookie = response.headers["set-cookie"];
+  const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+  return cookieFromSetCookie(String(first ?? ""));
+};
+
+const withStaffCookie = (headers?: Record<string, string>): Record<string, string> => ({
+  ...(headers ?? {}),
+  cookie: staffCookie
+});
 
 const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) => {
   const boundary = "testboundary";
@@ -66,7 +94,8 @@ const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) =>
 const readSseDataMessages = (
   path: string,
   expectedCount: number,
-  onFirstMessage?: () => Promise<void>
+  onFirstMessage?: () => Promise<void>,
+  options?: { headers?: Record<string, string> }
 ) =>
   new Promise<
     Array<{
@@ -127,6 +156,12 @@ const readSseDataMessages = (
       });
     });
 
+    if (options?.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        req.setHeader(key, value);
+      }
+    }
+
     timeout = setTimeout(() => {
       req?.destroy();
       finish(new Error("sse_timeout"));
@@ -138,7 +173,7 @@ const readSseDataMessages = (
     req.end();
   });
 
-const readFirstSseMessage = (path: string) =>
+const readFirstSseMessage = (path: string, options?: { headers?: Record<string, string> }) =>
   new Promise<{
     status: number;
     contentType: string;
@@ -194,6 +229,12 @@ const readFirstSseMessage = (path: string) =>
       });
     });
 
+    if (options?.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        req.setHeader(key, value);
+      }
+    }
+
     timeout = setTimeout(() => {
       req.destroy();
       finish(new Error("sse_timeout"));
@@ -206,6 +247,7 @@ const readFirstSseMessage = (path: string) =>
   });
 
 beforeEach(async () => {
+  process.env.STAFF_PASSCODE = "test-pass";
   store = createStore({ db_path: ":memory:" });
   server = createHttpServer({ store });
   await new Promise<void>((resolve) => {
@@ -216,6 +258,8 @@ beforeEach(async () => {
     throw new Error("server address unavailable");
   }
   port = address.port;
+
+  staffCookie = await loginStaff();
 });
 
 afterEach(async () => {
@@ -230,6 +274,8 @@ afterEach(async () => {
   });
 
   store.close();
+  delete process.env.STAFF_PASSCODE;
+  staffCookie = "";
 });
 
 describe("http-server", () => {
@@ -295,7 +341,9 @@ describe("http-server", () => {
   });
 
   it("streams staff snapshot on connect", async () => {
-    const response = await readFirstSseMessage("/api/v1/staff/stream");
+    const response = await readFirstSseMessage("/api/v1/staff/stream", {
+      headers: withStaffCookie()
+    });
 
     expect(response.status).toBe(200);
     expect(response.contentType).toContain("text/event-stream");
@@ -487,7 +535,7 @@ describe("http-server", () => {
 
   it("returns 400 for staff event with unknown type", async () => {
     const response = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: { "content-type": "application/json" },
+      headers: withStaffCookie({ "content-type": "application/json" }),
       body: JSON.stringify({ type: "NOPE" })
     });
 
@@ -499,7 +547,7 @@ describe("http-server", () => {
 
   it("returns 400 for staff event with invalid json", async () => {
     const response = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: { "content-type": "application/json" },
+      headers: withStaffCookie({ "content-type": "application/json" }),
       body: "{"
     });
 
@@ -526,7 +574,7 @@ describe("http-server", () => {
           port,
           method: "POST",
           path: "/api/v1/staff/event",
-          headers: { "content-type": "application/json" }
+          headers: withStaffCookie({ "content-type": "application/json" })
         },
         () => {
           // Ignore response; this request is aborted.
@@ -553,7 +601,7 @@ describe("http-server", () => {
   it("returns 413 for staff event with too large body", async () => {
     const big = "a".repeat(128_001);
     const response = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: { "content-type": "application/json" },
+      headers: withStaffCookie({ "content-type": "application/json" }),
       body: JSON.stringify({ type: big })
     });
 
@@ -596,7 +644,9 @@ describe("http-server", () => {
   });
 
   it("ignores querystring in routes", async () => {
-    const response = await sendRequest("GET", "/api/v1/staff/pending?x=1");
+    const response = await sendRequest("GET", "/api/v1/staff/pending?x=1", {
+      headers: withStaffCookie()
+    });
 
     expect(response.status).toBe(200);
     expect(JSON.parse(response.body)).toEqual({ items: [] });
@@ -680,7 +730,7 @@ describe("http-server", () => {
   it("streams kiosk record_start command on PTT down", async () => {
     const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
       const response = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
       });
       expect(response.status).toBe(200);
@@ -697,17 +747,23 @@ describe("http-server", () => {
       kind: "likes",
       value: "apples"
     });
-    const deny = await sendRequest("POST", `/api/v1/staff/pending/${id}/deny`);
+    const deny = await sendRequest("POST", `/api/v1/staff/pending/${id}/deny`, {
+      headers: withStaffCookie()
+    });
     expect(deny.status).toBe(200);
     expect(JSON.parse(deny.body)).toEqual({ ok: true });
 
-    const listAfter = await sendRequest("GET", "/api/v1/staff/pending");
+    const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
+      headers: withStaffCookie()
+    });
     expect(listAfter.status).toBe(200);
     expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
   });
 
   it("returns 404 for staff pending deny when id not found", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny");
+    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny", {
+      headers: withStaffCookie()
+    });
     expect(response.status).toBe(404);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "not_found", message: "Not Found" }
@@ -752,13 +808,13 @@ describe("http-server", () => {
 
   it("skips snapshot broadcast when unchanged", async () => {
     const first = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: { "content-type": "application/json" },
+      headers: withStaffCookie({ "content-type": "application/json" }),
       body: JSON.stringify({ type: "STAFF_RESUME" })
     });
     expect(first.status).toBe(200);
 
     const second = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: { "content-type": "application/json" },
+      headers: withStaffCookie({ "content-type": "application/json" }),
       body: JSON.stringify({ type: "STAFF_RESUME" })
     });
     expect(second.status).toBe(200);
@@ -766,7 +822,9 @@ describe("http-server", () => {
 
   it("omits source_quote when null", async () => {
     store.createPending({ personal_name: "taro", kind: "likes", value: "apples" });
-    const list = await sendRequest("GET", "/api/v1/staff/pending");
+    const list = await sendRequest("GET", "/api/v1/staff/pending", {
+      headers: withStaffCookie()
+    });
     expect(list.status).toBe(200);
     const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
     expect(parsed.items.length).toBe(1);
@@ -774,14 +832,19 @@ describe("http-server", () => {
   });
 
   it("broadcasts staff snapshot after staff event", async () => {
-    const messages = await readSseDataMessages("/api/v1/staff/stream", 2, async () => {
+    const messages = await readSseDataMessages(
+      "/api/v1/staff/stream",
+      2,
+      async () => {
       const response = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
       });
       expect(response.status).toBe(200);
       expect(JSON.parse(response.body)).toEqual({ ok: true });
-    });
+      },
+      { headers: withStaffCookie() }
+    );
 
     expect(messages[0]?.type).toBe("staff.snapshot");
     expect(messages[0]?.data).toEqual({
@@ -799,12 +862,12 @@ describe("http-server", () => {
     // 1st utterance: enter PERSONAL
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
       });
       expect(down.status).toBe(200);
       const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_UP" })
       });
       expect(up.status).toBe(200);
@@ -822,12 +885,12 @@ describe("http-server", () => {
     // 2nd utterance: triggers memory_extract stub -> consent UI visible
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
       });
       expect(down.status).toBe(200);
       const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_UP" })
       });
       expect(up.status).toBe(200);
@@ -845,12 +908,12 @@ describe("http-server", () => {
     // 3rd utterance while waiting for consent: triggers consent_decision inner task
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
       });
       expect(down.status).toBe(200);
       const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: { "content-type": "application/json" },
+        headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_UP" })
       });
       expect(up.status).toBe(200);
@@ -875,24 +938,32 @@ describe("http-server", () => {
       expect(JSON.parse(response.body)).toEqual({ ok: true });
     }
 
-    const list = await sendRequest("GET", "/api/v1/staff/pending");
+    const list = await sendRequest("GET", "/api/v1/staff/pending", {
+      headers: withStaffCookie()
+    });
     expect(list.status).toBe(200);
     const listBody = JSON.parse(list.body) as { items: Array<{ id: string }> };
     expect(listBody.items.length).toBe(1);
     const pendingId = listBody.items[0]?.id;
     expect(typeof pendingId).toBe("string");
 
-    const confirm = await sendRequest("POST", `/api/v1/staff/pending/${pendingId}/confirm`);
+    const confirm = await sendRequest("POST", `/api/v1/staff/pending/${pendingId}/confirm`, {
+      headers: withStaffCookie()
+    });
     expect(confirm.status).toBe(200);
     expect(JSON.parse(confirm.body)).toEqual({ ok: true });
 
-    const listAfter = await sendRequest("GET", "/api/v1/staff/pending");
+    const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
+      headers: withStaffCookie()
+    });
     expect(listAfter.status).toBe(200);
     expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
   });
 
   it("returns 404 for staff pending confirm when id not found", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm");
+    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm", {
+      headers: withStaffCookie()
+    });
     expect(response.status).toBe(404);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "not_found", message: "Not Found" }
