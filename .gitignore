@@ -5,7 +5,8 @@ __MACOSX/
 node_modules/
 coverage/
 dist/
-var/
+var/*
+!var/.gitkeep
 *.sqlite
 *.sqlite3
 *.db
