@@ -3,12 +3,15 @@ import { request } from "http";
 import type { IncomingMessage, Server } from "http";
 import { createHttpServer } from "./http-server.js";
 import { shutdownHttpServer, trackHttpServerConnections } from "./graceful-shutdown.js";
+import { createStore } from "./store.js";
 
 let server: Server;
 let port: number;
+let store: ReturnType<typeof createStore>;
 
 beforeEach(async () => {
-  server = createHttpServer();
+  store = createStore({ db_path: ":memory:" });
+  server = createHttpServer({ store });
   trackHttpServerConnections(server);
   trackHttpServerConnections(server);
   await new Promise<void>((resolve) => {
@@ -24,6 +27,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await shutdownHttpServer(server);
+  store.close();
 });
 
 describe("graceful-shutdown", () => {
