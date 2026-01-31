@@ -1,6 +1,7 @@
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
 import { join } from "node:path";
+import { shutdownHttpServer, trackHttpServerConnections } from "./graceful-shutdown.js";
 
 const parsePort = (value: string | undefined): number => {
   if (!value) {
@@ -46,9 +47,17 @@ const housekeepingTimer = setInterval(() => {
 
 housekeepingTimer.unref?.();
 
-const server = createHttpServer().listen(port, host);
+const server = createHttpServer();
+trackHttpServerConnections(server);
+server.listen(port, host);
 
+let shuttingDown = false;
 const shutdown = () => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
   clearInterval(housekeepingTimer);
   try {
     store.close();
@@ -56,9 +65,14 @@ const shutdown = () => {
     console.error(err);
   }
 
-  server.close(() => {
-    process.exitCode = 0;
-  });
+  shutdownHttpServer(server)
+    .then(() => {
+      process.exitCode = 0;
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exitCode = 1;
+    });
 };
 
 process.on("SIGINT", shutdown);
