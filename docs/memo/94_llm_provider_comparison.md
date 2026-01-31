@@ -1,6 +1,6 @@
 # LLM Provider 比較（Google / OpenAI / DeepSeek）
 
-> このファイルはToDo/探索メモ（SoT外）。決定事項は `.specs/10_tech_stack_plan.md` を正とし、必要なら `.specs/` へ反映する。  
+> このファイルはToDo/探索メモ（SoT外）。決定事項は Epic/ADR（`docs/epics/wooly-fluffy-mvp-epic.md`, `docs/decisions.md`）を正とし、必要なら反映する。  
 > 料金/規約は変動し得るため、運用前に一次情報URLで再確認する（本メモは法務判断ではない）。
 
 更新: 2026-01-17

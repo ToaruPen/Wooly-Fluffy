@@ -1,34 +1,96 @@
-# AGENTS.md
+# Agentic-SDD Append: Repository Agent Guide
 
-## WHY (Project Goal / 目的)
-- 学童向け「マスコットLLM」プロジェクトの実装リポジトリ。最小の HTTP healthcheck server とテスト基盤を含む（`README.md`）。
+This file is intentionally written in English for token efficiency.
+User-facing interactions and generated artifacts (PRDs, Epics, Issues) remain in Japanese.
 
-## WHAT (Repo Map / 構成)
-- SoT（要件/決定事項）: `.specs/`（判断の正。仕様変更がある場合は先に更新）
-- メモ/ToDo（SoT外）: `docs/memo/`（検討→「決定」になったら `.specs/` へ反映）
-- 実装: `server/`（Node/TypeScript の最小 HTTP サーバ。詳細は `server/AGENTS.md`）
-- Node: npm workspaces（lockfile は `package-lock.json`）
-- 主要ドキュメント:
-  - `.specs/README.md`
-  - `README.md`
-  - `docs/memo/README.md`
-  - `docs/memo/93_milestone_checklist.md`（マイルストーン実装チェックリスト / 抜け漏れ防止）
-  - `.specs/99_implementation_roadmap.md`（実装ロードマップ / SoT）
+## Repository Purpose
 
-## HOW (Workflow / 作業手順)
+This repository implements a "mascot LLM" project for an after-school program.
+It includes a minimal HTTP healthcheck server and a test harness.
+
+## Source of Truth (SoT)
+
+Priority order:
+- PRD (requirements): `docs/prd/`
+- Epic (implementation plan): `docs/epics/`
+- Decisions (ADRs): `docs/decisions.md`
+- Implementation (code): `server/` (and `web/` when present)
+
+Rule: If you detect a contradiction between higher-level docs and lower-level artifacts, STOP and ask a human with explicit references (PRD/Epic/code:line). Do not invent requirements.
+
+Legacy:
+- The former legacy specs folder has been removed. Do not rely on it.
+
+## Repository Map
+
+- Requirements (PRD): `docs/prd/wooly-fluffy.md`
+- Implementation plan (Epic): `docs/epics/wooly-fluffy-mvp-epic.md`
+- Decisions (ADR template and records): `docs/decisions.md`
+- Memo / backlog (not SoT): `docs/memo/`
+- Server implementation: `server/` (see `server/AGENTS.md` for directory-scoped rules)
+- Node workspaces: npm with `package-lock.json`
+
+## Workflow Commands (Local)
+
 - Install: `npm install`
 - Checks: `npm run typecheck` / `npm run lint` / `npm run test` / `npm run coverage` / `npm run deadcode`
-- Run server: `npm run -w server start`（defaults: `HOST=127.0.0.1`, `PORT=3000`）
-- Coverage: `server/vitest.config.ts` で 100% を要求（落ちたらテストを追加/修正）
-- 各マイルストーン開始/仕上げで `docs/memo/93_milestone_checklist.md` を確認し、抜けや気づきを追記（決定事項は `.specs/` へ反映）
+- Run server: `npm run -w server start` (defaults: `HOST=127.0.0.1`, `PORT=3000`)
 
-## Guardrails (Safety & Change Policy)
-- 仕様/失敗時の挙動は `.specs/` を優先（未定義・曖昧ならユーザーに確認してから進める）
-- データ最小化/ログ方針: `.specs/01_principles.md`, `.specs/04_data_policy_and_memory_model.md`（会話本文/音声/STT全文は保存しない）
-- Provider 統合は timeout/cancel と retry 方針を持たせる（`.specs/05_architecture_approach.md`）
-- 依存追加/主要変更は事前合意が前提。採用理由URL/ライセンスは `.specs/10_tech_stack_plan.md` に記録
-- Secrets はコミットしない（環境変数/ローカル設定）
+## Guardrails
 
-## Codex CLI Notes
-- ユーザーが指定した Skill（例: `/plan`, `/check`, `/commit`）を優先
-- 実装時は `estimation` → `impl-np` をデフォルト手順として扱う
+- Follow PRD/Epic first for required behavior.
+- Data minimization is mandatory: do not persist or log conversation text, audio, or full STT transcripts.
+- Provider integrations must have explicit timeout/cancel and retry policy.
+- Do not commit secrets (use environment variables / local config).
+- Dependency additions and major changes require explicit agreement; record rationale and licensing links in the Epic or ADRs.
+
+## Non-negotiables
+
+- Do not implement features not documented in the PRD/Epic.
+- Completion reports require evidence (diff and test results).
+- Do not mix unrelated changes.
+- Bug fixes require a test that fails before and passes after.
+
+## Agentic-SDD: Development Cycle Protocol
+
+0) Bootstrap
+- Read this file and the minimum necessary rule/command file under `.agent/` for the next action.
+
+1) Entry decision
+- No PRD: `/create-prd`
+- PRD exists but no Epic: `/create-epic`
+- Epic exists but no Issues / not split: `/create-issues`
+- Issues exist: ask the user to choose `/impl` vs `/tdd` (do not choose on your own)
+
+2) Implement one Issue
+- `/estimation` (Full estimate; 11 sections) -> user approval -> `/impl` or `/tdd` -> tests -> gates
+- Use `/sync-docs` whenever you suspect drift, and always before creating a PR
+
+3) PR / merge
+- Only create a PR after `/review` passes; do not change anything outside the Issue scope
+
+## Worktree / Parallel Work
+
+- One Issue = one branch = one worktree (never mix changes)
+- Do not edit PRD/Epic across parallel branches; serialize SoT changes
+- Use `./scripts/worktree.sh check` before applying `parallel-ok`
+
+## Agentic-SDD Command Index
+
+- `/create-prd`: create a PRD (7 questions)
+- `/create-epic`: create an Epic (requires 3 lists)
+- `/generate-project-config`: generate project-specific skills/rules from an Epic
+- `/create-issues`: split an Epic into Issues
+- `/estimation`: write a Full estimate (11 sections) and get approval
+- `/impl`: implement an Issue (estimate required)
+- `/tdd`: implement via TDD (red -> green -> refactor)
+- `/review-cycle`: local review loop
+- `/review`: definition-of-done check
+- `/create-pr`: create a PR (gh)
+- `/sync-docs`: check consistency across PRD/Epic/code
+- `/worktree`: manage git worktrees
+
+## References
+
+- Glossary: `docs/glossary.md`
+- Decisions (ADR): `docs/decisions.md`

@@ -1,22 +1,22 @@
 # ロードマップ / バックログ（ToDo）
 
-> このファイルはToDo（SoT外）。決定事項は `.specs/` に反映する。
+> このファイルはToDo（SoT外）。決定事項は PRD/Epic/ADR（`docs/decisions.md`）へ反映する。
 
 このドキュメントは「MVPの範囲を守りつつ、将来やりたいことを見える化」して、技術スタック選定の前提（将来要件/制約）を固定するためのバックログです。
 
 ## 更新ルール
 
 - 追加したい項目はまずここに追記する
-- 詳細仕様が固まったら、該当する仕様ファイル（`.specs/0x_*.md`）へ移す
+- 詳細仕様が固まったら、PRD/Epic（必要ならADR）へ移す
 - 優先度は `MVP / Next / Later / Won't` で付ける
 
 ## MVP（決定）
 
-MVPの範囲は `.specs/02_usecases_and_mvp.md` を正とします（A→B0まで）。
+MVPの範囲は PRD `docs/prd/wooly-fluffy.md` を正とします（A→B0まで）。
 
 ## Next（MVP後に優先して検討）
 
-- NFC導入（B）での識別置換（`.specs/02_usecases_and_mvp.md` / `docs/memo/90_open_questions.md`）
+- NFC導入（B）での識別置換（PRD `docs/prd/wooly-fluffy.md` / `docs/memo/90_open_questions.md`）
 - STAFFアクセス制御の具体（パスコード/自動ロック/LAN内限定など）の確定
 - 暗号化クラウドバックアップの具体（バックアップ先/保持/削除手順）の確定
 - （任意）2画面運用（同一Macの第2モニターにSTAFFを常時表示）
@@ -57,7 +57,7 @@ MVPの範囲は `.specs/02_usecases_and_mvp.md` を正とします（A→B0ま�
 - 音声/台詞と同期して、表情/口パク/モーションを出す
 
 注意点:
-- SDK/モデル/素材の利用条件（配布、クレジット、改変可否）をSoTに紐づける
+- SDK/モデル/素材の利用条件（配布、クレジット、改変可否）をADRに紐づける
 - 音声生成が落ちても、表示（アバター）は止めない（フォールバック設計）
 - Mac mini上で「音声/LLM/描画」を同時に回すため、モデル/描画は軽量前提（低ポリ・軽いシェーダ・FPS制御）
 

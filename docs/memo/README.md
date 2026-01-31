@@ -2,8 +2,8 @@
 
 このディレクトリは **ToDo / 検討メモ / 実装順** を置く場所です（SoT外）。
 
-- 仕様の原本（SoT）は `.specs/` を正とする
-- ここで検討して「決定」になった内容は、`.specs/` 側へ反映する
+- 仕様の原本（SoT）は `docs/prd/*.md`（要求）と `docs/epics/*.md`（実装計画）を正とする
+- ここで検討して「決定」になった内容は、PRD/Epic/ADR（`docs/decisions.md`）へ反映する
 
 ## ファイル一覧
 
@@ -11,5 +11,5 @@
 - `91_tech_stack_options.md`: 技術スタック候補（探索メモ）
 - `92_roadmap_backlog.md`: ロードマップ/バックログ（ToDo）
 - `93_milestone_checklist.md`: マイルストーン実装チェックリスト（抜け漏れ防止）
-- （移動）実装ロードマップ: `.specs/99_implementation_roadmap.md`（SoT）
+- （参照）MVP Epic: `docs/epics/wooly-fluffy-mvp-epic.md`
 - `94_llm_provider_comparison.md`: LLM Provider比較（Google/OpenAI/DeepSeek）

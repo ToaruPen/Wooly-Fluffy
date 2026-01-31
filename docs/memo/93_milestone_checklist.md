@@ -1,26 +1,26 @@
 # マイルストーン実装チェックリスト（M0〜）
 
-目的: `.specs/99_implementation_roadmap.md` を実装に落とすときの「抜け漏れ防止」用チェックリスト。
+目的: Epic `docs/epics/wooly-fluffy-mvp-epic.md` を実装に落とすときの「抜け漏れ防止」用チェックリスト。
 
 位置づけ:
 - このファイルは SoT ではなく `docs/memo/` 配下（検討/ToDo）に置く
-- 仕様/方針として固定したい項目は、`.specs/` 側へ反映する
+- 仕様/方針として固定したい項目は、PRD/Epic/ADR（`docs/decisions.md`）へ反映する
 
 ## 共通（全マイルストーン）
 
 ### 事前
 
-- [ ] 対象マイルストーンと関連 SoT を読む（`.specs/99_implementation_roadmap.md` + 関連 `.specs/*`）
-- [ ] 曖昧/未確定を `docs/memo/90_open_questions.md` に追記（必要なら先に `.specs/` を更新）
+- [ ] 対象マイルストーンと関連 SoT を読む（PRD `docs/prd/wooly-fluffy.md` + Epic `docs/epics/wooly-fluffy-mvp-epic.md`）
+- [ ] 曖昧/未確定を `docs/memo/90_open_questions.md` に追記し、決定したらPRD/Epic/ADRへ反映する
 - [ ] ブランチを作る（例: `feat/m1-orchestrator`）
-- [ ] 依存追加/主要変更は事前合意し、`.specs/10_tech_stack_plan.md` に採用理由/ライセンスURLを記録
+- [ ] 依存追加/主要変更は事前合意し、Epic（`docs/epics/wooly-fluffy-mvp-epic.md`）またはADR（`docs/decisions.md`）に採用理由/ライセンスURLを記録
 - [ ] Secrets をコミットしない（例: `STAFF_PASSCODE`）
 - [ ] データ最小化とログ方針を確認（会話本文/STT全文/音声/カメラ等を保存・ログ出力しない）
 
 ### 実装中
 
 - [ ] 失敗時フォールバックを先に決める（timeout/cancel/retry、UI 表示）
-- [ ] API エラー形式を `{ "error": { "code": string, "message": string } }` に統一する（`.specs/07_http_api_and_realtime_contract.md`）
+- [ ] API エラー形式を `{ "error": { "code": string, "message": string } }` に統一する（Epic `docs/epics/wooly-fluffy-mvp-epic.md`）
 - [ ] テストを同時に追加し、`coverage 100%` を崩さない
 
 ### 仕上げ（DoD）
@@ -36,21 +36,21 @@
 
 - [ ] `server`: `/health` が `200 {"status":"ok"}` を返す
 - [ ] `server`: `/api/v1` の枠（404/エラー統一）がある
-- [ ] `server`: SSE 枠（`.specs/07`）
+- [ ] `server`: SSE 枠（Epic `docs/epics/wooly-fluffy-mvp-epic.md`）
   - [ ] `GET /api/v1/kiosk/stream`（初回 `kiosk.snapshot` + keep-alive）
   - [ ] `GET /api/v1/staff/stream`（初回 `staff.snapshot` + keep-alive）
 - [ ] `web`: KIOSK/STAFF の最小ルーティング枠（例: `/kiosk`, `/staff`）がある
 - [ ] `web`: `EventSource` で SSE に接続し、受信した `*.snapshot` を画面に反映できる
 - [ ] `web`: `web` でも lint / deadcode / coverage を運用できる
 - [ ] SQLite の配線枠（空でもよい）
-  - [ ] `DB_PATH` の既定値は `var/wooly-fluffy.sqlite3`（`.specs/09_sqlite_schema_and_housekeeping.md`）
+- [ ] `DB_PATH` の既定値は `var/wooly-fluffy.sqlite3`（Epic `docs/epics/wooly-fluffy-mvp-epic.md`）
   - [ ] DB ファイルはコミットされない（`.gitignore` で除外されている）
 - [ ] Evidence: `README.md` にローカル起動手順があり、手元で再現できる
 
 ## M1: Orchestrator（状態機械）を純粋ロジックとして確定 + ユニットテスト
 
 - [x] Orchestrator を「純粋ロジック」として実装する（HTTP/DB/タイマーの実体に依存しない）
-- [x] `.specs/06_orchestrator_contract.md` の状態/イベント/Effect を実装で表現できている
+- [x] Orchestrator の状態/イベント/Effect を実装で表現できている（legacy: 旧契約ドキュメント）
 - [x] `ROOM` / `PERSONAL(name)` 遷移がテストで担保されている
 - [x] `3分` 無操作で `ROOM` へ戻る（`TICK` + `now` 注入で検証）
 - [x] 同意フロー（「覚えていい？」→ yes/no）がテストで担保されている
@@ -71,14 +71,14 @@
   - `npm run coverage`
   - `npm run deadcode`
 - Review artifact:
-  - `.skilled-reviews/.reviews/reviewed_scopes/m1-orchestrator/20260118_215040/code-review.json`
+  - `.agentic-sdd/reviews/`（ローカルのレビュー結果はここに出力される。コミットしない）
 - 気づき:
-  - `stop_output` のような「出力停止」は `.specs/06` の Effects 一覧に無いため、M1 では新規 Effect 追加はせず（必要なら SoT 更新で合意）
+- `stop_output` のような「出力停止」は legacy の旧契約ドキュメントの Effects 一覧に無かったため、M1 では新規 Effect 追加はせず（必要ならSoT更新で合意）
 
 ## M2: Store（SQLite）+ pending TTL + staff confirm（データパス）
 
 - [ ] `DB_PATH`（既定: `var/wooly-fluffy.sqlite3`）で SQLite を開ける
-- [ ] `.specs/09_sqlite_schema_and_housekeeping.md` の最小スキーマで動く
+- [ ] Epic `docs/epics/wooly-fluffy-mvp-epic.md` のデータモデル（SQLite）で動く
   - [ ] `memory_items` テーブル + indexes
   - [ ] `pending/confirmed/rejected/deleted` の状態遷移
   - [ ] `source_quote` の扱い（`pending` は任意、`confirmed/rejected` では `NULL`）
@@ -90,13 +90,13 @@
 
 ## M3: API（KIOSK/STAFF）と Provider 境界（スタブでOK）
 
-- [ ] `.specs/07_http_api_and_realtime_contract.md` の API を実装できている
+- [ ] Epic `docs/epics/wooly-fluffy-mvp-epic.md` の API を実装できている
   - [ ] `POST /api/v1/kiosk/event`（例: `UI_CONSENT_BUTTON`）
   - [ ] `POST /api/v1/kiosk/stt-audio`（multipart。音声は永続保存しない）
   - [ ] `POST /api/v1/staff/event`（PTT/Force ROOM/緊急停止/復帰）
   - [ ] `GET /api/v1/staff/pending`
   - [ ] `POST /api/v1/staff/pending/:id/confirm` / `deny`
-- [ ] `.specs/08_staff_access_control.md` の最小アクセス制御を実装できている
+- [ ] Epic `docs/epics/wooly-fluffy-mvp-epic.md` のセキュリティ設計（STAFF最小アクセス制御）を実装できている
   - [ ] LAN 内限定（remote address 判定、`X-Forwarded-For` を信頼しない）
   - [ ] `POST /api/v1/staff/auth/login`（共有パスコード、Cookie セッション）
   - [ ] `POST /api/v1/staff/auth/keepalive`（無操作3分で失効）
