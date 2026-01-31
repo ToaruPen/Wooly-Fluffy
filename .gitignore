@@ -25,3 +25,9 @@ var/
 !.skilled-reviews/.reviews/reviewed_scopes/**/code-review.json
 .skilled-reviews/.implementation/impl-runs/
 .skilled-reviews/.reviews/reviewed_scopes/**/.current_run
+# Agentic-SDD
+.agent/agents/*.local.md
+.claude/settings.local.json
+.agentic-sdd/
+.opencode/
+.codex/
