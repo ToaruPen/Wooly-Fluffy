@@ -47,7 +47,7 @@ const housekeepingTimer = setInterval(() => {
 
 housekeepingTimer.unref?.();
 
-const server = createHttpServer();
+const server = createHttpServer({ store });
 trackHttpServerConnections(server);
 server.listen(port, host);
 

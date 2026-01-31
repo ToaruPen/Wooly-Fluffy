@@ -122,19 +122,22 @@ export const createKioskSnapshot = (state: OrchestratorState) => ({
   }
 });
 
-export const createStaffSnapshot = (state: OrchestratorState) => ({
+export const createStaffSnapshot = (
+  state: OrchestratorState,
+  pending_count: number
+) => ({
   state: {
     mode: state.mode,
     personal_name: state.personal_name,
     phase: state.phase
   },
   pending: {
-    count: 0
+    count: pending_count
   }
 });
 
 export const initialKioskSnapshot = createKioskSnapshot(createInitialState(0));
-export const initialStaffSnapshot = createStaffSnapshot(createInitialState(0));
+export const initialStaffSnapshot = createStaffSnapshot(createInitialState(0), 0);
 
 const normalizeText = (text: string) =>
   text

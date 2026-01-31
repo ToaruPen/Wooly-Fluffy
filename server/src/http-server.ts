@@ -1,6 +1,15 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
-import { initialKioskSnapshot, initialStaffSnapshot } from "./orchestrator.js";
+import {
+  createInitialState,
+  createKioskSnapshot,
+  createStaffSnapshot,
+  reduceOrchestrator,
+  type OrchestratorEffect,
+  type OrchestratorEvent,
+  type OrchestratorState
+} from "./orchestrator.js";
+import type { createStore } from "./store.js";
 
 const healthBody = JSON.stringify({ status: "ok" });
 
@@ -8,6 +17,8 @@ const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
 
 const notFoundBody = createErrorBody("not_found", "Not Found");
+
+const okBody = JSON.stringify({ ok: true });
 
 const sendJson = (res: ServerResponse, statusCode: number, body: string) => {
   res.statusCode = statusCode;
@@ -24,9 +35,27 @@ const sendError = (
   sendJson(res, statusCode, createErrorBody(code, message));
 };
 
-const kioskSnapshot = initialKioskSnapshot;
+const safeSendError = (
+  res: ServerResponse,
+  statusCode: number,
+  code: string,
+  message: string
+) => {
+  if (res.writableEnded || res.destroyed) {
+    return;
+  }
+  try {
+    sendError(res, statusCode, code, message);
+  } catch {
+    // Connection may already be closed; do not crash the server.
+  }
+};
 
-const staffSnapshot = initialStaffSnapshot;
+type Store = ReturnType<typeof createStore>;
+
+type CreateHttpServerOptions = {
+  store: Store;
+};
 
 const writeSseHeaders = (res: ServerResponse) => {
   res.statusCode = 200;
@@ -40,7 +69,9 @@ const openSse = (
   req: IncomingMessage,
   res: ServerResponse,
   snapshotType: string,
-  snapshotData: object
+  snapshotData: object,
+  onOpen: (client: { send: (type: string, data: object) => void }) => void,
+  onClose: (client: { send: (type: string, data: object) => void }) => void
 ) => {
   writeSseHeaders(res);
 
@@ -52,6 +83,9 @@ const openSse = (
     res.write(`data: ${payload}\n\n`);
   };
 
+  const client = { send };
+  onOpen(client);
+
   send(snapshotType, snapshotData);
 
   const writeKeepAlive = () => {
@@ -62,35 +96,442 @@ const openSse = (
 
   req.on("close", () => {
     clearInterval(keepAlive);
+    onClose(client);
     res.end();
   });
 };
 
-export const createHttpServer = () => {
-  return createServer((req, res) => {
+const parsePath = (url: string): string => {
+  const end = url.search(/[?#]/);
+  return end === -1 ? url : url.slice(0, end);
+};
+
+const readBody = async (req: IncomingMessage, maxBytes: number): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  let size = 0;
+
+  return await new Promise<Buffer>((resolve, reject) => {
+    const cleanup = () => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("close", onClose);
+    };
+
+    const finish = (err?: Error) => {
+      cleanup();
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(Buffer.concat(chunks));
+    };
+
+    const onData = (chunk: unknown) => {
+      const buffer = chunk as Buffer;
+      size += buffer.length;
+      if (size > maxBytes) {
+        finish(new Error("body_too_large"));
+        req.pause();
+        return;
+      }
+      chunks.push(buffer);
+    };
+
+    const onEnd = () => {
+      finish();
+    };
+
+    const onClose = () => {
+      finish(new Error("request_closed"));
+    };
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("close", onClose);
+  });
+};
+
+const readJson = async (req: IncomingMessage, maxBytes: number): Promise<unknown> => {
+  const body = await readBody(req, maxBytes);
+  const text = body.toString("utf8");
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error("invalid_json");
+  }
+};
+
+const extractSttAudioUpload = (
+  contentType: string,
+  body: Buffer
+): { stt_request_id: string; hasAudio: boolean } => {
+  const match = contentType.match(/boundary=(?:(?:\")([^\"]+)(?:\")|([^;]+))/);
+  const boundary = match?.[1] ?? match?.[2];
+  if (!boundary) {
+    throw new Error("invalid_multipart");
+  }
+
+  const text = body.toString("latin1");
+  const boundaryRegex = boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const sttMatch = text.match(
+    /name="stt_request_id"[\s\S]*?\r\n\r\n([^\r\n]*)/
+  );
+  const stt_request_id = sttMatch?.[1]
+    ? Buffer.from(sttMatch[1], "latin1").toString("utf8").trim()
+    : "";
+
+  const audioRegex = new RegExp(
+    `name=\\"audio\\"[\\s\\S]*?\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--${boundaryRegex}`
+  );
+  const audioMatch = text.match(audioRegex);
+  const hasAudio = Boolean(audioMatch?.[1] && audioMatch[1].length > 0);
+
+  return { stt_request_id, hasAudio };
+};
+
+const mapPendingToDto = (item: {
+  id: string;
+  personal_name: string;
+  kind: string;
+  value: string;
+  source_quote: string | null;
+  status: string;
+  created_at_ms: number;
+  expires_at_ms: number;
+}) => ({
+  id: item.id,
+  personal_name: item.personal_name,
+  kind: item.kind,
+  value: item.value,
+  ...(item.source_quote ? { source_quote: item.source_quote } : {}),
+  status: item.status,
+  created_at_ms: item.created_at_ms,
+  expires_at_ms: item.expires_at_ms
+});
+
+export const createHttpServer = (options: CreateHttpServerOptions) => {
+  const { store } = options;
+
+  let state: OrchestratorState = createInitialState(Date.now());
+  let saySeq = 0;
+  const pendingStt = new Set<string>();
+
+  const kioskClients = new Set<{ send: (type: string, data: object) => void }>();
+  const staffClients = new Set<{ send: (type: string, data: object) => void }>();
+
+  let lastKioskSnapshotJson = "";
+  let lastStaffSnapshotJson = "";
+
+  const broadcastKioskSnapshotIfChanged = () => {
+    const snapshot = createKioskSnapshot(state);
+    const json = JSON.stringify(snapshot);
+    if (json === lastKioskSnapshotJson) {
+      return;
+    }
+    lastKioskSnapshotJson = json;
+    for (const client of kioskClients) {
+      client.send("kiosk.snapshot", snapshot);
+    }
+  };
+
+  const broadcastStaffSnapshotIfChanged = () => {
+    const pendingCount = store.listPending().length;
+    const snapshot = createStaffSnapshot(state, pendingCount);
+    const json = JSON.stringify(snapshot);
+    if (json === lastStaffSnapshotJson) {
+      return;
+    }
+    lastStaffSnapshotJson = json;
+    for (const client of staffClients) {
+      client.send("staff.snapshot", snapshot);
+    }
+  };
+
+  const broadcastSnapshotsIfChanged = () => {
+    broadcastKioskSnapshotIfChanged();
+    broadcastStaffSnapshotIfChanged();
+  };
+
+  const sendKioskCommand = (type: string, data: object) => {
+    for (const client of kioskClients) {
+      client.send(type, data);
+    }
+  };
+
+  const stubChatResult = (request_id: string): OrchestratorEvent => ({
+    type: "CHAT_RESULT",
+    request_id,
+    assistant_text: "うんうん"
+  });
+
+  const stubInnerTaskResult = (
+    effect: Extract<OrchestratorEffect, { type: "CALL_INNER_TASK" }>
+  ): OrchestratorEvent => {
+    if (effect.task === "consent_decision") {
+      return {
+        type: "INNER_TASK_RESULT",
+        request_id: effect.request_id,
+        json_text: JSON.stringify({ task: "consent_decision", answer: "unknown" })
+      };
+    }
+    return {
+      type: "INNER_TASK_RESULT",
+      request_id: effect.request_id,
+      json_text: JSON.stringify({
+        task: "memory_extract",
+        candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" }
+      })
+    };
+  };
+
+  const processEvent = (event: OrchestratorEvent, now: number) => {
+    const result = reduceOrchestrator(state, event, now);
+    state = result.next_state;
+    broadcastSnapshotsIfChanged();
+
+    for (const effect of result.effects) {
+      switch (effect.type) {
+        case "KIOSK_RECORD_START":
+          sendKioskCommand("kiosk.command.record_start", {});
+          break;
+        case "KIOSK_RECORD_STOP": {
+          sendKioskCommand("kiosk.command.record_stop", {
+            stt_request_id: state.in_flight.stt_request_id
+          });
+          break;
+        }
+        case "SAY": {
+          saySeq += 1;
+          sendKioskCommand("kiosk.command.speak", {
+            say_id: `say-${saySeq}`,
+            text: effect.text
+          });
+          break;
+        }
+        case "CALL_STT":
+          pendingStt.add(effect.request_id);
+          break;
+        case "CALL_CHAT":
+          processEvent(stubChatResult(effect.request_id), now);
+          break;
+        case "CALL_INNER_TASK":
+          processEvent(stubInnerTaskResult(effect), now);
+          break;
+        case "STORE_WRITE_PENDING":
+          store.createPending(effect.input);
+          broadcastStaffSnapshotIfChanged();
+          break;
+        case "SET_MODE":
+        case "SHOW_CONSENT_UI":
+          break;
+      }
+    }
+  };
+
+  const server = createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       sendJson(res, 200, healthBody);
       return;
     }
 
-    if (req.url === "/api/v1/kiosk/stream") {
+    const path = parsePath(req.url!);
+
+    if (path === "/api/v1/kiosk/stream") {
       if (req.method !== "GET") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
         return;
       }
-      openSse(req, res, "kiosk.snapshot", kioskSnapshot);
+      openSse(
+        req,
+        res,
+        "kiosk.snapshot",
+        createKioskSnapshot(state),
+        (client) => {
+          kioskClients.add(client);
+        },
+        (client) => {
+          kioskClients.delete(client);
+        }
+      );
       return;
     }
 
-    if (req.url === "/api/v1/staff/stream") {
+    if (path === "/api/v1/staff/stream") {
       if (req.method !== "GET") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
         return;
       }
-      openSse(req, res, "staff.snapshot", staffSnapshot);
+      openSse(
+        req,
+        res,
+        "staff.snapshot",
+        createStaffSnapshot(state, store.listPending().length),
+        (client) => {
+          staffClients.add(client);
+        },
+        (client) => {
+          staffClients.delete(client);
+        }
+      );
+      return;
+    }
+
+    if (path === "/api/v1/kiosk/event") {
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      readJson(req, 128_000)
+        .then((body) => {
+          const parsed = body as { type?: unknown; answer?: unknown };
+          if (parsed.type !== "UI_CONSENT_BUTTON") {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return;
+          }
+          if (parsed.answer !== "yes" && parsed.answer !== "no") {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return;
+          }
+          processEvent(
+            { type: "UI_CONSENT_BUTTON", answer: parsed.answer },
+            Date.now()
+          );
+          sendJson(res, 200, okBody);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.message === "body_too_large") {
+            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
+            return;
+          }
+          safeSendError(res, 400, "invalid_json", "Invalid JSON");
+        });
+      return;
+    }
+
+    if (path === "/api/v1/staff/event") {
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      readJson(req, 128_000)
+        .then((body) => {
+          const parsed = body as { type?: unknown };
+          const type = parsed.type;
+          if (
+            type !== "STAFF_PTT_DOWN" &&
+            type !== "STAFF_PTT_UP" &&
+            type !== "STAFF_FORCE_ROOM" &&
+            type !== "STAFF_EMERGENCY_STOP" &&
+            type !== "STAFF_RESUME"
+          ) {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return;
+          }
+          processEvent({ type } as OrchestratorEvent, Date.now());
+          sendJson(res, 200, okBody);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.message === "body_too_large") {
+            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
+            return;
+          }
+          safeSendError(res, 400, "invalid_json", "Invalid JSON");
+        });
+      return;
+    }
+
+    if (path === "/api/v1/staff/pending") {
+      if (req.method !== "GET") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      const items = store.listPending().map(mapPendingToDto);
+      sendJson(res, 200, JSON.stringify({ items }));
+      return;
+    }
+
+    if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/confirm")) {
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      const id = path.slice("/api/v1/staff/pending/".length, -"/confirm".length);
+      const ok = store.confirmById(id);
+      if (!ok) {
+        sendJson(res, 404, notFoundBody);
+        return;
+      }
+      broadcastStaffSnapshotIfChanged();
+      sendJson(res, 200, okBody);
+      return;
+    }
+
+    if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/deny")) {
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      const id = path.slice("/api/v1/staff/pending/".length, -"/deny".length);
+      const ok = store.denyById(id);
+      if (!ok) {
+        sendJson(res, 404, notFoundBody);
+        return;
+      }
+      broadcastStaffSnapshotIfChanged();
+      sendJson(res, 200, okBody);
+      return;
+    }
+
+    if (path === "/api/v1/kiosk/stt-audio") {
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+      const contentTypeHeader = req.headers["content-type"];
+      const contentType = String(contentTypeHeader ?? "");
+      if (!contentType.includes("multipart/form-data")) {
+        sendError(res, 400, "invalid_request", "Invalid request");
+        return;
+      }
+      readBody(req, 2_500_000)
+        .then((body) => {
+          const upload = extractSttAudioUpload(contentType, body);
+          const stt_request_id = upload.stt_request_id;
+          if (!stt_request_id || !upload.hasAudio) {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return;
+          }
+          if (!pendingStt.has(stt_request_id) || state.in_flight.stt_request_id !== stt_request_id) {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return;
+          }
+          pendingStt.delete(stt_request_id);
+
+          const text = state.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき";
+          processEvent({ type: "STT_RESULT", request_id: stt_request_id, text }, Date.now());
+          sendJson(res, 202, okBody);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.message === "body_too_large") {
+            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
+            return;
+          }
+          safeSendError(res, 400, "invalid_request", "Invalid request");
+        });
       return;
     }
 
     sendJson(res, 404, notFoundBody);
   });
+
+  const tickTimer = setInterval(() => {
+    processEvent({ type: "TICK" }, Date.now());
+  }, 1000);
+  tickTimer.unref();
+  server.on("close", () => {
+    clearInterval(tickTimer);
+  });
+
+  return server;
 };

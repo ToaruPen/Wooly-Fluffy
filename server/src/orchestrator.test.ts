@@ -26,7 +26,7 @@ describe("orchestrator", () => {
     const state = createInitialState(0);
 
     expect(createKioskSnapshot(state)).toEqual(initialKioskSnapshot);
-    expect(createStaffSnapshot(state)).toEqual(initialStaffSnapshot);
+    expect(createStaffSnapshot(state, 0)).toEqual(initialStaffSnapshot);
   });
 
   it("handles PTT flow in room", () => {
