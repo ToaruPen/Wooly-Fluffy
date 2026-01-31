@@ -51,6 +51,28 @@ Legacy:
 - Do not mix unrelated changes.
 - Bug fixes require a test that fails before and passes after.
 
+## Dynamic Verification (Runtime Behavior)
+
+Static checks and unit tests often miss liveness/lifecycle regressions.
+
+If your change affects runtime behavior, add a dynamic verification (integration test or smoke test run via `/review-cycle`'s `TEST_COMMAND`).
+
+Examples (non-exhaustive):
+- long-lived connections (SSE/WebSocket)
+- graceful shutdown / SIGINT / SIGTERM
+- timers/intervals
+- file/DB/network I/O boundaries
+- external provider calls (timeout/cancel/retry) and streaming
+
+Requirements:
+- deterministic and time-bounded (explicit timeout) so hangs become test failures
+- covers the regression risk introduced by the diff (do not chase pre-existing issues)
+
+Directory-scoped guidance:
+- cross-cutting rule is here (repo root)
+- server-specific examples: `server/AGENTS.md` (SSE/shutdown/connection draining)
+- when an LLM/provider layer directory is added, add a scoped `AGENTS.md` there describing dynamic tests for timeout/cancel/retry/stream behavior
+
 ## Agentic-SDD: Development Cycle Protocol
 
 0) Bootstrap
