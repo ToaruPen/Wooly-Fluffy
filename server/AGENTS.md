@@ -18,3 +18,16 @@ Applies to files under `server/`. This file augments the repo-root `AGENTS.md`.
   - `lint`: ESLint (disallow `console.log` / disallow direct `fs` usage)
   - Coverage is 100% in `vitest.config.ts` (`src/main.ts` is excluded)
 - Build output: `dist/` (Node ESM, `"type": "module"`)
+
+## Runtime / Dynamic Verification
+
+When changing server runtime behavior, add a dynamic verification (test or smoke) that fails on hangs.
+
+Common cases:
+- SSE endpoints (`/api/v1/*/stream`) and other long-lived connections
+- shutdown behavior (`server.close()` waiting for existing connections)
+- keep-alive intervals/timers
+
+Notes:
+- `src/main.ts` is excluded from coverage, so do not rely on coverage gates to catch lifecycle regressions.
+- Prefer a test that keeps an SSE connection open, triggers shutdown, and asserts shutdown completes within a timeout.
