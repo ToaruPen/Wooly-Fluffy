@@ -12,7 +12,7 @@ type StoreWritePending = (
   input: Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }>["input"]
 ) => void;
 
-export type EffectExecutor = {
+type EffectExecutor = {
   executeEffects: (effects: OrchestratorEffect[]) => OrchestratorEvent[];
   transcribeStt: (input: {
     request_id: string;
