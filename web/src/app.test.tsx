@@ -224,11 +224,37 @@ describe("app", () => {
       return { ...actual, connectSse: connectSseMock };
     });
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(200, { ok: true }))
-      .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
-      .mockRejectedValueOnce(new Error("offline"));
+    const stopSpy = vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/webm" }));
+    const startSpy = vi.fn(async () => ({ stop: stopSpy }));
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+
+    const convertSpy = vi.fn(
+      async () => new File([new Uint8Array([0])], "stt-1.wav", { type: "audio/wav" })
+    );
+    vi.doMock("./kiosk-audio", () => ({ convertRecordingBlobToWavFile: convertSpy }));
+
+    let kioskEventCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url === "/api/v1/kiosk/stt-audio" && method === "POST") {
+        return jsonResponse(202, { ok: true });
+      }
+
+      if (url === "/api/v1/kiosk/event" && method === "POST") {
+        kioskEventCalls += 1;
+        if (kioskEventCalls === 1) {
+          return jsonResponse(200, { ok: true });
+        }
+        if (kioskEventCalls === 2) {
+          return jsonResponse(500, { error: { code: "boom", message: "boom" } });
+        }
+        throw new Error("offline");
+      }
+
+      return jsonResponse(404, { error: { code: "not_found", message: "Not Found" } });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     window.history.pushState({}, "", "/kiosk");
@@ -283,13 +309,23 @@ describe("app", () => {
 
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 5, data: {} });
+      await Promise.resolve();
     });
     expect(document.body.textContent ?? "").toContain("Recording");
 
     await act(async () => {
-      handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 6, data: {} });
+      handlers.onMessage?.({
+        type: "kiosk.command.record_stop",
+        seq: 6,
+        data: { stt_request_id: "stt-1" }
+      });
+      await Promise.resolve();
     });
     expect(document.body.textContent ?? "").not.toContain("Recording");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/kiosk/stt-audio",
+      expect.objectContaining({ method: "POST", body: expect.any(FormData) })
+    );
 
     await act(async () => {
       handlers.onSnapshot({
@@ -356,6 +392,523 @@ describe("app", () => {
     });
 
     expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows audio error when record_stop has invalid data", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 1, data: {} });
+    });
+
+    expect(document.body.textContent ?? "").toContain("Audio error: Invalid record_stop message");
+  });
+
+  it("shows audio error when record_stop data is not an object", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 1, data: null });
+    });
+
+    expect(document.body.textContent ?? "").toContain("Audio error: Invalid record_stop message");
+  });
+
+  it("ignores stale start errors after record_stop cancels a start", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const startPttSession = vi.fn(async () => {
+      throw new Error("start failed");
+    });
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      handlers.onMessage?.({
+        type: "kiosk.command.record_stop",
+        seq: 2,
+        data: { stt_request_id: "stt-1" }
+      });
+      await Promise.resolve();
+    });
+
+    expect(startPttSession).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent ?? "").toContain("Audio error: start failed");
+  });
+
+  it("stops recording on invalid record_stop and allows restart", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const stopSpy = vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/webm" }));
+    const startSpy = vi.fn(async () => ({ stop: stopSpy }));
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+      handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 2, data: {} });
+      await Promise.resolve();
+    });
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent ?? "").toContain("Audio error: Invalid record_stop message");
+
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 3, data: {} });
+      await Promise.resolve();
+    });
+
+    expect(startSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops recording on invalid record_stop when session is already established", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const stopSpy = vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/webm" }));
+    const startSpy = vi.fn(async () => ({ stop: stopSpy }));
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 2, data: {} });
+      await Promise.resolve();
+    });
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops after invalid record_stop even if start is still pending", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const stopSpy = vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/webm" }));
+    let resolveSession: ((s: { stop: () => Promise<Blob> }) => void) | null = null;
+    const startSpy = vi.fn(
+      async () =>
+        await new Promise<{ stop: () => Promise<Blob> }>((resolve) => {
+          resolveSession = resolve;
+        })
+    );
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 2, data: {} });
+      await Promise.resolve();
+    });
+
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(resolveSession).toBeTruthy();
+
+    await act(async () => {
+      resolveSession?.({ stop: stopSpy });
+      await Promise.resolve();
+    });
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops recording on unmount even if stop() rejects", async () => {
+    vi.resetModules();
+
+    const closeSpy = vi.fn();
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: closeSpy
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const stopSpy = vi.fn(async () => {
+      throw new Error("stop rejected");
+    });
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: vi.fn(async () => ({ stop: stopSpy })) }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+
+    let appRoot: Root;
+    await act(async () => {
+      const mainModule = await import("./main");
+      appRoot = mainModule.appRoot;
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      appRoot.unmount();
+      await Promise.resolve();
+    });
+
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows audio error when record_stop arrives without an active session", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({
+        type: "kiosk.command.record_stop",
+        seq: 1,
+        data: { stt_request_id: "stt-1" }
+      });
+    });
+
+    expect(document.body.textContent ?? "").toContain("Audio error: Not recording");
+  });
+
+  it("does not start PTT twice for duplicate record_start", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const startSpy = vi.fn(async () => ({ stop: vi.fn(async () => new Blob()) }));
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 2, data: {} });
+      await Promise.resolve();
+    });
+
+    expect(startSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows audio error on upload HTTP failure and on start failure", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    const startSpy = vi
+      .fn()
+      .mockResolvedValueOnce({ stop: vi.fn(async () => new Blob([new Uint8Array([1])])) })
+      .mockRejectedValueOnce(new Error("no mic"));
+    vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/kiosk/stt-audio") {
+        return jsonResponse(500, { error: { code: "boom", message: "boom" } });
+      }
+      return jsonResponse(200, { ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+      handlers.onMessage?.({
+        type: "kiosk.command.record_stop",
+        seq: 2,
+        data: { stt_request_id: "stt-1" }
+      });
+      await Promise.resolve();
+    });
+    expect(document.body.textContent ?? "").toContain("Audio error: HTTP 500");
+
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 3, data: {} });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(document.body.textContent ?? "").toContain("Audio error: no mic");
+  });
+
+  it("shows audio error when stopping recording fails", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    vi.doMock("./kiosk-ptt", () => ({
+      startPttSession: vi.fn(async () => ({
+        stop: vi.fn(async () => {
+          throw new Error("stop failed");
+        })
+      }))
+    }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+      handlers.onMessage?.({
+        type: "kiosk.command.record_stop",
+        seq: 2,
+        data: { stt_request_id: "stt-1" }
+      });
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? "").toContain("Audio error: stop failed");
+  });
+
+  it("uses fallback message when startPttSession rejects with a non-Error", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    vi.doMock("./kiosk-ptt", () => ({
+      startPttSession: vi.fn(async () => {
+        throw "boom";
+      })
+    }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? "").toContain("Audio error: Failed to start recording");
+  });
+
+  it("uses fallback message when upload chain rejects with a non-Error", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    vi.doMock("./kiosk-ptt", () => ({
+      startPttSession: vi.fn(async () => ({
+        stop: vi.fn(async () => {
+          throw "boom";
+        })
+      }))
+    }));
+    vi.doMock("./kiosk-audio", () => ({
+      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+    await act(async () => {
+      await import("./main");
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
+      await Promise.resolve();
+      handlers.onMessage?.({
+        type: "kiosk.command.record_stop",
+        seq: 2,
+        data: { stt_request_id: "stt-1" }
+      });
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? "").toContain("Audio error: Failed to upload audio");
   });
 
   it("renders staff login, then control UI, then locks on inactivity", async () => {

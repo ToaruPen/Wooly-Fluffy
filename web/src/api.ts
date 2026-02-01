@@ -18,6 +18,16 @@ export const postJson = (path: string, body: unknown) =>
     credentials: "include"
   });
 
+export const postFormData = (path: string, body: FormData) =>
+  fetch(path, {
+    method: "POST",
+    headers: {
+      accept: "application/json"
+    },
+    body,
+    credentials: "include"
+  });
+
 export const postEmpty = (path: string) =>
   fetch(path, {
     method: "POST",
