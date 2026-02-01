@@ -253,6 +253,7 @@ Rule of thumb:
 
 ## ラベル
 
+- 少なくとも1つ付与（例: `enhancement` / `bug` / `documentation` / `question`）
 - `priority:P[0-4]`（バグ修正の場合）
 - `parallel-ok` / `blocked`
 ```

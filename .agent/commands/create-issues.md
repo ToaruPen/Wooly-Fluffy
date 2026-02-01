@@ -62,6 +62,10 @@ Always include:
 - Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`)
   - Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`). The "minimum" is a floor; add any tests needed to satisfy AC and prevent regressions.
 - Boundary conditions section: include `## 境界条件（異常系/リソース解放/レース条件）` and ensure at least one item becomes an AC or an explicit test.
+- Labels: choose and apply labels when creating the Issue.
+  - At least 1 label is required.
+  - Prefer existing repo labels (e.g. `bug`, `enhancement`, `documentation`, `question`).
+  - If a desired label does not exist in the repo, do not invent it silently; either omit it or ask a human to create it.
 - If bug fix / urgent response: select P0-P4 in the body and add `priority:P[0-4]` label
 
 ### Phase 6: Create Issues
