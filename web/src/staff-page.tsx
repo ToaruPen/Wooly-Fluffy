@@ -60,6 +60,8 @@ export const StaffPage = () => {
   const [pttHeld, setPttHeld] = useState(false);
   const [lastActivityAtMs, setLastActivityAtMs] = useState(() => Date.now());
 
+  const pttHeldRef = useRef(false);
+
   const activitySeqRef = useRef(0);
   const keepaliveSeqRef = useRef(0);
 
@@ -67,6 +69,20 @@ export const StaffPage = () => {
     activitySeqRef.current += 1;
     setLastActivityAtMs(Date.now());
   }, []);
+
+  const setPttHeldSafe = (next: boolean) => {
+    pttHeldRef.current = next;
+    setPttHeld(next);
+  };
+
+  const releasePtt = () => {
+    if (!pttHeldRef.current) {
+      return;
+    }
+    markActivity();
+    setPttHeldSafe(false);
+    void sendStaffEvent("STAFF_PTT_UP");
+  };
 
   const refreshPending = async () => {
     setPendingError(null);
@@ -306,13 +322,17 @@ export const StaffPage = () => {
                 aria-pressed={pttHeld}
                 onPointerDown={() => {
                   markActivity();
-                  setPttHeld(true);
+                  setPttHeldSafe(true);
                   void sendStaffEvent("STAFF_PTT_DOWN");
                 }}
                 onPointerUp={() => {
-                  markActivity();
-                  setPttHeld(false);
-                  void sendStaffEvent("STAFF_PTT_UP");
+                  releasePtt();
+                }}
+                onPointerCancel={() => {
+                  releasePtt();
+                }}
+                onPointerOut={() => {
+                  releasePtt();
                 }}
               >
                 Push to talk

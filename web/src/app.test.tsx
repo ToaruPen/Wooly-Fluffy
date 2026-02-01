@@ -484,6 +484,15 @@ describe("app", () => {
     );
     expect(ptt).toBeTruthy();
     await act(async () => {
+      ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      ptt?.dispatchEvent(new Event("pointerout", { bubbles: true }));
+      ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      ptt?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
+    });
+    const staffEventCalls = fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/v1/staff/event");
+    expect(staffEventCalls.length).toBeGreaterThanOrEqual(2);
+
+    await act(async () => {
       ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
     });
