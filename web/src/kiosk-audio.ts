@@ -15,11 +15,16 @@ export const convertRecordingBlobToWavFile = async (input: {
   const arrayBuffer = await readBlobArrayBuffer(input.blob);
 
   const ctx = new AudioContext();
-  const decoded = await ctx.decodeAudioData(arrayBuffer);
+  try {
+    const decoded = await ctx.decodeAudioData(arrayBuffer);
 
-  const wav = audioBufferToWav16kMono(decoded);
-  const file = new File([wav.buffer as ArrayBuffer], input.fileName, { type: "audio/wav" });
-
-  await ctx.close();
-  return file;
+    const wav = audioBufferToWav16kMono(decoded);
+    return new File([wav.buffer as ArrayBuffer], input.fileName, { type: "audio/wav" });
+  } finally {
+    try {
+      await ctx.close();
+    } catch {
+      // ignore
+    }
+  }
 };

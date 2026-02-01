@@ -45,4 +45,62 @@ describe("kiosk-audio", () => {
     expect(file2.name).toBe("stt-2.wav");
     expect(arrayBufferSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("closes AudioContext even when decodeAudioData rejects", async () => {
+    class FakeAudioContext {
+      closed = false;
+
+      async decodeAudioData(_buffer: ArrayBuffer) {
+        throw new Error("decode failed");
+      }
+
+      async close() {
+        this.closed = true;
+      }
+    }
+
+    const ctx = new FakeAudioContext();
+    vi.stubGlobal("AudioContext", (function AudioContextCtor() {
+      return ctx;
+    }) as unknown as typeof AudioContext);
+
+    await expect(
+      convertRecordingBlobToWavFile({
+        blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }),
+        fileName: "stt-x.wav"
+      })
+    ).rejects.toThrow("decode failed");
+
+    expect(ctx.closed).toBe(true);
+  });
+
+  it("ignores AudioContext close errors", async () => {
+    class FakeAudioContext {
+      async decodeAudioData(_buffer: ArrayBuffer) {
+        return {
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          getChannelData: () => new Float32Array([0])
+        };
+      }
+
+      async close() {
+        throw new Error("close failed");
+      }
+    }
+
+    const ctx = new FakeAudioContext();
+    vi.stubGlobal("AudioContext", (function AudioContextCtor() {
+      return ctx;
+    }) as unknown as typeof AudioContext);
+
+    const file = await convertRecordingBlobToWavFile({
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }),
+      fileName: "stt-ok.wav"
+    });
+
+    expect(file.name).toBe("stt-ok.wav");
+    expect(file.type).toBe("audio/wav");
+    expect(file.size).toBeGreaterThanOrEqual(44);
+  });
 });
