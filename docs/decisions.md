@@ -98,6 +98,11 @@ ADR-8
 ステータス: 承認
 日付: 2026-01-31
 
+ADR-9
+タイトル: Provider Layer アセットのライセンスと帰属表記
+ステータス: 承認
+日付: 2026-02-01
+
 ---
 
 ## ADR-1: データ最小化（保存/ログ）方針
@@ -387,3 +392,67 @@ Local LLM:
 
 - PRD: `docs/prd/wooly-fluffy.md` セクション 7
 - Epic: `docs/epics/wooly-fluffy-mvp-epic.md` セクション 2.1, 3.2
+
+---
+
+## ADR-9: Provider Layer アセットのライセンスと帰属表記
+
+### ステータス
+
+承認
+
+### 日付
+
+2026-02-01
+
+### コンテキスト
+
+Provider Layer で利用する外部アセット（VRM モデル、whisper.cpp、VOICEVOX）について、ライセンス条件と帰属表記要件を明確にする必要がある。
+特に VOICEVOX は利用規約でクレジット表記が必須となっており、運用前に確認・遵守する必要がある。
+
+### 選択肢
+
+#### 案A: 一次情報URLのみを記録し、解釈は運用前に再確認する
+
+- 説明: ADR-8 の方針に従い、ライセンス/規約の一次情報URLを記録し、解釈や要約は含めない
+- メリット: 情報の正確性が保たれ、運用前に最新の規約を確認できる
+- デメリット: 都度確認が必要
+
+#### 案B: ライセンス全文をコピーして記録する
+
+- 説明: ライセンス全文をドキュメントに含める
+- メリット: オフラインでも参照可能
+- デメリット: 更新時の同期が困難、ドキュメントが肥大化
+
+### 決定
+
+案Aを採用する。
+
+### 理由
+
+- ADR-8 で確立した「一次情報URLの運用」方針と一貫性がある
+- ライセンス/規約の変更に対して柔軟に対応できる
+- 運用前の再確認フローを強制できる
+
+### 影響
+
+- VRM、whisper.cpp、VOICEVOX の一次情報URLを記録する
+- VOICEVOX のクレジット表記要件を明記する
+- 運用前にこれらのURLを再確認し、最新の規約に従う必要がある
+
+### 一次情報URL
+
+VRM:
+- VRM CC0 ライセンス: https://vroid.pixiv.help/hc/en-us/articles/4402614652569
+
+whisper.cpp:
+- whisper.cpp LICENSE: https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE
+
+VOICEVOX:
+- VOICEVOX 利用規約: https://voicevox.hiroshiba.jp/term/
+- 帰属表記要件: VOICEVOX を利用したことがわかるクレジット表記が必要
+
+### 参照
+
+- ADR-8: 一次情報URLの運用
+- Epic: `docs/epics/wooly-fluffy-mvp-epic.md` セクション 2.1（技術スタック）
