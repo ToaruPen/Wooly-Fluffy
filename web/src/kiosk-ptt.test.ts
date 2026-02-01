@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startPttSession } from "./kiosk-ptt";
 
 describe("kiosk-ptt", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
   it("throws when getUserMedia is not available", async () => {
     Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true });
     await expect(startPttSession()).rejects.toThrow("getUserMedia is not available");
@@ -231,6 +236,96 @@ describe("kiosk-ptt", () => {
 
     const session = await startPttSession();
     await expect(session.stop()).rejects.toThrow("Recording error");
+    expect(stopTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops tracks if MediaRecorder start throws", async () => {
+    const stopTrack = vi.fn();
+    const stream = {
+      getTracks: () => [{ stop: stopTrack }]
+    };
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn(async () => stream) },
+      configurable: true
+    });
+
+    class FakeMediaRecorder {
+      mimeType = "audio/webm";
+      ondataavailable: ((e: BlobEvent) => void) | null = null;
+      onstop: ((e: Event) => void) | null = null;
+      onerror: ((e: Event) => void) | null = null;
+
+      constructor(_stream: MediaStream) {}
+
+      start() {
+        throw new Error("start failed");
+      }
+
+      stop() {}
+    }
+
+    vi.stubGlobal("MediaRecorder", FakeMediaRecorder as unknown as typeof MediaRecorder);
+
+    await expect(startPttSession()).rejects.toThrow("start failed");
+    expect(stopTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops tracks if MediaRecorder constructor throws", async () => {
+    const stopTrack = vi.fn();
+    const stream = {
+      getTracks: () => [{ stop: stopTrack }]
+    };
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn(async () => stream) },
+      configurable: true
+    });
+
+    class FakeMediaRecorder {
+      constructor(_stream: MediaStream) {
+        throw new Error("ctor failed");
+      }
+    }
+
+    vi.stubGlobal("MediaRecorder", FakeMediaRecorder as unknown as typeof MediaRecorder);
+
+    await expect(startPttSession()).rejects.toThrow("ctor failed");
+    expect(stopTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores errors when stopping tracks", async () => {
+    const stopTrack = vi.fn(() => {
+      throw new Error("stop failed");
+    });
+    const stream = {
+      getTracks: () => [{ stop: stopTrack }]
+    };
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn(async () => stream) },
+      configurable: true
+    });
+
+    class FakeMediaRecorder {
+      mimeType = "audio/webm";
+      ondataavailable: ((e: BlobEvent) => void) | null = null;
+      onstop: ((e: Event) => void) | null = null;
+      onerror: ((e: Event) => void) | null = null;
+
+      constructor(_stream: MediaStream) {}
+
+      start() {}
+
+      stop() {
+        const blob = new Blob([new Uint8Array([1])], { type: "audio/webm" });
+        this.ondataavailable?.({ data: blob } as unknown as BlobEvent);
+        this.onstop?.(new Event("stop"));
+      }
+    }
+
+    vi.stubGlobal("MediaRecorder", FakeMediaRecorder as unknown as typeof MediaRecorder);
+
+    const session = await startPttSession();
+    const blob = await session.stop();
+    expect(blob.size).toBeGreaterThan(0);
     expect(stopTrack).toHaveBeenCalledTimes(1);
   });
 });
