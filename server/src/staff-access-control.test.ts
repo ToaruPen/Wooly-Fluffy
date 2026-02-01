@@ -45,6 +45,48 @@ const cookieFromSetCookie = (setCookie: string): string => {
   return first;
 };
 
+const openSse = (path: string, options: { cookie: string; timeoutMs: number }) =>
+  new Promise<{ close: Promise<void> }>((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, method: "GET", path }, (res) => {
+      const contentTypeHeader = res.headers["content-type"];
+      const contentType = Array.isArray(contentTypeHeader)
+        ? contentTypeHeader[0] ?? ""
+        : contentTypeHeader ?? "";
+      if ((res.statusCode ?? 0) !== 200 || !String(contentType).includes("text/event-stream")) {
+        req.destroy();
+        reject(new Error(`unexpected_sse_response:${res.statusCode ?? 0}:${String(contentType)}`));
+        return;
+      }
+
+      res.resume();
+
+      let settled = false;
+      const close = new Promise<void>((resolveCloseInner, rejectClose) => {
+        const timeout = setTimeout(() => {
+          req.destroy();
+          rejectClose(new Error("did_not_close"));
+        }, options.timeoutMs);
+
+        const finish = () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolveCloseInner();
+        };
+        res.on("close", finish);
+        res.on("end", finish);
+      });
+
+      resolve({ close });
+    });
+
+    req.on("error", reject);
+    req.setHeader("cookie", options.cookie);
+    req.end();
+  });
+
 describe("staff access control", () => {
   beforeEach(async () => {
     store = createStore({ db_path: ":memory:" });
@@ -844,5 +886,45 @@ describe("staff access control", () => {
       headers: { cookie }
     });
     expect(pending.status).toBe(200);
+  });
+
+  it("closes the staff SSE stream after session expires", async () => {
+    process.env.STAFF_PASSCODE = "test-pass";
+
+    let nowMs = 0;
+    const localServer = createHttpServer({
+      store,
+      now_ms: () => nowMs,
+      get_remote_address: () => "127.0.0.1"
+    });
+    closeServer = () =>
+      new Promise<void>((resolve, reject) => {
+        localServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    await new Promise<void>((resolve) => localServer.listen(0, "127.0.0.1", resolve));
+    const address = localServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("server address unavailable");
+    }
+    port = address.port;
+
+    const login = await sendRequest("POST", "/api/v1/staff/auth/login", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passcode: "test-pass" })
+    });
+    const setCookie = login.headers["set-cookie"];
+    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    const cookie = cookieFromSetCookie(String(first ?? ""));
+
+    const stream = await openSse("/api/v1/staff/stream", { cookie, timeoutMs: 2500 });
+    nowMs = 181_000;
+    await new Promise<void>((resolve) => setTimeout(resolve, 1100));
+    await stream.close;
   });
 });

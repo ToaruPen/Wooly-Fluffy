@@ -122,13 +122,18 @@ const writeSseHeaders = (res: ServerResponse) => {
   res.flushHeaders();
 };
 
+type SseClient = {
+  send: (type: string, data: object) => void;
+  close: () => void;
+};
+
 const openSse = (
   req: IncomingMessage,
   res: ServerResponse,
   snapshotType: string,
   snapshotData: object,
-  onOpen: (client: { send: (type: string, data: object) => void }) => void,
-  onClose: (client: { send: (type: string, data: object) => void }) => void
+  onOpen: (client: SseClient) => void,
+  onClose: (client: SseClient) => void
 ) => {
   writeSseHeaders(res);
 
@@ -140,7 +145,25 @@ const openSse = (
     res.write(`data: ${payload}\n\n`);
   };
 
-  const client = { send };
+  let keepAlive: ReturnType<typeof setInterval> | null = null;
+  let closed = false;
+  const cleanupOnce = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    if (keepAlive) {
+      clearInterval(keepAlive);
+      keepAlive = null;
+    }
+    onClose(client);
+    res.end();
+  };
+
+  const client: SseClient = {
+    send,
+    close: cleanupOnce
+  };
   onOpen(client);
 
   send(snapshotType, snapshotData);
@@ -149,12 +172,10 @@ const openSse = (
     res.write(": keep-alive\n\n");
   };
   writeKeepAlive();
-  const keepAlive = setInterval(writeKeepAlive, 25000);
+  keepAlive = setInterval(writeKeepAlive, 25000);
 
   req.on("close", () => {
-    clearInterval(keepAlive);
-    onClose(client);
-    res.end();
+    cleanupOnce();
   });
 };
 
@@ -305,8 +326,9 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   let saySeq = 0;
   const pendingStt = new Set<string>();
 
-  const kioskClients = new Set<{ send: (type: string, data: object) => void }>();
-  const staffClients = new Set<{ send: (type: string, data: object) => void }>();
+  const kioskClients = new Set<SseClient>();
+  const staffClients = new Set<SseClient>();
+  const staffSseSessions = new Map<SseClient, string>();
 
   let lastKioskSnapshotJson = "";
   let lastStaffSnapshotJson = "";
@@ -333,6 +355,15 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     lastStaffSnapshotJson = json;
     for (const client of staffClients) {
       client.send("staff.snapshot", snapshot);
+    }
+  };
+
+  const sweepExpiredStaffSseClients = () => {
+    const entries = Array.from(staffSseSessions.entries());
+    for (const [client, token] of entries) {
+      if (!validateStaffSession(token)) {
+        client.close();
+      }
     }
   };
 
@@ -535,7 +566,8 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
         return;
       }
-      if (!requireStaffSession()) {
+      const token = requireStaffSession();
+      if (!token) {
         return;
       }
       openSse(
@@ -545,9 +577,11 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         createStaffSnapshot(state, store.listPending().length),
         (client) => {
           staffClients.add(client);
+          staffSseSessions.set(client, token);
         },
         (client) => {
           staffClients.delete(client);
+          staffSseSessions.delete(client);
         }
       );
       return;
@@ -723,6 +757,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   });
 
   const tickTimer = setInterval(() => {
+    sweepExpiredStaffSseClients();
     processEvent({ type: "TICK" }, nowMs());
   }, 1000);
   tickTimer.unref();
