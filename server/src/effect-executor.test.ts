@@ -326,7 +326,11 @@ describe("effect-executor", () => {
       storeWritePending: () => {}
     });
 
-    const event = executor.transcribeStt({ request_id: "stt-1", mode: "ROOM", audio_present: true });
+    const event = executor.transcribeStt({
+      request_id: "stt-1",
+      mode: "ROOM",
+      wav: Buffer.from("dummy")
+    });
     expect(event).toEqual({ type: "STT_RESULT", request_id: "stt-1", text: "hi" });
   });
 
@@ -344,7 +348,11 @@ describe("effect-executor", () => {
       storeWritePending: () => {}
     });
 
-    const event = executor.transcribeStt({ request_id: "stt-9", mode: "ROOM", audio_present: true });
+    const event = executor.transcribeStt({
+      request_id: "stt-9",
+      mode: "ROOM",
+      wav: Buffer.from("dummy")
+    });
     expect(event).toEqual({ type: "STT_FAILED", request_id: "stt-9" });
   });
 });

@@ -1,6 +1,8 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { Readable } from "node:stream";
+import { parseSttAudioUploadMultipart } from "./multipart.js";
 import {
   createInitialState,
   createKioskSnapshot,
@@ -236,35 +238,6 @@ const readJson = async (req: IncomingMessage, maxBytes: number): Promise<unknown
   } catch {
     throw new Error("invalid_json");
   }
-};
-
-const extractSttAudioUpload = (
-  contentType: string,
-  body: Buffer
-): { stt_request_id: string; hasAudio: boolean } => {
-  const match = contentType.match(/boundary=(?:(?:\")([^\"]+)(?:\")|([^;]+))/);
-  const boundary = match?.[1] ?? match?.[2];
-  if (!boundary) {
-    throw new Error("invalid_multipart");
-  }
-
-  const text = body.toString("latin1");
-  const boundaryRegex = boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-  const sttMatch = text.match(
-    /name="stt_request_id"[\s\S]*?\r\n\r\n([^\r\n]*)/
-  );
-  const stt_request_id = sttMatch?.[1]
-    ? Buffer.from(sttMatch[1], "latin1").toString("utf8").trim()
-    : "";
-
-  const audioRegex = new RegExp(
-    `name=\\"audio\\"[\\s\\S]*?\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--${boundaryRegex}`
-  );
-  const audioMatch = text.match(audioRegex);
-  const hasAudio = Boolean(audioMatch?.[1] && audioMatch[1].length > 0);
-
-  return { stt_request_id, hasAudio };
 };
 
 const mapPendingToDto = (item: {
@@ -730,11 +703,18 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         sendError(res, 400, "invalid_request", "Invalid request");
         return;
       }
+
       readBody(req, 2_500_000)
-        .then((body) => {
-          const upload = extractSttAudioUpload(contentType, body);
+        .then((body) =>
+          parseSttAudioUploadMultipart({
+            headers: req.headers,
+            stream: Readable.from([body]),
+            max_file_bytes: 2_500_000
+          })
+        )
+        .then((upload) => {
           const stt_request_id = upload.stt_request_id;
-          if (!stt_request_id || !upload.hasAudio) {
+          if (!stt_request_id || upload.wav.length === 0) {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
@@ -747,7 +727,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           const event = effectExecutor.transcribeStt({
             request_id: stt_request_id,
             mode: state.mode,
-            audio_present: upload.hasAudio
+            wav: upload.wav
           });
           processEvent(event, nowMs());
           sendJson(res, 202, okBody);

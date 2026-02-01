@@ -671,6 +671,42 @@ describe("http-server", () => {
     });
   });
 
+  it("returns 400 for stt-audio with malformed multipart (missing header separator)", async () => {
+    const boundary = "testboundary";
+    const body = Buffer.from(
+      [`--${boundary}\r\n`, `Content-Disposition: form-data; name="stt_request_id"\r\n`, `stt-1\r\n`, `--${boundary}--\r\n`].join(""),
+      "utf8"
+    );
+
+    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      body
+    });
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "invalid_request", message: "Invalid request" }
+    });
+  });
+
+  it("returns 400 for stt-audio with malformed multipart (missing closing boundary)", async () => {
+    const boundary = "testboundary";
+    const body = Buffer.from(
+      [`--${boundary}\r\n`, `Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`, `stt-1`].join(""),
+      "utf8"
+    );
+
+    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      body
+    });
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "invalid_request", message: "Invalid request" }
+    });
+  });
+
   it("returns 400 for stt-audio missing audio part", async () => {
     const boundary = "testboundary";
     const body = Buffer.from(

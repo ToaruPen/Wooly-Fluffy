@@ -103,6 +103,11 @@ ADR-9
 ステータス: 承認
 日付: 2026-02-01
 
+ADR-10
+タイトル: multipart/form-data の音声アップロード解析に busboy を採用
+ステータス: 承認
+日付: 2026-02-02
+
 ---
 
 ## ADR-1: データ最小化（保存/ログ）方針
@@ -202,6 +207,57 @@ ADR-9
 - Epic: `docs/epics/wooly-fluffy-mvp-epic.md` セクション 3.1
 
 ---
+
+## ADR-10: multipart/form-data の音声アップロード解析に busboy を採用
+
+### ステータス
+
+承認
+
+### 日付
+
+2026-02-02
+
+### コンテキスト
+
+`/api/v1/kiosk/stt-audio` は `multipart/form-data` で音声ファイル（WAV）を受け取る。
+自前の簡易パーサ（バイト列検索）だと、境界文字列やヘッダ相当のパターンがバイナリ内に出現した場合に切り出しの誤りが起き得る。
+運用上は稀でも、発生時の原因特定が難しく、子どもの体験（たまに失敗する）に直結する。
+
+### 選択肢
+
+#### 案A: 自前実装を継続（バイト列検索）
+
+- 説明: 現状の `Buffer.indexOf` ベースの切り出しを維持する
+- メリット: 依存追加が無い
+- デメリット: バイナリ/境界条件に弱く、修正やテストの作り込みが必要
+
+#### 案B: 実績のあるmultipartパーサを採用（busboy）
+
+- 説明: `busboy` により `multipart/form-data` の解析を行う
+- メリット: 実運用でよく使われるパーサに寄せられる。自前でRFC相当の境界処理を実装する無駄を避けられる
+- デメリット: 依存が1つ増える
+
+### 決定
+
+案B（busboy）を採用する。
+
+### 理由
+
+- 追加依存よりも、誤実装/テスト不足による「たまに壊れる」不具合の方が運用コストが高い
+- 仕様上、音声は永続保存しない（ADR-1）ため、入力の取り扱いは堅牢性を優先する
+
+### 影響
+
+- `server` に `busboy` 依存が追加される
+- `/api/v1/kiosk/stt-audio` のmultipart解析は busboy ベースになる
+
+### 参照
+
+- PRD: `docs/prd/wooly-fluffy.md`
+- Epic: `docs/epics/provider-layer-epic.md`
+- Issue: #18
+- busboy license: https://github.com/mscdex/busboy/blob/master/LICENSE
 
 ## ADR-3: モード設計（ROOM/PERSONAL）と同意フロー
 
