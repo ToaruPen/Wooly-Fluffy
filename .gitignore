@@ -11,6 +11,10 @@ var/*
 *.sqlite3
 *.db
 
+# Playwright
+web/test-results/
+web/playwright-report/
+
 # Agentic-SDD
 .agent/agents/*.local.md
 .claude/settings.local.json
