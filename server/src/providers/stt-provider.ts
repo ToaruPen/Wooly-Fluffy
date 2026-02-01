@@ -18,7 +18,7 @@ type ExecFileSync = (
   }
 ) => string;
 
-export type WhisperCppSttProviderOptions = {
+type WhisperCppSttProviderOptions = {
   cli_path?: string;
   model_path?: string;
   timeout_ms?: number;
