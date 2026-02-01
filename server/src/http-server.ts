@@ -1,6 +1,8 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { Readable } from "node:stream";
+import { parseSttAudioUploadMultipart } from "./multipart.js";
 import {
   createInitialState,
   createKioskSnapshot,
@@ -236,46 +238,6 @@ const readJson = async (req: IncomingMessage, maxBytes: number): Promise<unknown
   } catch {
     throw new Error("invalid_json");
   }
-};
-
-const extractMultipartPart = (
-  body: Buffer,
-  boundary: string,
-  name: string
-): Buffer | null => {
-  const nameMarker = Buffer.from(`name="${name}"`, "utf8");
-  const index = body.indexOf(nameMarker);
-  if (index === -1) {
-    return null;
-  }
-  const headerEnd = body.indexOf(Buffer.from("\r\n\r\n", "utf8"), index);
-  if (headerEnd === -1) {
-    return null;
-  }
-  const contentStart = headerEnd + 4;
-  const boundaryMarker = Buffer.from(`\r\n--${boundary}`, "utf8");
-  const contentEnd = body.indexOf(boundaryMarker, contentStart);
-  if (contentEnd === -1) {
-    return null;
-  }
-  return body.slice(contentStart, contentEnd);
-};
-
-const extractSttAudioUpload = (
-  contentType: string,
-  body: Buffer
-): { stt_request_id: string; wav: Buffer } => {
-  const match = contentType.match(/boundary=(?:(?:\")([^\"]+)(?:\")|([^;]+))/);
-  const boundary = match?.[1] ?? match?.[2];
-  if (!boundary) {
-    throw new Error("invalid_multipart");
-  }
-
-  const sttPart = extractMultipartPart(body, boundary, "stt_request_id");
-  const stt_request_id = sttPart ? sttPart.toString("utf8").trim() : "";
-
-  const audioPart = extractMultipartPart(body, boundary, "audio") ?? Buffer.from([]);
-  return { stt_request_id, wav: audioPart };
 };
 
 const mapPendingToDto = (item: {
@@ -741,9 +703,16 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         sendError(res, 400, "invalid_request", "Invalid request");
         return;
       }
+
       readBody(req, 2_500_000)
-        .then((body) => {
-          const upload = extractSttAudioUpload(contentType, body);
+        .then((body) =>
+          parseSttAudioUploadMultipart({
+            headers: req.headers,
+            stream: Readable.from([body]),
+            max_file_bytes: 2_500_000
+          })
+        )
+        .then((upload) => {
           const stt_request_id = upload.stt_request_id;
           if (!stt_request_id || upload.wav.length === 0) {
             sendError(res, 400, "invalid_request", "Invalid request");
