@@ -71,6 +71,14 @@ Rules:
 - If Q6 is "No": write "N/A（理由）" in the section
 - If Q6 is "Unknown": resolve Unknown first (Phase 2)
 
+### Phase 4.7: Boundary conditions (required)
+
+Fill section **3.6 境界条件（異常系/リソース解放/レース）** in `docs/epics/_template.md`.
+
+Minimum requirements:
+- List at least 2 concrete failure/race scenarios at the system boundary (I/O, lifecycle) and the expected behavior.
+- Ensure the scenarios are actionable so they can be copied into Issue AC and tests.
+
 ### Phase 5: Apply counting definitions
 
 - External services: each SaaS / managed DB / identity provider / external API counts as 1

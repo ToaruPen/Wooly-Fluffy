@@ -60,7 +60,8 @@ Always include:
 - Estimated change size
 - Dependencies ("Blocked by" + "what becomes possible")
 - Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`)
- - Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`). The "minimum" is a floor; add any tests needed to satisfy AC and prevent regressions.
+  - Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`). The "minimum" is a floor; add any tests needed to satisfy AC and prevent regressions.
+- Boundary conditions section: include `## 境界条件（異常系/リソース解放/レース条件）` and ensure at least one item becomes an AC or an explicit test.
 - If bug fix / urgent response: select P0-P4 in the body and add `priority:P[0-4]` label
 
 ### Phase 6: Create Issues
