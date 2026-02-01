@@ -8,7 +8,7 @@ export type LlmProviderKind = "stub" | "local" | "external";
 
 export type Providers = {
   stt: {
-    transcribe: (input: { mode: Mode; audio_present: boolean }) => { text: string };
+    transcribe: (input: { mode: Mode; wav: Buffer }) => { text: string };
     health: () => ProviderHealth;
   };
   tts: {

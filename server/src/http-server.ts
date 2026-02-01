@@ -238,33 +238,44 @@ const readJson = async (req: IncomingMessage, maxBytes: number): Promise<unknown
   }
 };
 
+const extractMultipartPart = (
+  body: Buffer,
+  boundary: string,
+  name: string
+): Buffer | null => {
+  const nameMarker = Buffer.from(`name="${name}"`, "utf8");
+  const index = body.indexOf(nameMarker);
+  if (index === -1) {
+    return null;
+  }
+  const headerEnd = body.indexOf(Buffer.from("\r\n\r\n", "utf8"), index);
+  if (headerEnd === -1) {
+    return null;
+  }
+  const contentStart = headerEnd + 4;
+  const boundaryMarker = Buffer.from(`\r\n--${boundary}`, "utf8");
+  const contentEnd = body.indexOf(boundaryMarker, contentStart);
+  if (contentEnd === -1) {
+    return null;
+  }
+  return body.slice(contentStart, contentEnd);
+};
+
 const extractSttAudioUpload = (
   contentType: string,
   body: Buffer
-): { stt_request_id: string; hasAudio: boolean } => {
+): { stt_request_id: string; wav: Buffer } => {
   const match = contentType.match(/boundary=(?:(?:\")([^\"]+)(?:\")|([^;]+))/);
   const boundary = match?.[1] ?? match?.[2];
   if (!boundary) {
     throw new Error("invalid_multipart");
   }
 
-  const text = body.toString("latin1");
-  const boundaryRegex = boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sttPart = extractMultipartPart(body, boundary, "stt_request_id");
+  const stt_request_id = sttPart ? sttPart.toString("utf8").trim() : "";
 
-  const sttMatch = text.match(
-    /name="stt_request_id"[\s\S]*?\r\n\r\n([^\r\n]*)/
-  );
-  const stt_request_id = sttMatch?.[1]
-    ? Buffer.from(sttMatch[1], "latin1").toString("utf8").trim()
-    : "";
-
-  const audioRegex = new RegExp(
-    `name=\\"audio\\"[\\s\\S]*?\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--${boundaryRegex}`
-  );
-  const audioMatch = text.match(audioRegex);
-  const hasAudio = Boolean(audioMatch?.[1] && audioMatch[1].length > 0);
-
-  return { stt_request_id, hasAudio };
+  const audioPart = extractMultipartPart(body, boundary, "audio") ?? Buffer.from([]);
+  return { stt_request_id, wav: audioPart };
 };
 
 const mapPendingToDto = (item: {
@@ -734,7 +745,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         .then((body) => {
           const upload = extractSttAudioUpload(contentType, body);
           const stt_request_id = upload.stt_request_id;
-          if (!stt_request_id || !upload.hasAudio) {
+          if (!stt_request_id || upload.wav.length === 0) {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
@@ -747,7 +758,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           const event = effectExecutor.transcribeStt({
             request_id: stt_request_id,
             mode: state.mode,
-            audio_present: upload.hasAudio
+            wav: upload.wav
           });
           processEvent(event, nowMs());
           sendJson(res, 202, okBody);

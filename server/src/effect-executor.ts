@@ -17,7 +17,7 @@ type EffectExecutor = {
   transcribeStt: (input: {
     request_id: string;
     mode: Mode;
-    audio_present: boolean;
+    wav: Buffer;
   }) => OrchestratorEvent;
 };
 
@@ -111,7 +111,7 @@ export const createEffectExecutor = (deps: {
     try {
       const result = deps.providers.stt.transcribe({
         mode: input.mode,
-        audio_present: input.audio_present
+        wav: input.wav
       });
       return {
         type: "STT_RESULT",
