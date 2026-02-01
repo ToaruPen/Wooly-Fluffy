@@ -52,6 +52,12 @@ jobs:
       - name: Build (web)
         run: npm run -w web build
 
+      - name: Install Playwright (Chromium)
+        run: npm run -w web e2e:install:ci
+
+      - name: E2E (web)
+        run: npm run -w web e2e
+
       - name: Coverage
         run: npm run coverage
 

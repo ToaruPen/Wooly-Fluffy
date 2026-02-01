@@ -37,3 +37,313 @@
   font-size: 14px;
   overflow: auto;
 }
+
+.kioskLayout {
+  position: relative;
+  display: grid;
+  gap: 16px;
+}
+
+.kioskStage {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #d8c39a;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+  background: radial-gradient(
+    circle at 30% 20%,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(244, 227, 191, 0.65) 40%,
+    rgba(233, 210, 167, 0.8) 100%
+  );
+  aspect-ratio: 16 / 9;
+}
+
+.kioskStagePlaceholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.kioskStageTitle {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 22px;
+  color: #2b241d;
+}
+
+.kioskStageHint {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #6b4f2a;
+  text-align: center;
+}
+
+.kioskOverlay {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.kioskStatusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.kioskBadge {
+  pointer-events: none;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(216, 195, 154, 0.8);
+  color: #2b241d;
+}
+
+.recordingPill {
+  align-self: flex-start;
+  margin-top: 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(181, 77, 77, 0.9);
+  color: #fff;
+}
+
+.speechBubble {
+  margin-top: auto;
+  align-self: center;
+  max-width: 680px;
+  width: 100%;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(216, 195, 154, 0.9);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.12);
+}
+
+.speechText {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.4;
+  color: #2b241d;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(43, 36, 29, 0.55);
+}
+
+.modal {
+  width: min(560px, 100%);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(216, 195, 154, 0.9);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.2);
+}
+
+.modalTitle {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 22px;
+  color: #2b241d;
+}
+
+.modalActions {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+}
+
+.primaryButton {
+  background: #c26a3a;
+  color: #fff;
+}
+
+.secondaryButton {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(216, 195, 154, 1);
+  color: #2b241d;
+}
+
+.dangerButton {
+  background: #b54d4d;
+  color: #fff;
+}
+
+.errorText {
+  margin-top: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #b54d4d;
+}
+
+.formRow {
+  margin-top: 12px;
+}
+
+.formLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #2b241d;
+}
+
+.textInput {
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid rgba(216, 195, 154, 1);
+  padding: 10px 12px;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #2b241d;
+}
+
+.staffLayout {
+  display: grid;
+  gap: 16px;
+}
+
+.staffStatus {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #d8c39a;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+}
+
+.staffStatusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.staffControls {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #d8c39a;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+}
+
+.staffControlGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+.pttButton,
+.pttButtonActive {
+  min-height: 72px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 18px;
+}
+
+.pttButton {
+  background: #c26a3a;
+  color: #fff;
+}
+
+.pttButtonActive {
+  background: #a85530;
+  color: #fff;
+}
+
+.staffPending {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #d8c39a;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+}
+
+.pendingHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pendingList {
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.pendingCard {
+  border: 1px solid rgba(216, 195, 154, 1);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.pendingTitle {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #2b241d;
+}
+
+.pendingQuote {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(43, 36, 29, 0.06);
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 14px;
+  color: #2b241d;
+}
+
+.pendingActions {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 768px) {
+  .kioskLayout {
+    gap: 20px;
+  }
+
+  .staffControlGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pttButton,
+  .pttButtonActive {
+    grid-column: 1 / -1;
+  }
+}

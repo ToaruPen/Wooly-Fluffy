@@ -1,4 +1,4 @@
-type ServerMessage = {
+export type ServerMessage = {
   type: string;
   seq: number;
   data: unknown;
@@ -6,6 +6,7 @@ type ServerMessage = {
 
 type SseHandlers = {
   onSnapshot: (data: unknown) => void;
+  onMessage?: (message: ServerMessage) => void;
   onError?: (error: Error) => void;
 };
 
@@ -34,6 +35,11 @@ export const connectSse = (url: string, handlers: SseHandlers) => {
 
     if (parsed.type.endsWith(".snapshot")) {
       handlers.onSnapshot(parsed.data);
+      return;
+    }
+
+    if (handlers.onMessage) {
+      handlers.onMessage(parsed);
     }
   };
 

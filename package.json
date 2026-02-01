@@ -13,6 +13,11 @@
     "coverage": "npm run -w server coverage && npm run -w web coverage",
     "deadcode": "knip"
   },
+  "knip": {
+    "ignore": [
+      "web/e2e/webserver.mjs"
+    ]
+  },
   "devDependencies": {
     "knip": "^5.80.2"
   }
