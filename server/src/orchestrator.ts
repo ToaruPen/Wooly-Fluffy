@@ -67,6 +67,8 @@ export type OrchestratorEffect =
   | { type: "CALL_CHAT"; request_id: string; input: ChatInput }
   | { type: "CALL_INNER_TASK"; request_id: string } & InnerTaskInput
   | { type: "SAY"; text: string }
+  | { type: "SET_EXPRESSION"; expression: "neutral" | "happy" | "sad" | "surprised" }
+  | { type: "PLAY_MOTION"; motion_id: string; motion_instance_id: string }
   | { type: "SET_MODE"; mode: Mode; personal_name?: string }
   | { type: "SHOW_CONSENT_UI"; visible: boolean }
   | {

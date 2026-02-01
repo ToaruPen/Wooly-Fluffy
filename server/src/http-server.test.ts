@@ -283,7 +283,14 @@ describe("http-server", () => {
     const response = await sendRequest("GET", "/health");
 
     expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ status: "ok" });
+    expect(JSON.parse(response.body)).toEqual({
+      status: "ok",
+      providers: {
+        stt: { status: "ok" },
+        tts: { status: "ok" },
+        llm: { status: "ok", kind: "stub" }
+      }
+    });
   });
 
   it("returns 404 for unknown paths", async () => {
