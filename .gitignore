@@ -22,3 +22,7 @@ web/playwright-report/
 .opencode/
 .codex/
 .sisyphus/
+
+# Provider Layer assets (large binaries, manual setup)
+whisper.cpp/
+web/public/assets/vrm/*.vrm
