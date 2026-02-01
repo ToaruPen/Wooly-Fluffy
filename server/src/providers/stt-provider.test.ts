@@ -228,6 +228,42 @@ describe("stt-provider (whisper.cpp)", () => {
     expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toEqual({ text: "ok" });
   });
 
+  it("times out via real subprocess and leaves no temp wav file behind", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const cliPath = path.join(tmpRoot, "whisper-cli");
+    const modelPath = path.join(tmpRoot, "model.bin");
+
+    fs.writeFileSync(
+      cliPath,
+      "#!/usr/bin/env bash\n" +
+        "# Intentionally sleep longer than timeout to exercise execFileSync timeout path\n" +
+        "sleep 0.2\n",
+      { mode: 0o755 }
+    );
+    fs.writeFileSync(modelPath, "x");
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: cliPath,
+      model_path: modelPath,
+      tmp_dir: tmpRoot,
+      timeout_ms: 50
+    });
+
+    const start = Date.now();
+    try {
+      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
+      throw new Error("expected_timeout");
+    } catch (err: unknown) {
+      const elapsedMs = Date.now() - start;
+      expect(elapsedMs).toBeLessThan(1000);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).name).toBe("SttTimeoutError");
+    }
+
+    const files = fs.readdirSync(tmpRoot);
+    expect(files.some((f) => f.startsWith("wf-stt-") && f.endsWith(".wav"))).toBe(false);
+  });
+
   it("classifies temp write failure as SttProcessError", () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     const notADir = path.join(tmpRoot, "not-a-dir");
