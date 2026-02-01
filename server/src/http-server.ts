@@ -6,14 +6,13 @@ import {
   createKioskSnapshot,
   createStaffSnapshot,
   reduceOrchestrator,
-  type OrchestratorEffect,
   type OrchestratorEvent,
   type OrchestratorState
 } from "./orchestrator.js";
+import { createEffectExecutor } from "./effect-executor.js";
 import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
-
-const healthBody = JSON.stringify({ status: "ok" });
+import type { Providers } from "./providers/types.js";
 
 const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
@@ -323,7 +322,6 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   };
 
   let state: OrchestratorState = createInitialState(nowMs());
-  let saySeq = 0;
   const pendingStt = new Set<string>();
 
   const kioskClients = new Set<SseClient>();
@@ -378,31 +376,51 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
   };
 
-  const stubChatResult = (request_id: string): OrchestratorEvent => ({
-    type: "CHAT_RESULT",
-    request_id,
-    assistant_text: "うんうん"
-  });
-
-  const stubInnerTaskResult = (
-    effect: Extract<OrchestratorEffect, { type: "CALL_INNER_TASK" }>
-  ): OrchestratorEvent => {
-    if (effect.task === "consent_decision") {
-      return {
-        type: "INNER_TASK_RESULT",
-        request_id: effect.request_id,
-        json_text: JSON.stringify({ task: "consent_decision", answer: "unknown" })
-      };
+  const providers: Providers = {
+    stt: {
+      transcribe: (input) => ({
+        text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき"
+      }),
+      health: () => ({ status: "ok" })
+    },
+    tts: {
+      health: () => ({ status: "ok" })
+    },
+    llm: {
+      kind: "stub",
+      chat: {
+        call: (_input) => ({ assistant_text: "うんうん" })
+      },
+      inner_task: {
+        call: (input) => {
+          if (input.task === "consent_decision") {
+            return {
+              json_text: JSON.stringify({ task: "consent_decision", answer: "unknown" })
+            };
+          }
+          return {
+            json_text: JSON.stringify({
+              task: "memory_extract",
+              candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" }
+            })
+          };
+        }
+      },
+      health: () => ({ status: "ok" })
     }
-    return {
-      type: "INNER_TASK_RESULT",
-      request_id: effect.request_id,
-      json_text: JSON.stringify({
-        task: "memory_extract",
-        candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" }
-      })
-    };
   };
+
+  const effectExecutor = createEffectExecutor({
+    providers,
+    sendKioskCommand,
+    onSttRequested: (request_id) => {
+      pendingStt.add(request_id);
+    },
+    storeWritePending: (input) => {
+      store.createPending(input);
+      broadcastStaffSnapshotIfChanged();
+    }
+  });
 
   const processEvent = (event: OrchestratorEvent, now: number) => {
     const result = reduceOrchestrator(state, event, now);
@@ -410,47 +428,34 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     broadcastSnapshotsIfChanged();
 
     for (const effect of result.effects) {
-      switch (effect.type) {
-        case "KIOSK_RECORD_START":
-          sendKioskCommand("kiosk.command.record_start", {});
-          break;
-        case "KIOSK_RECORD_STOP": {
-          sendKioskCommand("kiosk.command.record_stop", {
-            stt_request_id: state.in_flight.stt_request_id
-          });
-          break;
-        }
-        case "SAY": {
-          saySeq += 1;
-          sendKioskCommand("kiosk.command.speak", {
-            say_id: `say-${saySeq}`,
-            text: effect.text
-          });
-          break;
-        }
-        case "CALL_STT":
-          pendingStt.add(effect.request_id);
-          break;
-        case "CALL_CHAT":
-          processEvent(stubChatResult(effect.request_id), now);
-          break;
-        case "CALL_INNER_TASK":
-          processEvent(stubInnerTaskResult(effect), now);
-          break;
-        case "STORE_WRITE_PENDING":
-          store.createPending(effect.input);
-          broadcastStaffSnapshotIfChanged();
-          break;
-        case "SET_MODE":
-        case "SHOW_CONSENT_UI":
-          break;
+      if (effect.type === "KIOSK_RECORD_STOP") {
+        sendKioskCommand("kiosk.command.record_stop", {
+          stt_request_id: state.in_flight.stt_request_id
+        });
+        continue;
+      }
+
+      const events = effectExecutor.executeEffects([effect]);
+      for (const nextEvent of events) {
+        processEvent(nextEvent, now);
       }
     }
   };
 
   const server = createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
-      sendJson(res, 200, healthBody);
+      sendJson(
+        res,
+        200,
+        JSON.stringify({
+          status: "ok",
+          providers: {
+            stt: providers.stt.health(),
+            tts: providers.tts.health(),
+            llm: { ...providers.llm.health(), kind: providers.llm.kind }
+          }
+        })
+      );
       return;
     }
 
@@ -739,8 +744,12 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           }
           pendingStt.delete(stt_request_id);
 
-          const text = state.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき";
-          processEvent({ type: "STT_RESULT", request_id: stt_request_id, text }, nowMs());
+          const event = effectExecutor.transcribeStt({
+            request_id: stt_request_id,
+            mode: state.mode,
+            audio_present: upload.hasAudio
+          });
+          processEvent(event, nowMs());
           sendJson(res, 202, okBody);
         })
         .catch((err: unknown) => {
