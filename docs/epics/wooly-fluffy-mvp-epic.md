@@ -25,6 +25,8 @@
 - 低センシティブの記憶候補（最大1件） + 子どもの同意 + 職員Confirm/Deny + `pending/confirmed` 永続
 - KIOSK/STAFFのRealtime（SSE）と最小UI
 - STAFF最小アクセス制御（LAN内限定/共有パスコード/自動ロック）
+- 「芸事」（例: ダンス/手をふる等）の最小対応（許可リストのモーションIDのみ）
+- ツール呼び出しの最小対応（例: 天気の取得。許可リスト + タイムアウト + フォールバック）
 
 **含まない（PRDのスコープ外を継承）:**
 - バイオメトリクス（声紋等）による本人確認
@@ -42,7 +44,7 @@ Epic対応: コンポーネント数を2に抑え、単機ローカル運用を�
 
 項目: 技術方針
 PRDの値: シンプル優先
-Epic対応: 外部サービスは最大1、非同期基盤は導入しない
+Epic対応: 外部サービス数の上限では縛らず、許可リスト + タイムアウト + フォールバックで暴走/コスト/故障モードを抑制する（同時に有効なLLM Providerは1つ。切り替えはサーバ再起動で行う）
 
 項目: 既存言語/FW
 PRDの値: Yes
@@ -59,10 +61,22 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 ### 2.1 外部サービス一覧
 
 外部サービス-1
-名称: OpenAI API（予定）
-用途: STT（音声→テキスト）、LLM（会話/内側タスク）
-必須理由: 運用開始前に、精度と遅延を短期間で検証しやすい
-代替案: ローカルSTT（whisper.cpp）、ローカルLLM（Qwen2.5 7B）
+名称: なし（デフォルト）
+用途: -
+必須理由: -
+代替案: 外部サービスを使う場合は下記
+
+外部サービス-2
+名称: 外部LLM API（例: OpenAI / GLM など）
+用途: LLM（会話/内側タスク）、およびツール呼び出しの結果統合
+必須理由: ローカルLLMの品質/遅延が要件を満たさない場合の代替。
+代替案: ローカルLLM（LM Studio等）
+
+外部サービス-3
+名称: 天気API（候補は後で確定）
+用途: `get_weather` ツール（例: 「今日の天気は？」への回答補助）
+必須理由: リアルタイム情報の参照が必要なため
+代替案: ツール無し（「わからない」と返す）
 
 ### 2.2 コンポーネント一覧
 
@@ -278,8 +292,12 @@ SSEエンドポイント:
   - `data`: `{ "stt_request_id": string }`
 
 - `kiosk.command.speak`
-  - `data`: `{ "say_id": string, "text": string }`
+  - `data`: `{ "say_id": string, "text": string, "expression"?: "neutral" | "happy" | "sad" | "surprised" }`
   - 注記: `say_id` は再接続時の二重再生を避けるためのUI側の重複排除用
+
+- `kiosk.command.play_motion`
+  - `data`: `{ "motion_id": string, "motion_instance_id": string }`
+  - 意味: 許可リストのモーションを再生する（`motion_instance_id` は重複排除/上書き制御用）
 
 - `kiosk.command.stop_output`
   - `data`: `{}`
@@ -398,6 +416,8 @@ Provider方針:
     - `CALL_INNER_TASK(request_id: string, task: "consent_decision" | "memory_extract", input: object)`
   - UI/出力
     - `SAY(text: string)`
+    - `SET_EXPRESSION(expression: "neutral" | "happy" | "sad" | "surprised")`
+    - `PLAY_MOTION(motion_id: string, motion_instance_id: string)`
     - `SET_MODE(mode: "ROOM" | "PERSONAL", personal_name?: string)`
     - `SHOW_CONSENT_UI(visible: boolean)`
   - 永続
@@ -545,7 +565,7 @@ Phase-2
 
 ### シンプル優先の場合
 
-- [ ] 外部サービス数が1以下
+- [ ] （更新）外部サービス数では縛らず、許可リスト/タイムアウト/フォールバックで制御できている
 - [ ] 新規導入ライブラリが3以下
 - [ ] 新規コンポーネント数が3以下
 - [ ] 非同期基盤（キュー/イベントストリーム）を使用していない

@@ -59,6 +59,8 @@ Always include:
 - AC (observable)
 - Estimated change size
 - Dependencies ("Blocked by" + "what becomes possible")
+- Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`)
+ - Implementation approach decision: recommend `/impl` or `/tdd` with rationale and minimum test focus (Japanese section: `## 実装アプローチ（Agentic-SDD）`). The "minimum" is a floor; add any tests needed to satisfy AC and prevent regressions.
 - If bug fix / urgent response: select P0-P4 in the body and add `priority:P[0-4]` label
 
 ### Phase 6: Create Issues

@@ -174,6 +174,15 @@ If file targets are unknown or overlaps exist, do NOT use `parallel-ok`; mark as
 
 ## Issue body template (Japanese output)
 
+## Implementation mode decision (required)
+
+Every Issue must include a short, explicit implementation-mode decision so the team can choose `/impl` vs `/tdd` deterministically.
+
+Rule of thumb:
+
+- Prefer `/tdd` when behavior can be fixed via unit/integration tests (parsing, state machines, allowlists, fallbacks, error handling, request correlation).
+- Prefer `/impl` when the work is primarily integration/UI/device/3D where deterministic tests are hard at first (recording, WebAudio, three.js/VRM, heavy browser APIs). Still unit-test any pure functions extracted.
+
 ```markdown
 ## 概要
 
@@ -213,6 +222,17 @@ If file targets are unknown or overlaps exist, do NOT use `parallel-ok`; mark as
 - [x] 50〜150行（適正）
 - [ ] 150〜300行（大きめ）
 - [ ] 300行超（要分割検討）
+
+## 実装アプローチ（Agentic-SDD）
+
+推奨: `/tdd` または `/impl`
+
+理由:
+- [1-2行]
+
+最低限のテスト観点:
+※ここに書くのは「下限」。ACを満たす/回帰を防ぐために必要なテストは追加する。
+- [2-4行]
 
 ## 依存関係
 

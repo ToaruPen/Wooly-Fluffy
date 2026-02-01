@@ -24,10 +24,12 @@ PRDの主要フロー（PTT→録音→STT→会話→TTS）を、Provider層の
 **含む:**
 - STT（ローカル）: `whisper.cpp` + Core ML による音声→テキスト
 - TTS（ローカル）: VOICEVOX Engine によるテキスト→音声（四国めたん speaker_id:2）
-- LLM（外部）: OpenAI API（OAuth経由で取得したトークンを利用する想定。取得フローは本Epic外）
+- LLM（ローカル/外部）: ローカルはLM Studio（OpenAI互換API）をデフォルトとし、外部LLM APIは任意で切り替え可能（切り替えはサーバ再起動で行う）
 - Effect Executor: OrchestratorのEffectを実行し、結果をEventとして戻す橋渡し
 - KIOSK: ブラウザ録音（PTT）と、16kHz mono WAV への変換
 - KIOSK: VRM表示（既製VRM）+ 表情（4種）+ 音量ベースの口パク
+- KIOSK: 芸事（例: ダンス/手をふる等）を「許可リストのモーションID」で再生できる
+- ツール呼び出し: 天気などの外部情報を必要に応じて取得し、回答に反映できる（LLMはツール呼び出し要求を返すだけ。実行はアプリ側）
 
 **含まない（PRDのスコープ外を継承）:**
 - 録音ファイル/会話全文/STT全文の永続保存
@@ -40,11 +42,11 @@ PRDの主要フロー（PTT→録音→STT→会話→TTS）を、Provider層の
 
 項目: 規模感
 PRDの値: 小規模
-Epic対応: Provider層はAPI Serverに内包し、追加の常駐コンポーネントはVOICEVOX Engineのみ
+Epic対応: Provider層はAPI Serverに内包し、追加の常駐コンポーネントは最小に抑える（VOICEVOX Engine。ローカルLLMはLM Studioを選択する場合は別プロセス）
 
 項目: 技術方針
 PRDの値: シンプル優先
-Epic対応: 外部サービスは最大1（OpenAI APIのみ）、新規コンポーネントは最大3、非同期基盤は導入しない
+Epic対応: 外部サービス数の上限では縛らず、許可リスト + タイムアウト + フォールバックで暴走/コスト/故障モードを抑制する（同時に有効なLLM Providerは1つ）
 
 項目: 既存言語/FW
 PRDの値: Yes
@@ -61,16 +63,22 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 ### 2.1 外部サービス一覧
 
 外部サービス-1
-名称: OpenAI API
-用途: LLM（会話生成）+ 内側タスク（memory_extract / consent_decision）
-必須理由: MVPで短期間に精度を検証できる。Providerを差し替え可能にしておく。
-代替案: ローカルLLM（例: Qwen系）
-
-外部サービス-2
-名称: なし
+名称: なし（デフォルト）
 用途: -
 必須理由: -
-代替案: -
+代替案: 外部サービスを使う場合は下記
+
+外部サービス-2
+名称: 外部LLM API（例: OpenAI / GLM など）
+用途: LLM（会話生成）+ 内側タスク（memory_extract / consent_decision）+ ツール呼び出し結果の統合
+必須理由: ローカルLLMの品質/遅延が要件を満たさない場合の代替。
+代替案: ローカルLLM（LM Studio等）
+
+外部サービス-3
+名称: 天気API（候補は後で確定）
+用途: `get_weather` ツール
+必須理由: リアルタイム情報の参照が必要なため
+代替案: ツール無し（「わからない」と返す）
 
 ### 2.2 コンポーネント一覧
 
@@ -88,6 +96,11 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 名称: VOICEVOX Engine
 責務: 音声合成（TTS）
 デプロイ形態: 常設PC上の別プロセス（localhost:50021）
+
+コンポーネント-4
+名称: LM Studio Local Server（任意）
+責務: ローカルLLMの推論（OpenAI互換API）
+デプロイ形態: 常設PC上の別プロセス（localhost）
 
 ### 2.3 新規技術一覧
 
@@ -109,6 +122,18 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 既存との差: 新規導入
 導入理由: KIOSK上でマスコット表示（VRM）を最小の実装で実現できる
 
+新規技術-4
+名称: LM Studio（OpenAI互換API）
+カテゴリ: LLM（ローカル）
+既存との差: 新規導入
+導入理由: ローカルLLMをアプリからHTTPで利用でき、モデル差し替えが容易
+
+新規技術-5
+名称: Tool/Function Calling（OpenAI互換形式）
+カテゴリ: LLM拡張
+既存との差: 新規導入
+導入理由: 外部情報（天気等）を許可リスト経由で取得し、会話に反映できる
+
 ---
 
 ## 3. 技術設計
@@ -127,9 +152,9 @@ to: API Server
 
 主要データフロー-2
 from: API Server
-to: OpenAI API
-用途: 会話生成（必要に応じて内側タスク）
-プロトコル: HTTPS
+to: LLM Provider（ローカルLM Studio / 外部LLM API）
+用途: 会話生成（必要に応じて内側タスク/ツール呼び出し）
+プロトコル: HTTP（localhost）/ HTTPS
 
 主要データフロー-3
 from: API Server
@@ -142,6 +167,12 @@ from: API Server
 to: KIOSK
 用途: 再生する音声・表情（emotion）などのイベント配信
 プロトコル: SSE（既存）
+
+主要データフロー-5
+from: API Server
+to: 天気API（任意）
+用途: `get_weather` ツールの実行
+プロトコル: HTTPS
 
 ### 3.2 技術選定
 
@@ -158,9 +189,9 @@ to: KIOSK
 
 技術選定-3
 カテゴリ: LLM
-選択: OpenAI API（OAuthで取得したトークンを投入する想定）
-理由: MVP検証の速度を優先しつつ、Provider差し替え可能な構造を維持
-代替案（よりシンプル）: APIキー（環境変数）
+選択: ローカルLM Studio（OpenAI互換API）をデフォルト、外部LLM APIは任意で切り替え
+理由: コスト/データ最小化を優先しつつ、必要なら外部に切り替えられる
+代替案（よりシンプル）: 外部LLM API固定（APIキー/トークン）
 
 技術選定-4
 カテゴリ: VRM
@@ -172,6 +203,16 @@ to: KIOSK
 カテゴリ: 感情/表情
 選択: LLM Function Callingで4種類の表情ラベルを返す
 理由: 追加モデル無しで実装でき、PRDの「感情を断定する発話はしない」に抵触しにくい
+
+技術選定-6
+カテゴリ: 芸事（モーション）
+選択: LLMは `motion_id`（許可リスト）を返し、KIOSKが事前に用意したモーション資産を適用する
+理由: LLMにファイル操作/任意スクリプト実行をさせず、失敗時は安全に無視/代替できる
+
+技術選定-7
+カテゴリ: ツール呼び出し
+選択: OpenAI互換の `tools` / `tool_calls` 形式を用い、実行はアプリ側（許可リスト）で行う
+理由: LLMは「要求」だけを返し、実際の外部アクセスはアプリが安全に制御できる
 
 ### 3.3 データモデル（概要）
 
@@ -242,8 +283,8 @@ Issue名: TTS Provider（VOICEVOX）
 
 Issue-10
 番号: 10
-Issue名: LLM Provider（OpenAI + emotion function）
-概要: OpenAI API呼び出しと、表情ラベル（4種）を返すfunction callingを実装する
+Issue名: LLM Provider（local/external + expression）
+概要: LLM Providerの切り替え（ローカル/外部）と、表情ラベル（4種）を返す構造化出力/ツール呼び出しを実装する
 推定行数: 200-300行
 依存: #6
 
@@ -253,6 +294,20 @@ Issue名: VRM表示 + 表情/口パク
 概要: 既製VRMを読み込み表示し、感情→表情、音量→口パクを反映する
 推定行数: 250-350行
 依存: #7, #9, #10
+
+Issue-12
+番号: 12
+Issue名: Tool Executor（get_weather など）
+概要: `tools/tool_calls` を解釈し、許可リストのツールを実行して結果をモデルへ返す（タイムアウト/フォールバックを含む）
+推定行数: 200-350行
+依存: #6
+
+Issue-13
+番号: 13
+Issue名: 芸事（モーション）再生コマンド
+概要: Server->KIOSKの `play_motion` コマンドと、KIOSK側の許可リストモーション適用（ダンス等）を実装する
+推定行数: 200-400行
+依存: #11
 
 ### 4.2 依存関係図
 
@@ -265,6 +320,8 @@ Issue名: VRM表示 + 表情/口パク
 - Issue 11 depends_on Issue 7
 - Issue 11 depends_on Issue 9
 - Issue 11 depends_on Issue 10
+- Issue 12 depends_on Issue 6
+- Issue 13 depends_on Issue 11
 
 ---
 
@@ -346,8 +403,8 @@ Phase-3
 
 ### シンプル優先の場合
 
-- [x] 外部サービス数が1以下（OpenAI APIのみ）
-- [x] 新規コンポーネント数が3以下（API Server / Web / VOICEVOX Engine）
+- [ ] （更新）外部サービス数では縛らず、許可リスト/タイムアウト/フォールバックで制御できている
+- [ ] （更新）常駐コンポーネントは最小に抑えられている（LM Studioは任意）
 - [x] 非同期基盤（キュー/イベントストリーム）を使用していない
 - [x] マイクロサービス分割をしていない
 
