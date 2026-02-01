@@ -36,6 +36,11 @@ Legacy:
 - Checks: `npm run typecheck` / `npm run lint` / `npm run test` / `npm run coverage` / `npm run deadcode`
 - Run server: `npm run -w server start` (defaults: `HOST=127.0.0.1`, `PORT=3000`)
 
+## Note on "slash commands" in this environment
+
+- `functions.slashcommand` lists built-in skills/commands available to the assistant; it does not execute this repo's Agentic-SDD commands under `.agent/commands/`.
+- To run Agentic-SDD commands for this repo, use the corresponding scripts under `./scripts/` (e.g. `./scripts/review-cycle.sh`, `./scripts/review.sh`, `./scripts/create-pr.sh`).
+
 ## Guardrails
 
 - Follow PRD/Epic first for required behavior.
