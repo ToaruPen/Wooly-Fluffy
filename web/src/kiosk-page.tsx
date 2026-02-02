@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { postFormData, postJson } from "./api";
 import { convertRecordingBlobToWavFile } from "./kiosk-audio";
 import { startPttSession, type PttSession } from "./kiosk-ptt";
@@ -53,6 +53,59 @@ export const KioskPage = () => {
   const [audioError, setAudioError] = useState<string | null>(null);
   const pttSessionRef = useRef<PttSession | null>(null);
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
+  const ttsAudioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+
+  const stopTtsAudio = useCallback(() => {
+    const current = ttsAudioRef.current;
+    if (!current) {
+      return;
+    }
+    ttsAudioRef.current = null;
+    try {
+      current.audio.pause();
+    } catch {
+      // ignore
+    }
+    try {
+      URL.revokeObjectURL(current.url);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const playTts = useCallback(
+    async (text: string) => {
+      stopTtsAudio();
+      try {
+        const res = await postJson("/api/v1/kiosk/tts", { text });
+        if (!res.ok) {
+          setAudioError(`HTTP ${res.status}`);
+          return;
+        }
+
+        const wav = await res.arrayBuffer();
+
+        if (typeof URL.createObjectURL !== "function" || typeof Audio !== "function") {
+          setAudioError("Failed to play audio");
+          return;
+        }
+        const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+        const audio = new Audio(url);
+        ttsAudioRef.current = { audio, url };
+
+        try {
+          await audio.play();
+        } catch {
+          stopTtsAudio();
+          setAudioError("Failed to play audio");
+        }
+      } catch {
+        stopTtsAudio();
+        setAudioError("Network error");
+      }
+    },
+    [stopTtsAudio]
+  );
 
   useEffect(() => {
     const ignoreStopError = (_err: unknown) => undefined;
@@ -158,11 +211,15 @@ export const KioskPage = () => {
             }
             return { sayId, text };
           });
+          setAudioError(null);
+          void playTts(text);
           return;
         }
 
         if (message.type === "kiosk.command.stop_output") {
           setSpeech(null);
+          stopTtsAudio();
+          setAudioError(null);
         }
       },
       onError: (error) => {
@@ -179,9 +236,10 @@ export const KioskPage = () => {
       if (sessionPromise) {
         void sessionPromise.then((s) => s.stop()).catch(ignoreStopError);
       }
+      stopTtsAudio();
       client.close();
     };
-  }, []);
+  }, [playTts, stopTtsAudio]);
 
   const mode = snapshot?.state.mode ?? null;
   const personalName = snapshot?.state.personal_name ?? null;
@@ -209,6 +267,7 @@ export const KioskPage = () => {
       <header className={styles.header}>
         <h1>KIOSK</h1>
         <div className={styles.label}>Stream: /api/v1/kiosk/stream</div>
+        <div className={styles.label}>TTS: VOICEVOX / 四国めたん</div>
       </header>
 
       <main className={styles.kioskLayout}>

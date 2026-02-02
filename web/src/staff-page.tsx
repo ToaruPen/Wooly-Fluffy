@@ -275,6 +275,7 @@ export const StaffPage = () => {
       <header className={styles.header}>
         <h1>{title}</h1>
         <div className={styles.label}>Stream: /api/v1/staff/stream</div>
+        <div className={styles.label}>TTS: VOICEVOX / 四国めたん</div>
       </header>
 
       {view !== "logged_in" ? (
