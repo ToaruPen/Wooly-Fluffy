@@ -13,7 +13,8 @@ const createStubProviders = (overrides?: {
     health: () => ({ status: "ok" })
   },
   tts: {
-    health: () => ({ status: "ok" })
+    health: () => ({ status: "ok" }),
+    synthesize: async (_input) => ({ wav: Buffer.from("dummy") })
   },
   llm: {
     kind: "stub",

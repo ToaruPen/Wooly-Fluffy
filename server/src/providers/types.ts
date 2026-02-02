@@ -4,15 +4,18 @@ export type ProviderHealth = {
   status: "ok" | "unavailable";
 };
 
+type MaybePromise<T> = T | Promise<T>;
+
 export type LlmProviderKind = "stub" | "local" | "external";
 
 export type Providers = {
   stt: {
     transcribe: (input: { mode: Mode; wav: Buffer }) => { text: string };
-    health: () => ProviderHealth;
+    health: () => MaybePromise<ProviderHealth>;
   };
   tts: {
-    health: () => ProviderHealth;
+    health: () => MaybePromise<ProviderHealth>;
+    synthesize: (input: { text: string }) => Promise<{ wav: Buffer }>;
   };
   llm: {
     kind: LlmProviderKind;
@@ -22,6 +25,6 @@ export type Providers = {
     inner_task: {
       call: (input: InnerTaskInput) => { json_text: string };
     };
-    health: () => ProviderHealth;
+    health: () => MaybePromise<ProviderHealth>;
   };
 };
