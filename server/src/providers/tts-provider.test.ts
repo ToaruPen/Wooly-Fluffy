@@ -175,4 +175,73 @@ describe("tts-provider (VOICEVOX)", () => {
 
     await expect(tts.synthesize({ text: "Hello" })).rejects.toThrow(/synthesis failed/);
   });
+
+  it("retries once on transient network failure", async () => {
+    let calls = 0;
+
+    const tts = createVoiceVoxTtsProvider({
+      engine_url: "http://voicevox.local",
+      fetch: async (input) => {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("fetch failed");
+        }
+
+        const url = new URL(input);
+        if (url.pathname === "/audio_query") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ query: true }),
+            arrayBuffer: async () => new ArrayBuffer(0)
+          };
+        }
+        if (url.pathname === "/synthesis") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            arrayBuffer: async () => new Uint8Array([9]).buffer
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      }
+    });
+
+    const result = await tts.synthesize({ text: "Hello" });
+    expect(result.wav).toEqual(Buffer.from(new Uint8Array([9]).buffer));
+    expect(calls).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not retry on AbortError", async () => {
+    let calls = 0;
+
+    const tts = createVoiceVoxTtsProvider({
+      engine_url: "http://voicevox.local",
+      fetch: async () => {
+        calls += 1;
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+    });
+
+    await expect(tts.synthesize({ text: "Hello" })).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+
+  it("does not retry when error is not an Error instance", async () => {
+    let calls = 0;
+
+    const tts = createVoiceVoxTtsProvider({
+      engine_url: "http://voicevox.local",
+      fetch: async () => {
+        calls += 1;
+        throw "nope";
+      }
+    });
+
+    await expect(tts.synthesize({ text: "Hello" })).rejects.toBeTruthy();
+    expect(calls).toBe(1);
+  });
 });

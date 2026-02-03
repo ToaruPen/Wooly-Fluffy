@@ -54,8 +54,10 @@ export const KioskPage = () => {
   const pttSessionRef = useRef<PttSession | null>(null);
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
   const ttsAudioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+  const ttsGenerationRef = useRef(0);
 
   const stopTtsAudio = useCallback(() => {
+    ttsGenerationRef.current += 1;
     const current = ttsAudioRef.current;
     if (!current) {
       return;
@@ -76,6 +78,7 @@ export const KioskPage = () => {
   const playTts = useCallback(
     async (text: string) => {
       stopTtsAudio();
+      const generation = ttsGenerationRef.current;
       try {
         const res = await postJson("/api/v1/kiosk/tts", { text });
         if (!res.ok) {
@@ -83,7 +86,15 @@ export const KioskPage = () => {
           return;
         }
 
+        if (ttsGenerationRef.current !== generation) {
+          return;
+        }
+
         const wav = await res.arrayBuffer();
+
+        if (ttsGenerationRef.current !== generation) {
+          return;
+        }
 
         if (typeof URL.createObjectURL !== "function" || typeof Audio !== "function") {
           setAudioError("Failed to play audio");
@@ -92,6 +103,13 @@ export const KioskPage = () => {
         const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
         const audio = new Audio(url);
         ttsAudioRef.current = { audio, url };
+
+        audio.onended = () => {
+          if (ttsAudioRef.current?.audio !== audio) {
+            return;
+          }
+          stopTtsAudio();
+        };
 
         try {
           await audio.play();
