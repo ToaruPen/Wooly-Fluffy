@@ -7,6 +7,10 @@
     "web"
   ],
   "scripts": {
+    "format": "node scripts/format-changed.mjs --write",
+    "format:check": "node scripts/format-changed.mjs --check",
+    "check:filenames": "node scripts/check-filenames-changed.mjs",
+    "lint:naming:changed": "node scripts/lint-naming-changed.mjs",
     "typecheck": "npm run -w server typecheck && npm run -w web typecheck",
     "lint": "npm run -w server lint && npm run -w web lint",
     "test": "npm run -w server test && npm run -w web test",
@@ -16,9 +20,17 @@
   "knip": {
     "ignore": [
       "web/e2e/webserver.mjs"
+    ],
+    "ignoreFiles": [
+      "server/eslint.naming.config.js",
+      "web/eslint.naming.config.js"
+    ],
+    "ignoreDependencies": [
+      "prettier"
     ]
   },
   "devDependencies": {
-    "knip": "^5.80.2"
+    "knip": "^5.80.2",
+    "prettier": "^3.5.2"
   }
 }
