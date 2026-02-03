@@ -1,0 +1,9 @@
+coverage/
+dist/
+node_modules/
+var/
+web/test-results/
+web/playwright-report/
+
+# Generated / large
+package-lock.json
