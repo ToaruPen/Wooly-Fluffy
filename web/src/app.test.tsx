@@ -323,6 +323,7 @@ describe("app", () => {
       "/api/v1/kiosk/tts",
       expect.objectContaining({ method: "POST" })
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 5, data: {} });

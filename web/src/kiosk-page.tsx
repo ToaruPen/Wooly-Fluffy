@@ -55,6 +55,7 @@ export const KioskPage = () => {
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
   const ttsAudioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
   const ttsGenerationRef = useRef(0);
+  const lastPlayedSayIdRef = useRef<string | null>(null);
 
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
@@ -238,6 +239,12 @@ export const KioskPage = () => {
             }
             return { sayId, text };
           });
+
+          if (lastPlayedSayIdRef.current === sayId) {
+            return;
+          }
+          lastPlayedSayIdRef.current = sayId;
+
           setAudioError(null);
           void playTts(text);
           return;
@@ -247,6 +254,7 @@ export const KioskPage = () => {
           setSpeech(null);
           stopTtsAudio();
           setAudioError(null);
+          lastPlayedSayIdRef.current = null;
         }
       },
       onError: (error) => {
