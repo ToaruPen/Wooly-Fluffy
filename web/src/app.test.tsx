@@ -326,6 +326,17 @@ describe("app", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 5, data: {} });
+      handlers.onMessage?.({
+        type: "kiosk.command.speak",
+        seq: 6,
+        data: { say_id: "say-1", text: "Hello" }
+      });
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 5, data: {} });
       await Promise.resolve();
     });

@@ -254,7 +254,6 @@ export const KioskPage = () => {
           setSpeech(null);
           stopTtsAudio();
           setAudioError(null);
-          lastPlayedSayIdRef.current = null;
         }
       },
       onError: (error) => {
