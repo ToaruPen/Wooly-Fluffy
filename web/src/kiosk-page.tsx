@@ -82,6 +82,9 @@ export const KioskPage = () => {
       try {
         const res = await postJson("/api/v1/kiosk/tts", { text });
         if (!res.ok) {
+          if (ttsGenerationRef.current !== generation) {
+            return;
+          }
           setAudioError(`HTTP ${res.status}`);
           return;
         }
@@ -114,10 +117,16 @@ export const KioskPage = () => {
         try {
           await audio.play();
         } catch {
+          if (ttsGenerationRef.current !== generation) {
+            return;
+          }
           stopTtsAudio();
           setAudioError("Failed to play audio");
         }
       } catch {
+        if (ttsGenerationRef.current !== generation) {
+          return;
+        }
         stopTtsAudio();
         setAudioError("Network error");
       }

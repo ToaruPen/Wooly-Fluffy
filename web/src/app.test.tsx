@@ -964,6 +964,255 @@ describe("app", () => {
     }
   });
 
+  it("ignores stale TTS failure after stop_output", async () => {
+    vi.resetModules();
+
+    const closeSpy = vi.fn();
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: closeSpy
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    let resolveTts: ((res: Response) => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/v1/kiosk/tts" && method === "POST") {
+          return await new Promise<Response>((resolve) => {
+            resolveTts = resolve;
+          });
+        }
+        return jsonResponse(404, { error: { code: "not_found", message: url } });
+      })
+    );
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+
+    let appRoot: Root;
+    await act(async () => {
+      const mainModule = await import("./main");
+      appRoot = mainModule.appRoot;
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onSnapshot({
+        state: {
+          mode: "ROOM",
+          personal_name: null,
+          phase: "idle",
+          consent_ui_visible: false
+        }
+      });
+    });
+
+    await act(async () => {
+      handlers.onMessage?.({
+        type: "kiosk.command.speak",
+        seq: 1,
+        data: { say_id: "say-1", text: "Hello" }
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 2, data: {} });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveTts?.(({ ok: false, status: 500 } as unknown) as Response);
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? "").not.toContain("Audio error:");
+
+    await act(async () => {
+      appRoot.unmount();
+    });
+  });
+
+  it("ignores stale audio.play rejection after stop_output", async () => {
+    vi.resetModules();
+
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+
+    (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+    (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+    let rejectPlay: (() => void) | null = null;
+    class FakeAudio {
+      play = vi.fn(
+        async () =>
+          await new Promise<void>((_resolve, reject) => {
+            rejectPlay = () => reject(new Error("blocked"));
+          })
+      );
+      pause = vi.fn(() => undefined);
+      constructor(_src: string) {
+        void _src;
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/v1/kiosk/tts" && method === "POST") {
+          return wavResponse(200, [1, 2, 3]);
+        }
+        return jsonResponse(404, { error: { code: "not_found", message: url } });
+      })
+    );
+
+    try {
+      window.history.pushState({}, "", "/kiosk");
+      document.body.innerHTML = '<div id="root"></div>';
+
+      let appRoot: Root;
+      await act(async () => {
+        const mainModule = await import("./main");
+        appRoot = mainModule.appRoot;
+      });
+
+      const handlers = connectSseMock.mock.calls[0]![1];
+      await act(async () => {
+        handlers.onSnapshot({
+          state: {
+            mode: "ROOM",
+            personal_name: null,
+            phase: "idle",
+            consent_ui_visible: false
+          }
+        });
+      });
+
+      await act(async () => {
+        handlers.onMessage?.({
+          type: "kiosk.command.speak",
+          seq: 1,
+          data: { say_id: "say-1", text: "Hello" }
+        });
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 2, data: {} });
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        rejectPlay?.();
+        await Promise.resolve();
+      });
+
+      expect(document.body.textContent ?? "").not.toContain("Audio error:");
+
+      await act(async () => {
+        appRoot.unmount();
+      });
+    } finally {
+      if (originalCreateObjectURL === undefined) {
+        delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+      } else {
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = originalCreateObjectURL;
+      }
+      if (originalRevokeObjectURL === undefined) {
+        delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+      } else {
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = originalRevokeObjectURL;
+      }
+    }
+  });
+
+  it("ignores stale TTS fetch exception after stop_output", async () => {
+    vi.resetModules();
+
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: () => {}
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    let rejectFetch: (() => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/v1/kiosk/tts") {
+          return await new Promise<Response>((_resolve, reject) => {
+            rejectFetch = () => reject(new Error("offline"));
+          });
+        }
+        return jsonResponse(404, { error: { code: "not_found", message: String(input) } });
+      })
+    );
+
+    window.history.pushState({}, "", "/kiosk");
+    document.body.innerHTML = '<div id="root"></div>';
+
+    let appRoot: Root;
+    await act(async () => {
+      const mainModule = await import("./main");
+      appRoot = mainModule.appRoot;
+    });
+
+    const handlers = connectSseMock.mock.calls[0]![1];
+    await act(async () => {
+      handlers.onSnapshot({
+        state: {
+          mode: "ROOM",
+          personal_name: null,
+          phase: "idle",
+          consent_ui_visible: false
+        }
+      });
+    });
+
+    await act(async () => {
+      handlers.onMessage?.({
+        type: "kiosk.command.speak",
+        seq: 1,
+        data: { say_id: "say-1", text: "Hello" }
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 2, data: {} });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      rejectFetch?.();
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent ?? "").not.toContain("Audio error:");
+
+    await act(async () => {
+      appRoot.unmount();
+    });
+  });
+
   it("shows audio error when record_stop has invalid data", async () => {
     vi.resetModules();
 
