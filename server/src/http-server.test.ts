@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { request } from "http";
 import type { IncomingHttpHeaders } from "http";
 import type { Server } from "http";
@@ -27,6 +27,41 @@ const sendRequest = (
         });
         res.on("end", () => {
           resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
+        });
+      }
+    );
+
+    req.on("error", reject);
+    if (options?.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        req.setHeader(key, value);
+      }
+    }
+    if (options?.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+
+const sendRequestBuffer = (
+  method: string,
+  path: string,
+  options?: { headers?: Record<string, string>; body?: string | Buffer }
+) =>
+  new Promise<{ status: number; body: Buffer; headers: IncomingHttpHeaders }>((resolve, reject) => {
+    const req = request(
+      { host: "127.0.0.1", port, method, path },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => {
+          chunks.push(chunk as Buffer);
+        });
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks),
+            headers: res.headers
+          });
         });
       }
     );
@@ -247,6 +282,22 @@ const readFirstSseMessage = (path: string, options?: { headers?: Record<string, 
   });
 
 beforeEach(async () => {
+  vi.stubGlobal(
+    "fetch",
+    (async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/version")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ version: "test" }),
+          arrayBuffer: async () => new ArrayBuffer(0)
+        };
+      }
+      throw new Error(`unexpected_fetch:${url}`);
+    }) as unknown as typeof fetch
+  );
+
   process.env.STAFF_PASSCODE = "test-pass";
   store = createStore({ db_path: ":memory:" });
   server = createHttpServer({ store });
@@ -276,6 +327,9 @@ afterEach(async () => {
   store.close();
   delete process.env.STAFF_PASSCODE;
   staffCookie = "";
+
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("http-server", () => {
@@ -293,12 +347,193 @@ describe("http-server", () => {
     });
   });
 
+  it("returns 200 healthcheck even when tts is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      (async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/version")) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+            arrayBuffer: async () => new ArrayBuffer(0)
+          };
+        }
+        throw new Error(`unexpected_fetch:${url}`);
+      }) as unknown as typeof fetch
+    );
+
+    const response = await sendRequest("GET", "/health");
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      status: "ok",
+      providers: {
+        stt: { status: "ok" },
+        tts: { status: "unavailable" },
+        llm: { status: "ok", kind: "stub" }
+      }
+    });
+  });
+
   it("returns 404 for unknown paths", async () => {
     const response = await sendRequest("GET", "/unknown");
 
     expect(response.status).toBe(404);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "not_found", message: "Not Found" }
+    });
+  });
+
+  it("returns audio/wav from /api/v1/kiosk/tts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      (async (input: unknown, init?: unknown) => {
+        const url = new URL(String(input));
+
+        if (url.pathname === "/audio_query") {
+          expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+          expect(url.searchParams.get("speaker")).toBe("2");
+          expect(url.searchParams.get("text")).toBe("Hello");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ query: true }),
+            arrayBuffer: async () => new ArrayBuffer(0)
+          };
+        }
+
+        if (url.pathname === "/synthesis") {
+          expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+          expect(url.searchParams.get("speaker")).toBe("2");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer
+          };
+        }
+
+        if (url.pathname === "/version") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ version: "test" }),
+            arrayBuffer: async () => new ArrayBuffer(0)
+          };
+        }
+
+        throw new Error(`unexpected_fetch:${url.toString()}`);
+      }) as unknown as typeof fetch
+    );
+
+    const response = await sendRequestBuffer("POST", "/api/v1/kiosk/tts", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" })
+    });
+
+    expect(response.status).toBe(200);
+    expect(String(response.headers["content-type"] ?? "")).toContain("audio/wav");
+    expect(Array.from(response.body)).toEqual([1, 2, 3]);
+  });
+
+  it("returns 400 invalid_request for /api/v1/kiosk/tts when text is missing", async () => {
+    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "invalid_request", message: "Invalid request" }
+    });
+  });
+
+  it("returns 400 invalid_json for /api/v1/kiosk/tts when body is invalid JSON", async () => {
+    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+      headers: { "content-type": "application/json" },
+      body: "{"
+    });
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "invalid_json", message: "Invalid JSON" }
+    });
+  });
+
+  it("returns 503 unavailable for /api/v1/kiosk/tts when provider fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      (async (input: unknown) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/audio_query") {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+            arrayBuffer: async () => new ArrayBuffer(0)
+          };
+        }
+        throw new Error(`unexpected_fetch:${url.toString()}`);
+      }) as unknown as typeof fetch
+    );
+
+    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" })
+    });
+
+    expect(response.status).toBe(503);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "unavailable", message: "Unavailable" }
+    });
+  });
+
+  it("returns 405 for /api/v1/kiosk/tts with non-POST", async () => {
+    const response = await sendRequest("GET", "/api/v1/kiosk/tts");
+    expect(response.status).toBe(405);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "method_not_allowed", message: "Method Not Allowed" }
+    });
+  });
+
+  it("returns 413 payload_too_large for /api/v1/kiosk/tts", async () => {
+    const bigText = "a".repeat(200_000);
+    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: bigText })
+    });
+    expect(response.status).toBe(413);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "payload_too_large", message: "Payload Too Large" }
+    });
+  });
+
+  it("returns 200 for staff keepalive with valid session", async () => {
+    const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive", {
+      headers: withStaffCookie()
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({ ok: true });
+    expect(String(response.headers["set-cookie"] ?? "")).toContain("wf_staff_session=");
+  });
+
+  it("returns 401 for staff keepalive without session", async () => {
+    const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive");
+    expect(response.status).toBe(401);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "unauthorized", message: "Unauthorized" }
+    });
+  });
+
+  it("returns 405 for staff keepalive with non-POST", async () => {
+    const response = await sendRequest("GET", "/api/v1/staff/auth/keepalive", {
+      headers: withStaffCookie()
+    });
+    expect(response.status).toBe(405);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "method_not_allowed", message: "Method Not Allowed" }
     });
   });
 

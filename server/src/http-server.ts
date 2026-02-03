@@ -15,6 +15,7 @@ import { createEffectExecutor } from "./effect-executor.js";
 import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
 import type { Providers } from "./providers/types.js";
+import { createVoiceVoxTtsProvider } from "./providers/tts-provider.js";
 
 const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
@@ -356,9 +357,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       }),
       health: () => ({ status: "ok" })
     },
-    tts: {
-      health: () => ({ status: "ok" })
-    },
+    tts: createVoiceVoxTtsProvider(),
     llm: {
       kind: "stub",
       chat: {
@@ -417,18 +416,25 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
   const server = createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {
-      sendJson(
-        res,
-        200,
-        JSON.stringify({
-          status: "ok",
-          providers: {
-            stt: providers.stt.health(),
-            tts: providers.tts.health(),
-            llm: { ...providers.llm.health(), kind: providers.llm.kind }
-          }
-        })
-      );
+      void (async () => {
+        const [stt, tts, llm] = await Promise.all([
+          providers.stt.health(),
+          providers.tts.health(),
+          providers.llm.health()
+        ]);
+        sendJson(
+          res,
+          200,
+          JSON.stringify({
+            status: "ok",
+            providers: {
+              stt,
+              tts,
+              llm: { ...llm, kind: providers.llm.kind }
+            }
+          })
+        );
+      })();
       return;
     }
 
@@ -590,6 +596,43 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             return;
           }
           safeSendError(res, 400, "invalid_json", "Invalid JSON");
+        });
+      return;
+    }
+
+    if (path === "/api/v1/kiosk/tts") {
+      if (req.method !== "POST") {
+        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+        return;
+      }
+
+      readJson(req, 128_000)
+        .then((body) => {
+          const parsed = body as { text?: unknown };
+          if (typeof parsed.text !== "string" || parsed.text.length === 0) {
+            sendError(res, 400, "invalid_request", "Invalid request");
+            return null;
+          }
+          return providers.tts.synthesize({ text: parsed.text });
+        })
+        .then((result) => {
+          if (!result) {
+            return;
+          }
+          res.statusCode = 200;
+          res.setHeader("content-type", "audio/wav");
+          res.end(result.wav);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.message === "body_too_large") {
+            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
+            return;
+          }
+          if (err instanceof Error && err.message === "invalid_json") {
+            safeSendError(res, 400, "invalid_json", "Invalid JSON");
+            return;
+          }
+          safeSendError(res, 503, "unavailable", "Unavailable");
         });
       return;
     }
