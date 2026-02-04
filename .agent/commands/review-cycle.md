@@ -28,6 +28,7 @@ Review taxonomy (status/priority) and output rules are defined in:
 4. Validate JSON and save under `.agentic-sdd/`
 
 Note: The review prompt provides:
+
 - `diff.patch` as a local file path (repo-relative)
 - a changed-file list
 
