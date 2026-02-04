@@ -1,5 +1,16 @@
 export type Mode = "ROOM" | "PERSONAL";
 
+export type Expression = "neutral" | "happy" | "sad" | "surprised";
+
+export type ToolCall = {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+};
+
 export type Phase =
   | "idle"
   | "listening"
@@ -44,7 +55,13 @@ export type OrchestratorEvent =
   | { type: "STAFF_RESUME" }
   | { type: "STT_RESULT"; text: string; request_id: string }
   | { type: "STT_FAILED"; request_id: string }
-  | { type: "CHAT_RESULT"; assistant_text: string; request_id: string }
+  | {
+      type: "CHAT_RESULT";
+      assistant_text: string;
+      request_id: string;
+      expression: Expression;
+      tool_calls: ToolCall[];
+    }
   | { type: "CHAT_FAILED"; request_id: string }
   | { type: "INNER_TASK_RESULT"; json_text: string; request_id: string }
   | { type: "INNER_TASK_FAILED"; request_id: string }
@@ -65,9 +82,9 @@ export type OrchestratorEffect =
   | { type: "KIOSK_RECORD_STOP" }
   | { type: "CALL_STT"; request_id: string }
   | { type: "CALL_CHAT"; request_id: string; input: ChatInput }
-  | { type: "CALL_INNER_TASK"; request_id: string } & InnerTaskInput
+  | ({ type: "CALL_INNER_TASK"; request_id: string } & InnerTaskInput)
   | { type: "SAY"; text: string }
-  | { type: "SET_EXPRESSION"; expression: "neutral" | "happy" | "sad" | "surprised" }
+  | { type: "SET_EXPRESSION"; expression: Expression }
   | { type: "PLAY_MOTION"; motion_id: string; motion_instance_id: string }
   | { type: "SET_MODE"; mode: Mode; personal_name?: string }
   | { type: "SHOW_CONSENT_UI"; visible: boolean }
@@ -97,7 +114,7 @@ const createEmptyInFlight = (): InFlight => ({
   stt_request_id: null,
   chat_request_id: null,
   consent_inner_task_request_id: null,
-  memory_extract_request_id: null
+  memory_extract_request_id: null,
 });
 
 export const createInitialState = (now: number): OrchestratorState => ({
@@ -109,33 +126,29 @@ export const createInitialState = (now: number): OrchestratorState => ({
   memory_candidate: null,
   in_flight: createEmptyInFlight(),
   is_emergency_stopped: false,
-  request_seq: 0
+  request_seq: 0,
 });
 
-const isConsentUiVisible = (state: OrchestratorState) =>
-  state.consent_deadline_at_ms !== null;
+const isConsentUiVisible = (state: OrchestratorState) => state.consent_deadline_at_ms !== null;
 
 export const createKioskSnapshot = (state: OrchestratorState) => ({
   state: {
     mode: state.mode,
     personal_name: state.personal_name,
     phase: state.phase,
-    consent_ui_visible: isConsentUiVisible(state)
-  }
+    consent_ui_visible: isConsentUiVisible(state),
+  },
 });
 
-export const createStaffSnapshot = (
-  state: OrchestratorState,
-  pending_count: number
-) => ({
+export const createStaffSnapshot = (state: OrchestratorState, pending_count: number) => ({
   state: {
     mode: state.mode,
     personal_name: state.personal_name,
-    phase: state.phase
+    phase: state.phase,
   },
   pending: {
-    count: pending_count
-  }
+    count: pending_count,
+  },
 });
 
 export const initialKioskSnapshot = createKioskSnapshot(createInitialState(0));
@@ -163,12 +176,12 @@ const isRoomCommand = (text: string): boolean => {
 
 const nextRequestId = (
   state: OrchestratorState,
-  prefix: string
+  prefix: string,
 ): { id: string; state: OrchestratorState } => {
   const nextSeq = state.request_seq + 1;
   return {
     id: `${prefix}-${nextSeq}`,
-    state: { ...state, request_seq: nextSeq }
+    state: { ...state, request_seq: nextSeq },
   };
 };
 
@@ -180,7 +193,7 @@ const resetForRoom = (state: OrchestratorState, now: number) => ({
   last_action_at_ms: now,
   consent_deadline_at_ms: null,
   memory_candidate: null,
-  in_flight: createEmptyInFlight()
+  in_flight: createEmptyInFlight(),
 });
 
 const clearConsentState = (state: OrchestratorState): OrchestratorState => ({
@@ -190,13 +203,11 @@ const clearConsentState = (state: OrchestratorState): OrchestratorState => ({
   phase: "idle",
   in_flight: {
     ...state.in_flight,
-    consent_inner_task_request_id: null
-  }
+    consent_inner_task_request_id: null,
+  },
 });
 
-const parseConsentDecision = (
-  json_text: string
-): "yes" | "no" | "unknown" => {
+const parseConsentDecision = (json_text: string): "yes" | "no" | "unknown" => {
   try {
     const parsed = JSON.parse(json_text) as {
       task?: string;
@@ -231,12 +242,7 @@ const parseMemoryCandidate = (json_text: string): MemoryCandidate | null => {
       return null;
     }
     const { kind, value, source_quote } = parsed.candidate;
-    if (
-      kind !== "likes" &&
-      kind !== "food" &&
-      kind !== "play" &&
-      kind !== "hobby"
-    ) {
+    if (kind !== "likes" && kind !== "food" && kind !== "play" && kind !== "hobby") {
       return null;
     }
     if (typeof value !== "string" || value.trim().length === 0) {
@@ -248,7 +254,7 @@ const parseMemoryCandidate = (json_text: string): MemoryCandidate | null => {
     return {
       kind,
       value,
-      ...(source_quote ? { source_quote } : {})
+      ...(source_quote ? { source_quote } : {}),
     };
   } catch {
     return null;
@@ -258,23 +264,23 @@ const parseMemoryCandidate = (json_text: string): MemoryCandidate | null => {
 export const reduceOrchestrator = (
   state: OrchestratorState,
   event: OrchestratorEvent,
-  now: number
+  now: number,
 ): OrchestratorResult => {
   if (state.is_emergency_stopped) {
     if (event.type === "STAFF_RESUME") {
       const resumed = resetForRoom(
         {
           ...state,
-          is_emergency_stopped: false
+          is_emergency_stopped: false,
         },
-        now
+        now,
       );
       return {
         next_state: resumed,
         effects: [
           { type: "SET_MODE", mode: "ROOM" },
-          { type: "SHOW_CONSENT_UI", visible: false }
-        ]
+          { type: "SHOW_CONSENT_UI", visible: false },
+        ],
       };
     }
     return { next_state: state, effects: [] };
@@ -286,19 +292,19 @@ export const reduceOrchestrator = (
       next_state: nextState,
       effects: [
         { type: "SET_MODE", mode: "ROOM" },
-        { type: "SHOW_CONSENT_UI", visible: false }
-      ]
+        { type: "SHOW_CONSENT_UI", visible: false },
+      ],
     };
   }
 
   if (event.type === "STAFF_EMERGENCY_STOP") {
     const nextState = {
       ...resetForRoom(state, now),
-      is_emergency_stopped: true
+      is_emergency_stopped: true,
     };
     const effects: OrchestratorEffect[] = [
       { type: "SET_MODE", mode: "ROOM" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ];
     if (state.phase === "listening") {
       effects.unshift({ type: "KIOSK_RECORD_STOP" });
@@ -315,7 +321,7 @@ export const reduceOrchestrator = (
       }
       return {
         next_state: { ...state, phase: "listening" },
-        effects: [{ type: "KIOSK_RECORD_START" }]
+        effects: [{ type: "KIOSK_RECORD_START" }],
       };
     case "STAFF_PTT_UP":
       if (state.phase !== "listening") {
@@ -328,12 +334,9 @@ export const reduceOrchestrator = (
             ...withId,
             phase: "waiting_stt",
             last_action_at_ms: now,
-            in_flight: { ...withId.in_flight, stt_request_id: id }
+            in_flight: { ...withId.in_flight, stt_request_id: id },
           },
-          effects: [
-            { type: "KIOSK_RECORD_STOP" },
-            { type: "CALL_STT", request_id: id }
-          ]
+          effects: [{ type: "KIOSK_RECORD_STOP" }, { type: "CALL_STT", request_id: id }],
         };
       }
     case "STT_RESULT": {
@@ -342,7 +345,7 @@ export const reduceOrchestrator = (
       }
       const withCleared = {
         ...state,
-        in_flight: { ...state.in_flight, stt_request_id: null }
+        in_flight: { ...state.in_flight, stt_request_id: null },
       };
       if (isRoomCommand(event.text)) {
         const nextState = resetForRoom(withCleared, now);
@@ -350,8 +353,8 @@ export const reduceOrchestrator = (
           next_state: nextState,
           effects: [
             { type: "SET_MODE", mode: "ROOM" },
-            { type: "SHOW_CONSENT_UI", visible: false }
-          ]
+            { type: "SHOW_CONSENT_UI", visible: false },
+          ],
         };
       }
 
@@ -363,17 +366,17 @@ export const reduceOrchestrator = (
             phase: "waiting_inner_task",
             in_flight: {
               ...withId.in_flight,
-              consent_inner_task_request_id: id
-            }
+              consent_inner_task_request_id: id,
+            },
           },
           effects: [
             {
               type: "CALL_INNER_TASK",
               request_id: id,
               task: "consent_decision",
-              input: { text: event.text }
-            }
-          ]
+              input: { text: event.text },
+            },
+          ],
         };
       }
 
@@ -385,11 +388,11 @@ export const reduceOrchestrator = (
           personal_name: personalName,
           phase: "idle",
           consent_deadline_at_ms: null,
-          memory_candidate: null
+          memory_candidate: null,
         };
         return {
           next_state: nextState,
-          effects: [{ type: "SET_MODE", mode: "PERSONAL", personal_name: personalName }]
+          effects: [{ type: "SET_MODE", mode: "PERSONAL", personal_name: personalName }],
         };
       }
 
@@ -399,7 +402,7 @@ export const reduceOrchestrator = (
           next_state: {
             ...withId,
             phase: "waiting_chat",
-            in_flight: { ...withId.in_flight, chat_request_id: id }
+            in_flight: { ...withId.in_flight, chat_request_id: id },
           },
           effects: [
             {
@@ -408,10 +411,10 @@ export const reduceOrchestrator = (
               input: {
                 mode: withId.mode,
                 personal_name: withId.personal_name,
-                text: event.text
-              }
-            }
-          ]
+                text: event.text,
+              },
+            },
+          ],
         };
       }
     }
@@ -422,11 +425,11 @@ export const reduceOrchestrator = (
       const nextState: OrchestratorState = {
         ...state,
         phase: state.consent_deadline_at_ms ? "asking_consent" : "idle",
-        in_flight: { ...state.in_flight, stt_request_id: null }
+        in_flight: { ...state.in_flight, stt_request_id: null },
       };
       return {
         next_state: nextState,
-        effects: [{ type: "SAY", text: STT_FALLBACK_TEXT }]
+        effects: [{ type: "SAY", text: STT_FALLBACK_TEXT }],
       };
     }
     case "CHAT_RESULT": {
@@ -435,10 +438,11 @@ export const reduceOrchestrator = (
       }
       const cleared = {
         ...state,
-        in_flight: { ...state.in_flight, chat_request_id: null }
+        in_flight: { ...state.in_flight, chat_request_id: null },
       };
       const effects: OrchestratorEffect[] = [
-        { type: "SAY", text: event.assistant_text }
+        { type: "SET_EXPRESSION", expression: event.expression },
+        { type: "SAY", text: event.assistant_text },
       ];
       if (cleared.mode === "PERSONAL" && cleared.memory_candidate === null) {
         const { id, state: withId } = nextRequestId(cleared, "inner");
@@ -448,8 +452,8 @@ export const reduceOrchestrator = (
             phase: "waiting_inner_task",
             in_flight: {
               ...withId.in_flight,
-              memory_extract_request_id: id
-            }
+              memory_extract_request_id: id,
+            },
           },
           effects: [
             ...effects,
@@ -457,14 +461,14 @@ export const reduceOrchestrator = (
               type: "CALL_INNER_TASK",
               request_id: id,
               task: "memory_extract",
-              input: { assistant_text: event.assistant_text }
-            }
-          ]
+              input: { assistant_text: event.assistant_text },
+            },
+          ],
         };
       }
       return {
         next_state: { ...cleared, phase: "idle" },
-        effects
+        effects,
       };
     }
     case "CHAT_FAILED": {
@@ -475,9 +479,9 @@ export const reduceOrchestrator = (
         next_state: {
           ...state,
           phase: "idle",
-          in_flight: { ...state.in_flight, chat_request_id: null }
+          in_flight: { ...state.in_flight, chat_request_id: null },
         },
-        effects: [{ type: "SAY", text: CHAT_FALLBACK_TEXT }]
+        effects: [{ type: "SAY", text: CHAT_FALLBACK_TEXT }],
       };
     }
     case "INNER_TASK_RESULT": {
@@ -490,10 +494,10 @@ export const reduceOrchestrator = (
               phase: "idle",
               in_flight: {
                 ...state.in_flight,
-                memory_extract_request_id: null
-              }
+                memory_extract_request_id: null,
+              },
             },
-            effects: []
+            effects: [],
           };
         }
         return {
@@ -504,13 +508,13 @@ export const reduceOrchestrator = (
             memory_candidate: candidate,
             in_flight: {
               ...state.in_flight,
-              memory_extract_request_id: null
-            }
+              memory_extract_request_id: null,
+            },
           },
           effects: [
             { type: "SAY", text: "覚えていい？" },
-            { type: "SHOW_CONSENT_UI", visible: true }
-          ]
+            { type: "SHOW_CONSENT_UI", visible: true },
+          ],
         };
       }
 
@@ -523,10 +527,10 @@ export const reduceOrchestrator = (
               phase: "asking_consent",
               in_flight: {
                 ...state.in_flight,
-                consent_inner_task_request_id: null
-              }
+                consent_inner_task_request_id: null,
+              },
             },
-            effects: []
+            effects: [],
           };
         }
         if (decision === "yes" && state.memory_candidate && state.personal_name) {
@@ -535,8 +539,8 @@ export const reduceOrchestrator = (
               ...state,
               in_flight: {
                 ...state.in_flight,
-                consent_inner_task_request_id: null
-              }
+                consent_inner_task_request_id: null,
+              },
             }),
             effects: [
               {
@@ -547,11 +551,11 @@ export const reduceOrchestrator = (
                   value: state.memory_candidate.value,
                   ...(state.memory_candidate.source_quote
                     ? { source_quote: state.memory_candidate.source_quote }
-                    : {})
-                }
+                    : {}),
+                },
               },
-              { type: "SHOW_CONSENT_UI", visible: false }
-            ]
+              { type: "SHOW_CONSENT_UI", visible: false },
+            ],
           };
         }
 
@@ -560,10 +564,10 @@ export const reduceOrchestrator = (
             ...state,
             in_flight: {
               ...state.in_flight,
-              consent_inner_task_request_id: null
-            }
+              consent_inner_task_request_id: null,
+            },
           }),
-          effects: [{ type: "SHOW_CONSENT_UI", visible: false }]
+          effects: [{ type: "SHOW_CONSENT_UI", visible: false }],
         };
       }
       return { next_state: state, effects: [] };
@@ -576,10 +580,10 @@ export const reduceOrchestrator = (
             phase: "idle",
             in_flight: {
               ...state.in_flight,
-              memory_extract_request_id: null
-            }
+              memory_extract_request_id: null,
+            },
           },
-          effects: []
+          effects: [],
         };
       }
       if (state.in_flight.consent_inner_task_request_id === event.request_id) {
@@ -589,10 +593,10 @@ export const reduceOrchestrator = (
             phase: "asking_consent",
             in_flight: {
               ...state.in_flight,
-              consent_inner_task_request_id: null
-            }
+              consent_inner_task_request_id: null,
+            },
           },
-          effects: []
+          effects: [],
         };
       }
       return { next_state: state, effects: [] };
@@ -605,7 +609,7 @@ export const reduceOrchestrator = (
         return {
           next_state: clearConsentState({
             ...state,
-            last_action_at_ms: now
+            last_action_at_ms: now,
           }),
           effects: [
             {
@@ -616,45 +620,39 @@ export const reduceOrchestrator = (
                 value: state.memory_candidate.value,
                 ...(state.memory_candidate.source_quote
                   ? { source_quote: state.memory_candidate.source_quote }
-                  : {})
-              }
+                  : {}),
+              },
             },
-            { type: "SHOW_CONSENT_UI", visible: false }
-          ]
+            { type: "SHOW_CONSENT_UI", visible: false },
+          ],
         };
       }
       return {
         next_state: clearConsentState({
           ...state,
-          last_action_at_ms: now
+          last_action_at_ms: now,
         }),
-        effects: [{ type: "SHOW_CONSENT_UI", visible: false }]
+        effects: [{ type: "SHOW_CONSENT_UI", visible: false }],
       };
     }
     case "TICK": {
-      if (
-        state.consent_deadline_at_ms !== null &&
-        now >= state.consent_deadline_at_ms
-      ) {
+      if (state.consent_deadline_at_ms !== null && now >= state.consent_deadline_at_ms) {
         return {
           next_state: clearConsentState(state),
           effects: [
             { type: "SAY", text: FORGET_CONSENT_TEXT },
-            { type: "SHOW_CONSENT_UI", visible: false }
-          ]
+            { type: "SHOW_CONSENT_UI", visible: false },
+          ],
         };
       }
-      if (
-        state.mode === "PERSONAL" &&
-        now - state.last_action_at_ms >= INACTIVITY_TIMEOUT_MS
-      ) {
+      if (state.mode === "PERSONAL" && now - state.last_action_at_ms >= INACTIVITY_TIMEOUT_MS) {
         const nextState = resetForRoom(state, now);
         return {
           next_state: nextState,
           effects: [
             { type: "SET_MODE", mode: "ROOM" },
-            { type: "SHOW_CONSENT_UI", visible: false }
-          ]
+            { type: "SHOW_CONSENT_UI", visible: false },
+          ],
         };
       }
       return { next_state: state, effects: [] };

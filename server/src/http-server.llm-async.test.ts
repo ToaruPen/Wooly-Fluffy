@@ -1,0 +1,237 @@
+import { request } from "http";
+import type { IncomingHttpHeaders, Server } from "http";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createHttpServer } from "./http-server.js";
+import { createStore } from "./store.js";
+
+let server: Server;
+let port: number;
+let store: ReturnType<typeof createStore>;
+let staffCookie = "";
+
+const sendRequest = (
+  method: string,
+  path: string,
+  options?: { headers?: Record<string, string>; body?: string | Buffer },
+) =>
+  new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, method, path }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
+      });
+    });
+
+    req.on("error", reject);
+    if (options?.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        req.setHeader(key, value);
+      }
+    }
+    if (options?.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+
+const cookieFromSetCookie = (setCookie: string): string => {
+  const [first] = setCookie.split(";", 1);
+  if (!first) {
+    throw new Error("missing_set_cookie");
+  }
+  return first;
+};
+
+const loginStaff = async (): Promise<string> => {
+  const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passcode: "test-pass" }),
+  });
+  if (response.status !== 200) {
+    throw new Error(`staff_login_failed:${response.status}`);
+  }
+  const setCookie = response.headers["set-cookie"];
+  const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+  return cookieFromSetCookie(String(first ?? ""));
+};
+
+const withStaffCookie = (headers?: Record<string, string>): Record<string, string> => ({
+  ...(headers ?? {}),
+  cookie: staffCookie,
+});
+
+const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) => {
+  const boundary = "testboundary";
+  const lines: Array<string | Buffer> = [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`,
+    `${input.stt_request_id}\r\n`,
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="audio"; filename="audio.webm"\r\n`,
+    `Content-Type: audio/webm\r\n\r\n`,
+    input.audio,
+    `\r\n`,
+    `--${boundary}--\r\n`,
+  ];
+  const body = Buffer.concat(
+    lines.map((part) => (typeof part === "string" ? Buffer.from(part, "utf8") : part)),
+  );
+  return {
+    body,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+};
+
+describe("http-server (async llm provider)", () => {
+  beforeEach(async () => {
+    process.env.STAFF_PASSCODE = "test-pass";
+    process.env.LLM_PROVIDER_KIND = "local";
+    process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+    process.env.LLM_MODEL = "dummy-model";
+
+    vi.stubGlobal("fetch", (async (input: unknown, init?: { body?: unknown }) => {
+      const url = String(input);
+      if (!url.endsWith("/chat/completions")) {
+        throw new Error(`unexpected_fetch:${url}`);
+      }
+      const bodyText = String(init?.body ?? "");
+      if (bodyText.includes("memory_extract")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content:
+                    '{"task":"memory_extract","candidate":{"kind":"likes","value":"りんご","source_quote":"りんごがすき"}}',
+                },
+              },
+            ],
+          }),
+          arrayBuffer: async () => new ArrayBuffer(0),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"assistant_text":"ok","expression":"neutral"}',
+              },
+            },
+          ],
+        }),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    }) as unknown as typeof fetch);
+
+    store = createStore({ db_path: ":memory:" });
+    server = createHttpServer({ store });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("server address unavailable");
+    }
+    port = address.port;
+    staffCookie = await loginStaff();
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+    store.close();
+
+    delete process.env.STAFF_PASSCODE;
+    delete process.env.LLM_PROVIDER_KIND;
+    delete process.env.LLM_BASE_URL;
+    delete process.env.LLM_MODEL;
+    delete process.env.LLM_API_KEY;
+    staffCookie = "";
+
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("creates pending via async llm chat + inner_task", async () => {
+    // 1st utterance: enter PERSONAL
+    {
+      const down = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+      });
+      expect(down.status).toBe(200);
+      const up = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+      });
+      expect(up.status).toBe(200);
+      const multipart = buildMultipartBody({
+        stt_request_id: "stt-1",
+        audio: Buffer.from("dummy", "utf8"),
+      });
+      const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": multipart.contentType },
+        body: multipart.body,
+      });
+      expect(audio.status).toBe(202);
+    }
+
+    // 2nd utterance: triggers async chat + memory_extract
+    {
+      const down = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+      });
+      expect(down.status).toBe(200);
+      const up = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+      });
+      expect(up.status).toBe(200);
+      const multipart = buildMultipartBody({
+        stt_request_id: "stt-2",
+        audio: Buffer.from("dummy", "utf8"),
+      });
+      const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": multipart.contentType },
+        body: multipart.body,
+      });
+      expect(audio.status).toBe(202);
+    }
+
+    // Let async LLM tasks enqueue their events.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    const consent = await sendRequest("POST", "/api/v1/kiosk/event", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
+    });
+    expect(consent.status).toBe(200);
+
+    const list = await sendRequest("GET", "/api/v1/staff/pending", {
+      headers: withStaffCookie(),
+    });
+    expect(list.status).toBe(200);
+    const parsed = JSON.parse(list.body) as { items: Array<{ id: string }> };
+    expect(parsed.items.length).toBe(1);
+  });
+});
