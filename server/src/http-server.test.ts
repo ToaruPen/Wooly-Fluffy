@@ -1238,6 +1238,24 @@ describe("http-server", () => {
     expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
   });
 
+  it("swallows event processing errors to keep server alive", async () => {
+    const originalListPending = store.listPending;
+    try {
+      store.listPending = () => {
+        throw new Error("boom");
+      };
+
+      const response = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_RESUME" })
+      });
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ ok: true });
+    } finally {
+      store.listPending = originalListPending;
+    }
+  });
+
   it("returns 404 for staff pending confirm when id not found", async () => {
     const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm", {
       headers: withStaffCookie()

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { OrchestratorEffect } from "./orchestrator.js";
+import type { OrchestratorEffect, OrchestratorEvent } from "./orchestrator.js";
 import { createEffectExecutor } from "./effect-executor.js";
 import type { Providers } from "./providers/types.js";
+
+const flushMicrotasks = async (): Promise<void> => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 const createStubProviders = (overrides?: {
   chatCall?: Providers["llm"]["chat"]["call"];
@@ -19,10 +24,12 @@ const createStubProviders = (overrides?: {
   llm: {
     kind: "stub",
     chat: {
-      call: overrides?.chatCall ?? (() => ({ assistant_text: "ok" }))
+      call:
+        overrides?.chatCall ??
+        (async () => ({ assistant_text: "ok", expression: "neutral", tool_calls: [] }))
     },
     inner_task: {
-      call: overrides?.innerTaskCall ?? (() => ({ json_text: "{}" }))
+      call: overrides?.innerTaskCall ?? (async () => ({ json_text: "{}" }))
     },
     health: () => ({ status: "ok" })
   }
@@ -36,6 +43,7 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: (type, data) => sent.push({ type, data }),
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -58,6 +66,7 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: () => {},
       onSttRequested: (id) => requested.push(id),
       storeWritePending: () => {}
     });
@@ -67,7 +76,73 @@ describe("effect-executor", () => {
     expect(requested).toEqual(["stt-1"]);
   });
 
-  it("converts CALL_INNER_TASK into INNER_TASK_RESULT", () => {
+  it("enqueues INNER_TASK_RESULT for CALL_INNER_TASK", async () => {
+    const providers = createStubProviders({
+      innerTaskCall: async () => ({ json_text: "{\"task\":\"consent_decision\"}" })
+    });
+
+    const queued: OrchestratorEvent[] = [];
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: (event) => queued.push(event),
+      onSttRequested: () => {},
+      storeWritePending: () => {}
+    });
+
+    const events = executor.executeEffects([
+      {
+        type: "CALL_INNER_TASK",
+        request_id: "inner-1",
+        task: "consent_decision",
+        input: { text: "hi" }
+      }
+    ]);
+
+    expect(events).toEqual([]);
+    await flushMicrotasks();
+    expect(queued).toEqual([
+      {
+        type: "INNER_TASK_RESULT",
+        request_id: "inner-1",
+        json_text: "{\"task\":\"consent_decision\"}"
+      }
+    ]);
+  });
+
+  it("enqueues INNER_TASK_FAILED when CALL_INNER_TASK provider throws", async () => {
+    const providers = createStubProviders({
+      innerTaskCall: async () => {
+        throw new Error("boom");
+      }
+    });
+
+    const queued: OrchestratorEvent[] = [];
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: (event) => queued.push(event),
+      onSttRequested: () => {},
+      storeWritePending: () => {}
+    });
+
+    const events = executor.executeEffects([
+      {
+        type: "CALL_INNER_TASK",
+        request_id: "inner-9",
+        task: "memory_extract",
+        input: { assistant_text: "hey" }
+      }
+    ]);
+
+    expect(events).toEqual([]);
+    await flushMicrotasks();
+    expect(queued).toEqual([{ type: "INNER_TASK_FAILED", request_id: "inner-9" }]);
+  });
+
+  it("returns INNER_TASK_RESULT synchronously when CALL_INNER_TASK provider is sync", () => {
     const providers = createStubProviders({
       innerTaskCall: () => ({ json_text: "{\"task\":\"consent_decision\"}" })
     });
@@ -75,6 +150,7 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -97,7 +173,7 @@ describe("effect-executor", () => {
     ]);
   });
 
-  it("converts CALL_INNER_TASK provider error into INNER_TASK_FAILED", () => {
+  it("returns INNER_TASK_FAILED synchronously when CALL_INNER_TASK provider throws sync", () => {
     const providers = createStubProviders({
       innerTaskCall: () => {
         throw new Error("boom");
@@ -107,6 +183,7 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -119,7 +196,6 @@ describe("effect-executor", () => {
         input: { assistant_text: "hey" }
       }
     ]);
-
     expect(events).toEqual([{ type: "INNER_TASK_FAILED", request_id: "inner-9" }]);
   });
 
@@ -130,8 +206,11 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: () => {},
       onSttRequested: () => {},
-      storeWritePending: (input) => writes.push(input)
+      storeWritePending: (input) => {
+        writes.push(input);
+      }
     });
 
     executor.executeEffects([
@@ -150,7 +229,10 @@ describe("effect-executor", () => {
     const sent: Array<{ type: string; data: object }> = [];
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: (type, data) => sent.push({ type, data }),
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -171,7 +253,10 @@ describe("effect-executor", () => {
     const sent: Array<{ type: string; data: object }> = [];
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: (type, data) => sent.push({ type, data }),
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -189,7 +274,10 @@ describe("effect-executor", () => {
     const sent: Array<{ type: string; data: object }> = [];
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: (type, data) => sent.push({ type, data }),
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -203,10 +291,12 @@ describe("effect-executor", () => {
     expect(sent).toEqual([]);
   });
 
-  it("converts CALL_CHAT into CHAT_RESULT", () => {
+  it("enqueues CHAT_RESULT for CALL_CHAT", async () => {
     const providers = createStubProviders({
-      chatCall: () => ({ assistant_text: "ok" })
+      chatCall: async () => ({ assistant_text: "ok", expression: "neutral", tool_calls: [] })
     });
+
+    const queued: OrchestratorEvent[] = [];
 
     const sent: Array<{ type: string; data: object }> = [];
     const requestedStt: string[] = [];
@@ -214,9 +304,16 @@ describe("effect-executor", () => {
 
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: (type, data) => sent.push({ type, data }),
-      onSttRequested: (id) => requestedStt.push(id),
-      storeWritePending: (input) => pendingWrites.push(input)
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: (event) => queued.push(event),
+      onSttRequested: (id) => {
+        requestedStt.push(id);
+      },
+      storeWritePending: (input) => {
+        pendingWrites.push(input);
+      }
     });
 
     const effects: OrchestratorEffect[] = [
@@ -228,24 +325,35 @@ describe("effect-executor", () => {
     ];
 
     const events = executor.executeEffects(effects);
-    expect(events).toEqual([
-      { type: "CHAT_RESULT", request_id: "chat-1", assistant_text: "ok" }
+    expect(events).toEqual([]);
+    await flushMicrotasks();
+    expect(queued).toEqual([
+      {
+        type: "CHAT_RESULT",
+        request_id: "chat-1",
+        assistant_text: "ok",
+        expression: "neutral",
+        tool_calls: []
+      }
     ]);
     expect(sent).toEqual([]);
     expect(requestedStt).toEqual([]);
     expect(pendingWrites).toEqual([]);
   });
 
-  it("converts CALL_CHAT provider error into CHAT_FAILED", () => {
+  it("enqueues CHAT_FAILED when CALL_CHAT provider throws", async () => {
     const providers = createStubProviders({
-      chatCall: () => {
+      chatCall: async () => {
         throw new Error("boom");
       }
     });
 
+    const queued: OrchestratorEvent[] = [];
+
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: (event) => queued.push(event),
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -259,6 +367,65 @@ describe("effect-executor", () => {
     ];
 
     const events = executor.executeEffects(effects);
+    expect(events).toEqual([]);
+    await flushMicrotasks();
+    expect(queued).toEqual([{ type: "CHAT_FAILED", request_id: "chat-9" }]);
+  });
+
+  it("returns CHAT_RESULT synchronously when CALL_CHAT provider is sync", () => {
+    const providers = createStubProviders({
+      chatCall: () => ({ assistant_text: "ok", expression: "neutral", tool_calls: [] })
+    });
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {}
+    });
+
+    const events = executor.executeEffects([
+      {
+        type: "CALL_CHAT",
+        request_id: "chat-1",
+        input: { mode: "ROOM", personal_name: null, text: "hi" }
+      }
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "CHAT_RESULT",
+        request_id: "chat-1",
+        assistant_text: "ok",
+        expression: "neutral",
+        tool_calls: []
+      }
+    ]);
+  });
+
+  it("returns CHAT_FAILED synchronously when CALL_CHAT provider throws sync", () => {
+    const providers = createStubProviders({
+      chatCall: () => {
+        throw new Error("boom");
+      }
+    });
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {}
+    });
+
+    const events = executor.executeEffects([
+      {
+        type: "CALL_CHAT",
+        request_id: "chat-9",
+        input: { mode: "ROOM", personal_name: null, text: "hi" }
+      }
+    ]);
     expect(events).toEqual([{ type: "CHAT_FAILED", request_id: "chat-9" }]);
   });
 
@@ -268,7 +435,10 @@ describe("effect-executor", () => {
     const sent: Array<{ type: string; data: object }> = [];
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: (type, data) => sent.push({ type, data }),
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -293,7 +463,10 @@ describe("effect-executor", () => {
     const sent: Array<{ type: string; data: object }> = [];
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: (type, data) => sent.push({ type, data }),
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -323,6 +496,7 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });
@@ -345,6 +519,7 @@ describe("effect-executor", () => {
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
+      enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {}
     });

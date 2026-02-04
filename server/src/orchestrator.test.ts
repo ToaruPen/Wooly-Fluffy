@@ -58,13 +58,18 @@ describe("orchestrator", () => {
       {
         type: "CHAT_RESULT",
         assistant_text: "やあ",
-        request_id: chatEffect?.request_id ?? ""
+        request_id: chatEffect?.request_id ?? "",
+        expression: "neutral",
+        tool_calls: []
       },
       220
     );
 
     expect(chatResult.next_state.phase).toBe("idle");
-    expect(chatResult.effects).toEqual([{ type: "SAY", text: "やあ" }]);
+    expect(chatResult.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "SAY", text: "やあ" }
+    ]);
   });
 
   it("switches to personal mode with command", () => {
@@ -128,7 +133,13 @@ describe("orchestrator", () => {
 
     const chatResult = reduceOrchestrator(
       waitingChat,
-      { type: "CHAT_RESULT", assistant_text: "いいね", request_id: "chat-1" },
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "いいね",
+        request_id: "chat-1",
+        expression: "neutral",
+        tool_calls: []
+      },
       1000
     );
     const memoryEffect = getEffect(chatResult.effects, "CALL_INNER_TASK");
@@ -485,7 +496,13 @@ describe("orchestrator", () => {
 
     const ignored = reduceOrchestrator(
       waitingRoom,
-      { type: "CHAT_RESULT", assistant_text: "ignored", request_id: "chat-2" },
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "ignored",
+        request_id: "chat-2",
+        expression: "neutral",
+        tool_calls: []
+      },
       10
     );
     expect(ignored.effects).toEqual([]);
@@ -493,11 +510,20 @@ describe("orchestrator", () => {
 
     const ok = reduceOrchestrator(
       waitingRoom,
-      { type: "CHAT_RESULT", assistant_text: "ok", request_id: "chat-1" },
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "ok",
+        request_id: "chat-1",
+        expression: "happy",
+        tool_calls: []
+      },
       20
     );
     expect(getEffect(ok.effects, "CALL_INNER_TASK")).toBeUndefined();
-    expect(ok.effects).toEqual([{ type: "SAY", text: "ok" }]);
+    expect(ok.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "happy" },
+      { type: "SAY", text: "ok" }
+    ]);
     expect(ok.next_state.phase).toBe("idle");
   });
 

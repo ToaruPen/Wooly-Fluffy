@@ -1,5 +1,16 @@
 export type Mode = "ROOM" | "PERSONAL";
 
+export type Expression = "neutral" | "happy" | "sad" | "surprised";
+
+export type ToolCall = {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+};
+
 export type Phase =
   | "idle"
   | "listening"
@@ -44,7 +55,13 @@ export type OrchestratorEvent =
   | { type: "STAFF_RESUME" }
   | { type: "STT_RESULT"; text: string; request_id: string }
   | { type: "STT_FAILED"; request_id: string }
-  | { type: "CHAT_RESULT"; assistant_text: string; request_id: string }
+  | {
+      type: "CHAT_RESULT";
+      assistant_text: string;
+      request_id: string;
+      expression: Expression;
+      tool_calls: ToolCall[];
+    }
   | { type: "CHAT_FAILED"; request_id: string }
   | { type: "INNER_TASK_RESULT"; json_text: string; request_id: string }
   | { type: "INNER_TASK_FAILED"; request_id: string }
@@ -67,7 +84,7 @@ export type OrchestratorEffect =
   | { type: "CALL_CHAT"; request_id: string; input: ChatInput }
   | { type: "CALL_INNER_TASK"; request_id: string } & InnerTaskInput
   | { type: "SAY"; text: string }
-  | { type: "SET_EXPRESSION"; expression: "neutral" | "happy" | "sad" | "surprised" }
+  | { type: "SET_EXPRESSION"; expression: Expression }
   | { type: "PLAY_MOTION"; motion_id: string; motion_instance_id: string }
   | { type: "SET_MODE"; mode: Mode; personal_name?: string }
   | { type: "SHOW_CONSENT_UI"; visible: boolean }
@@ -438,6 +455,7 @@ export const reduceOrchestrator = (
         in_flight: { ...state.in_flight, chat_request_id: null }
       };
       const effects: OrchestratorEffect[] = [
+        { type: "SET_EXPRESSION", expression: event.expression },
         { type: "SAY", text: event.assistant_text }
       ];
       if (cleared.mode === "PERSONAL" && cleared.memory_candidate === null) {

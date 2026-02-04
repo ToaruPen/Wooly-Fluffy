@@ -16,6 +16,7 @@ import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
 import type { Providers } from "./providers/types.js";
 import { createVoiceVoxTtsProvider } from "./providers/tts-provider.js";
+import { createLlmProviderFromEnv } from "./providers/llm-provider.js";
 
 const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
@@ -298,6 +299,21 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   let state: OrchestratorState = createInitialState(nowMs());
   const pendingStt = new Set<string>();
 
+  const eventQueue: Array<{ event: OrchestratorEvent; now: number }> = [];
+
+  const enqueueEvent = (event: OrchestratorEvent, now: number) => {
+    eventQueue.push({ event, now });
+    try {
+      while (eventQueue.length > 0) {
+        const item = eventQueue.shift()!;
+        processEvent(item.event, item.now);
+      }
+    } catch (err) {
+      // Best-effort: keep server alive.
+      console.error(err);
+    }
+  };
+
   const kioskClients = new Set<SseClient>();
   const staffClients = new Set<SseClient>();
   const staffSseSessions = new Map<SseClient, string>();
@@ -358,33 +374,13 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       health: () => ({ status: "ok" })
     },
     tts: createVoiceVoxTtsProvider(),
-    llm: {
-      kind: "stub",
-      chat: {
-        call: (_input) => ({ assistant_text: "うんうん" })
-      },
-      inner_task: {
-        call: (input) => {
-          if (input.task === "consent_decision") {
-            return {
-              json_text: JSON.stringify({ task: "consent_decision", answer: "unknown" })
-            };
-          }
-          return {
-            json_text: JSON.stringify({
-              task: "memory_extract",
-              candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" }
-            })
-          };
-        }
-      },
-      health: () => ({ status: "ok" })
-    }
+    llm: createLlmProviderFromEnv()
   };
 
   const effectExecutor = createEffectExecutor({
     providers,
     sendKioskCommand,
+    enqueueEvent: (event) => enqueueEvent(event, nowMs()),
     onSttRequested: (request_id) => {
       pendingStt.add(request_id);
     },
@@ -587,7 +583,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
-          processEvent({ type: "UI_CONSENT_BUTTON", answer: parsed.answer }, nowMs());
+          enqueueEvent({ type: "UI_CONSENT_BUTTON", answer: parsed.answer }, nowMs());
           sendJson(res, 200, okBody);
         })
         .catch((err: unknown) => {
@@ -662,7 +658,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
-          processEvent({ type } as OrchestratorEvent, nowMs());
+          enqueueEvent({ type } as OrchestratorEvent, nowMs());
           sendJson(res, 200, okBody);
         })
         .catch((err: unknown) => {
@@ -772,7 +768,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             mode: state.mode,
             wav: upload.wav
           });
-          processEvent(event, nowMs());
+          enqueueEvent(event, nowMs());
           sendJson(res, 202, okBody);
         })
         .catch((err: unknown) => {
@@ -790,7 +786,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
   const tickTimer = setInterval(() => {
     sweepExpiredStaffSseClients();
-    processEvent({ type: "TICK" }, nowMs());
+    enqueueEvent({ type: "TICK" }, nowMs());
   }, 1000);
   tickTimer.unref();
   server.on("close", () => {
