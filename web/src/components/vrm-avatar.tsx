@@ -106,65 +106,12 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
     let vrm: VRM | null = null;
     let isDisposed = false;
 
-    const resize = () => {
-      const rect = container.getBoundingClientRect();
-      const width = Math.max(1, Math.floor(rect.width));
-      const height = Math.max(1, Math.floor(rect.height));
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    };
-
-    resize();
-
-    const loader = new GLTFLoader();
-    loader.register((parser: GLTFParser) => new VRMLoaderPlugin(parser));
-
-    void loader
-      .loadAsync(vrmUrl)
-      .then((gltf: GLTF) => {
-        if (isDisposed) {
-          return;
-        }
-        const loaded = (gltf.userData as Record<string, unknown>).vrm as VRM | undefined;
-        if (!loaded) {
-          setError("Failed to load VRM");
-          return;
-        }
-
-        vrm = loaded;
-
-        VRMUtils.removeUnnecessaryVertices(vrm.scene);
-        VRMUtils.removeUnnecessaryJoints(vrm.scene);
-        VRMUtils.rotateVRM0(vrm);
-
-        scene.add(vrm.scene);
-      })
-      .catch((e: unknown) => {
-        if (isDisposed) {
-          return;
-        }
-        setError(e instanceof Error ? e.message : "Failed to load VRM");
-      });
-
-    const animate = () => {
-      rafId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-
-      if (vrm) {
-        applyExpression(vrm, expressionRef.current);
-        applyMouthOpen(vrm, mouthOpenRef.current);
-        vrm.update(delta);
-      }
-
-      renderer.render(scene, camera);
-    };
-    animate();
-
     const onResize = () => resize();
-    window.addEventListener("resize", onResize);
 
-    return () => {
+    const disposeRuntime = () => {
+      if (isDisposed) {
+        return;
+      }
       isDisposed = true;
       window.removeEventListener("resize", onResize);
       cancelAnimationFrame(rafId);
@@ -188,6 +135,72 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
       } catch {
         // ignore
       }
+    };
+
+    const resize = () => {
+      const rect = container.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width));
+      const height = Math.max(1, Math.floor(rect.height));
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    };
+
+    resize();
+
+    window.addEventListener("resize", onResize);
+
+    const loader = new GLTFLoader();
+    loader.register((parser: GLTFParser) => new VRMLoaderPlugin(parser));
+
+    void loader
+      .loadAsync(vrmUrl)
+      .then((gltf: GLTF) => {
+        if (isDisposed) {
+          return;
+        }
+        const loaded = (gltf.userData as Record<string, unknown>).vrm as VRM | undefined;
+        if (!loaded) {
+          setError("Failed to load VRM");
+          disposeRuntime();
+          return;
+        }
+
+        vrm = loaded;
+
+        VRMUtils.removeUnnecessaryVertices(vrm.scene);
+        VRMUtils.removeUnnecessaryJoints(vrm.scene);
+        VRMUtils.rotateVRM0(vrm);
+
+        scene.add(vrm.scene);
+      })
+      .catch((e: unknown) => {
+        if (isDisposed) {
+          return;
+        }
+        setError(e instanceof Error ? e.message : "Failed to load VRM");
+        disposeRuntime();
+      });
+
+    const animate = () => {
+      if (isDisposed) {
+        return;
+      }
+      rafId = requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (vrm) {
+        applyExpression(vrm, expressionRef.current);
+        applyMouthOpen(vrm, mouthOpenRef.current);
+        vrm.update(delta);
+      }
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      disposeRuntime();
     };
   }, [vrmUrl, isWebGlOk]);
 

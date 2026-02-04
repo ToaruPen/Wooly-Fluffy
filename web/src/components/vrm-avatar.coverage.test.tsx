@@ -14,6 +14,7 @@ const removeJointsCalls: unknown[] = [];
 const rotateCalls: unknown[] = [];
 
 let rafCalls = 0;
+let rafCallbacks: FrameRequestCallback[] = [];
 
 vi.mock("three", () => {
   class Color {
@@ -144,8 +145,10 @@ describe("VrmAvatar (coverage)", () => {
     loadAsyncImpl = null;
     registerImpl = null;
     rafCalls = 0;
+    rafCallbacks.length = 0;
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       rafCalls += 1;
+      rafCallbacks.push(cb);
       if (rafCalls === 1) {
         cb(0);
       }
@@ -335,6 +338,10 @@ describe("VrmAvatar (coverage)", () => {
       root.render(<VrmAvatar vrmUrl="/x.vrm" expression="neutral" mouthOpen={0} />);
       await Promise.resolve();
     });
+
+    // Ensure the render loop stops when disposed after load failure.
+    rafCallbacks[1]?.(0);
+    expect(rafCalls).toBe(2);
 
     expect(rendererPixelRatios).toEqual([1]);
 
