@@ -3,6 +3,9 @@ import { postFormData, postJson } from "./api";
 import { convertRecordingBlobToWavFile } from "./kiosk-audio";
 import { startPttSession, type PttSession } from "./kiosk-ptt";
 import { connectSse, type ServerMessage } from "./sse-client";
+import { AudioPlayer } from "./components/audio-player";
+import { VrmAvatar, type ExpressionLabel } from "./components/vrm-avatar";
+import { parseExpressionLabel } from "./kiosk-expression";
 import styles from "./styles.module.css";
 
 type Mode = "ROOM" | "PERSONAL";
@@ -26,9 +29,12 @@ type KioskSnapshot = {
 type SpeakState = {
   sayId: string;
   text: string;
+  expression: ExpressionLabel;
 };
 
-const isSpeakData = (data: unknown): data is { say_id: string; text: string } => {
+const isSpeakData = (
+  data: unknown,
+): data is { say_id: string; text: string; expression?: unknown } => {
   if (!data || typeof data !== "object") {
     return false;
   }
@@ -51,29 +57,19 @@ export const KioskPage = () => {
   const [consentError, setConsentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [ttsWav, setTtsWav] = useState<ArrayBuffer | null>(null);
+  const [ttsPlayId, setTtsPlayId] = useState(0);
+  const ttsPlayIdRef = useRef(0);
+  const [mouthOpen, setMouthOpen] = useState(0);
   const pttSessionRef = useRef<PttSession | null>(null);
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
-  const ttsAudioRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
   const ttsGenerationRef = useRef(0);
   const lastPlayedSayIdRef = useRef<string | null>(null);
 
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
-    const current = ttsAudioRef.current;
-    if (!current) {
-      return;
-    }
-    ttsAudioRef.current = null;
-    try {
-      current.audio.pause();
-    } catch {
-      // ignore
-    }
-    try {
-      URL.revokeObjectURL(current.url);
-    } catch {
-      // ignore
-    }
+    setTtsWav(null);
+    setMouthOpen(0);
   }, []);
 
   const playTts = useCallback(
@@ -100,30 +96,9 @@ export const KioskPage = () => {
           return;
         }
 
-        if (typeof URL.createObjectURL !== "function" || typeof Audio !== "function") {
-          setAudioError("Failed to play audio");
-          return;
-        }
-        const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
-        const audio = new Audio(url);
-        ttsAudioRef.current = { audio, url };
-
-        audio.onended = () => {
-          if (ttsAudioRef.current?.audio !== audio) {
-            return;
-          }
-          stopTtsAudio();
-        };
-
-        try {
-          await audio.play();
-        } catch {
-          if (ttsGenerationRef.current !== generation) {
-            return;
-          }
-          stopTtsAudio();
-          setAudioError("Failed to play audio");
-        }
+        ttsPlayIdRef.current = generation;
+        setTtsPlayId(generation);
+        setTtsWav(wav);
       } catch {
         if (ttsGenerationRef.current !== generation) {
           return;
@@ -132,7 +107,7 @@ export const KioskPage = () => {
         setAudioError("Network error");
       }
     },
-    [stopTtsAudio]
+    [stopTtsAudio],
   );
 
   useEffect(() => {
@@ -208,7 +183,7 @@ export const KioskPage = () => {
             .then(async (blob: Blob) => {
               const file = await convertRecordingBlobToWavFile({
                 blob,
-                fileName: `${sttRequestId}.wav`
+                fileName: `${sttRequestId}.wav`,
               });
 
               const form = new FormData();
@@ -233,11 +208,17 @@ export const KioskPage = () => {
           }
           const sayId = data.say_id;
           const text = data.text;
+          const expression = parseExpressionLabel((data as Record<string, unknown>).expression);
           setSpeech((prev: SpeakState | null) => {
-            if (prev && prev.sayId === sayId) {
+            if (
+              prev &&
+              prev.sayId === sayId &&
+              prev.text === text &&
+              prev.expression === expression
+            ) {
               return prev;
             }
-            return { sayId, text };
+            return { sayId, text, expression };
           });
 
           if (lastPlayedSayIdRef.current === sayId) {
@@ -258,7 +239,7 @@ export const KioskPage = () => {
       },
       onError: (error) => {
         setStreamError(error.message);
-      }
+      },
     });
 
     return () => {
@@ -278,8 +259,8 @@ export const KioskPage = () => {
   const mode = snapshot?.state.mode ?? null;
   const personalName = snapshot?.state.personal_name ?? null;
   const phase = snapshot?.state.phase ?? null;
-  const consentVisible = snapshot?.state.consent_ui_visible ?? false;
-  const showRecording = isRecording || phase === "listening";
+  const isConsentVisible = snapshot?.state.consent_ui_visible ?? false;
+  const shouldShowRecording = isRecording || phase === "listening";
 
   const sendConsent = async (answer: "yes" | "no") => {
     setConsentError(null);
@@ -296,6 +277,9 @@ export const KioskPage = () => {
   const modeText =
     mode === "PERSONAL" ? `PERSONAL${personalName ? ` (${personalName})` : ""}` : "ROOM";
 
+  const vrmExpression: ExpressionLabel = speech?.expression ?? "neutral";
+  const vrmUrl = import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm";
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -306,10 +290,7 @@ export const KioskPage = () => {
 
       <main className={styles.kioskLayout}>
         <section className={styles.kioskStage} aria-label="Mascot stage">
-          <div className={styles.kioskStagePlaceholder}>
-            <div className={styles.kioskStageTitle}>Mascot Stage</div>
-            <div className={styles.kioskStageHint}>Model (2D/3D) will be rendered here.</div>
-          </div>
+          <VrmAvatar vrmUrl={vrmUrl} expression={vrmExpression} mouthOpen={mouthOpen} />
         </section>
 
         <section className={styles.kioskOverlay} aria-label="Kiosk overlay">
@@ -318,7 +299,7 @@ export const KioskPage = () => {
             <div className={styles.kioskBadge}>Phase: {phase ?? "-"}</div>
           </div>
 
-          {showRecording ? <div className={styles.recordingPill}>Recording</div> : null}
+          {shouldShowRecording ? <div className={styles.recordingPill}>Recording</div> : null}
 
           {speech ? (
             <div className={styles.speechBubble}>
@@ -330,7 +311,7 @@ export const KioskPage = () => {
           {audioError ? <div className={styles.errorText}>Audio error: {audioError}</div> : null}
         </section>
 
-        {consentVisible ? (
+        {isConsentVisible ? (
           <div className={styles.modalBackdrop}>
             <div className={styles.modal} role="dialog" aria-label="Consent">
               <div className={styles.modalTitle}>覚えていい？</div>
@@ -357,6 +338,32 @@ export const KioskPage = () => {
           </div>
         ) : null}
       </main>
+
+      <AudioPlayer
+        wav={ttsWav}
+        playId={ttsPlayId}
+        onLevel={(playId, level) => {
+          if (ttsPlayIdRef.current !== playId) {
+            return;
+          }
+          setMouthOpen(level);
+        }}
+        onEnded={(playId) => {
+          if (ttsPlayIdRef.current !== playId) {
+            return;
+          }
+          setMouthOpen(0);
+          setTtsWav(null);
+        }}
+        onError={(playId, message) => {
+          if (ttsPlayIdRef.current !== playId) {
+            return;
+          }
+          setMouthOpen(0);
+          setTtsWav(null);
+          setAudioError(message);
+        }}
+      />
     </div>
   );
 };
