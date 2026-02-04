@@ -10,6 +10,8 @@ let port: number;
 let store: ReturnType<typeof createStore>;
 let staffCookie = "";
 
+let chatMode: "content" | "tool_calls" = "content";
+
 const sendRequest = (
   method: string,
   path: string,
@@ -87,12 +89,85 @@ const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) =>
   };
 };
 
+const readSseUntil = (
+  path: string,
+  predicate: (message: { type: string; seq: number; data: unknown }) => boolean,
+  onFirstMessage?: () => Promise<void>,
+  options?: { timeout_ms?: number },
+) =>
+  new Promise<Array<{ type: string; seq: number; data: unknown }>>((resolve, reject) => {
+    let isDone = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (err?: Error, result?: Array<{ type: string; seq: number; data: unknown }>) => {
+      if (isDone) {
+        return;
+      }
+      isDone = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(result ?? []);
+    };
+
+    const messages: Array<{ type: string; seq: number; data: unknown }> = [];
+    const req = request({ host: "127.0.0.1", port, method: "GET", path }, (res) => {
+      let buffer = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        buffer += chunk;
+        while (true) {
+          const endIndex = buffer.indexOf("\n\n");
+          if (endIndex === -1) {
+            return;
+          }
+          const eventChunk = buffer.slice(0, endIndex);
+          buffer = buffer.slice(endIndex + 2);
+          const lines = eventChunk.split("\n");
+          const dataLine = lines.find((line) => line.startsWith("data: "));
+          if (!dataLine) {
+            continue;
+          }
+          const raw = dataLine.slice("data: ".length);
+          const parsed = JSON.parse(raw) as { type: string; seq: number; data: unknown };
+          messages.push(parsed);
+          if (messages.length === 1 && onFirstMessage) {
+            void onFirstMessage().catch((err: unknown) => {
+              req.destroy();
+              finish(err instanceof Error ? err : new Error("onFirstMessage_failed"));
+            });
+          }
+          if (predicate(parsed)) {
+            res.destroy();
+            finish(undefined, messages);
+            return;
+          }
+        }
+      });
+    });
+
+    timeout = setTimeout(() => {
+      req.destroy();
+      finish(new Error("sse_timeout"));
+    }, options?.timeout_ms ?? 2500);
+
+    req.on("error", (err) => {
+      finish(err instanceof Error ? err : new Error("request_error"));
+    });
+    req.end();
+  });
+
 describe("http-server (async llm provider)", () => {
   beforeEach(async () => {
     process.env.STAFF_PASSCODE = "test-pass";
     process.env.LLM_PROVIDER_KIND = "local";
     process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
     process.env.LLM_MODEL = "dummy-model";
+    chatMode = "content";
 
     vi.stubGlobal("fetch", (async (input: unknown, init?: { body?: unknown }) => {
       const url = String(input);
@@ -110,6 +185,28 @@ describe("http-server (async llm provider)", () => {
                 message: {
                   content:
                     '{"task":"memory_extract","candidate":{"kind":"likes","value":"りんご","source_quote":"りんごがすき"}}',
+                },
+              },
+            ],
+          }),
+          arrayBuffer: async () => new ArrayBuffer(0),
+        };
+      }
+      if (chatMode === "tool_calls") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  tool_calls: [
+                    {
+                      id: "call_ok",
+                      type: "function",
+                      function: { name: "get_weather", arguments: "{}" },
+                    },
+                  ],
                 },
               },
             ],
@@ -233,5 +330,72 @@ describe("http-server (async llm provider)", () => {
     expect(list.status).toBe(200);
     const parsed = JSON.parse(list.body) as { items: Array<{ id: string }> };
     expect(parsed.items.length).toBe(1);
+  });
+
+  it("streams kiosk.command.tool_calls without arguments", async () => {
+    chatMode = "tool_calls";
+
+    const messages = await readSseUntil(
+      "/api/v1/kiosk/stream",
+      (message) => message.type === "kiosk.command.tool_calls",
+      async () => {
+        // 1st utterance: enter PERSONAL
+        {
+          const down = await sendRequest("POST", "/api/v1/staff/event", {
+            headers: withStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+          });
+          expect(down.status).toBe(200);
+          const up = await sendRequest("POST", "/api/v1/staff/event", {
+            headers: withStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+          });
+          expect(up.status).toBe(200);
+          const multipart = buildMultipartBody({
+            stt_request_id: "stt-1",
+            audio: Buffer.from("dummy", "utf8"),
+          });
+          const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+            headers: { "content-type": multipart.contentType },
+            body: multipart.body,
+          });
+          expect(audio.status).toBe(202);
+        }
+
+        // 2nd utterance: triggers async chat with tool_calls
+        {
+          const down = await sendRequest("POST", "/api/v1/staff/event", {
+            headers: withStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+          });
+          expect(down.status).toBe(200);
+          const up = await sendRequest("POST", "/api/v1/staff/event", {
+            headers: withStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+          });
+          expect(up.status).toBe(200);
+          const multipart = buildMultipartBody({
+            stt_request_id: "stt-2",
+            audio: Buffer.from("dummy", "utf8"),
+          });
+          const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+            headers: { "content-type": multipart.contentType },
+            body: multipart.body,
+          });
+          expect(audio.status).toBe(202);
+        }
+
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      },
+      { timeout_ms: 2500 },
+    );
+
+    const toolMessage = messages.find((message) => message.type === "kiosk.command.tool_calls");
+    expect(toolMessage).toBeTruthy();
+    expect(toolMessage?.data).toEqual({
+      tool_calls: [{ id: "call_ok", function: { name: "get_weather" } }],
+    });
   });
 });

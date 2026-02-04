@@ -20,6 +20,7 @@
 ### 1.2 スコープ
 
 **含む:**
+
 - `ROOM` / `PERSONAL(name)` のモード遷移とタイムアウト
 - Push-to-talk（職員操作）
 - 低センシティブの記憶候補（最大1件） + 子どもの同意 + 職員Confirm/Deny + `pending/confirmed` 永続
@@ -29,6 +30,7 @@
 - ツール呼び出しの最小対応（例: 天気の取得。許可リスト + タイムアウト + フォールバック）
 
 **含まない（PRDのスコープ外を継承）:**
+
 - バイオメトリクス（声紋等）による本人確認
 - 録音ファイル/会話全文/STT全文の永続保存
 - NFC識別
@@ -111,6 +113,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 ### 3.1 アーキテクチャ概要
 
 システム境界:
+
 - UI（KIOSK/STAFF）はI/O（録音、再生、表示、入力）を担当
 - Serverは状態（Orchestrator）と永続（SQLite）と境界（Provider）を担当
 - Providerは差し替え可能な境界として設計し、失敗しても会話が止まらない
@@ -153,6 +156,7 @@ to: API Server
 ### 3.3 データモデル（概要）
 
 DBファイル:
+
 - `DB_PATH` 環境変数で指定する
 - 未指定の場合の既定値: `var/wooly-fluffy.sqlite3`
 
@@ -176,6 +180,7 @@ MVPでは `pending/confirmed/rejected/deleted` を同一テーブルで表現す
 - `expires_at_ms` INTEGER NULL
 
 インデックス:
+
 - `idx_memory_items_status_created_at` on (`status`, `created_at_ms` DESC)
 - `idx_memory_items_status_expires_at` on (`status`, `expires_at_ms`)
 - `idx_memory_items_personal_status` on (`personal_name`, `status`)
@@ -205,6 +210,7 @@ MVPでは `pending/confirmed/rejected/deleted` を同一テーブルで表現す
 ### 3.4 API設計（概要）
 
 共通:
+
 - Base Path: `/api/v1`
 - Error 形式: `{ "error": { "code": string, "message": string } }`
 
@@ -251,16 +257,19 @@ API-8
 #### 3.4.1 Realtime（SSE）契約（詳細）
 
 SSEエンドポイント:
+
 - KIOSK: `GET /api/v1/kiosk/stream`
 - STAFF: `GET /api/v1/staff/stream`
 
 メッセージ封筒（SSE/WS共通の形）:
+
 - `ServerMessage`
   - `type: string`（例: `kiosk.snapshot`）
   - `seq: number`（単調増加の連番。接続単位でよい）
   - `data: object`
 
 接続時の挙動:
+
 - 接続が確立したら必ず `*.snapshot` を1回送る（初回/再接続とも）
 - 以降は変更があった時のみ送る
 - keep-alive（`ping` 等）を定期送信する
@@ -294,6 +303,10 @@ SSEエンドポイント:
 - `kiosk.command.speak`
   - `data`: `{ "say_id": string, "text": string, "expression"?: "neutral" | "happy" | "sad" | "surprised" }`
   - 注記: `say_id` は再接続時の二重再生を避けるためのUI側の重複排除用
+
+- `kiosk.command.tool_calls`
+  - `data`: `{ "tool_calls": Array<{ "id": string, "function": { "name": string } }> }`
+  - 注記: `arguments` は送らない（データ最小化 + 実行はServer側の別Issue）
 
 - `kiosk.command.play_motion`
   - `data`: `{ "motion_id": string, "motion_instance_id": string }`
@@ -353,14 +366,17 @@ SSEエンドポイント:
 ### 3.5 Orchestrator（仕様要約 / MVP A->B0）
 
 Orchestrator は純粋ロジック（副作用なし）として実装する:
+
 - input: `event` + `now`
 - output: `nextState` + `effects[]`
 
 決定性ルール:
+
 - モード切替、同意判定、allowlistチェックは外側LLMの自由文に依存させない
 - 非決定的な処理は、スキーマ固定JSON（InnerTask）を返し、コード側で validate して採用する
 
 コマンド解釈ルール（正規化後テキスト）:
+
 - `PERSONAL(name)` の開始条件
   - `パーソナル` で始まり、区切り（`、` / `,` / 空白）の直後に `name`（1トークン）がある
   - `name` が欠けている場合は不成立
@@ -370,18 +386,22 @@ Orchestrator は純粋ロジック（副作用なし）として実装する:
   - 追加語を含む場合は不成立
 
 リクエスト相関（`request_id`）:
+
 - Provider結果は `request_id` で関連付ける
 - `request_id` が現状態の in-flight と一致しない結果は無視する
 
 優先順位:
+
 - `STAFF_FORCE_ROOM` を最優先とし、進行中のフローを中断する
 - `STAFF_FORCE_ROOM` / `STAFF_EMERGENCY_STOP` ではUI出力を停止する（`kiosk.command.stop_output` を使用）
 
 タイムアウト:
+
 - PERSONAL 無操作: 300秒（明示アナウンス無しで ROOM に戻る）
 - 同意回答待ち: 30秒（候補を破棄し、定型フォールバックを発話する）
 
 Provider方針:
+
 - timeout: STT=12s, Chat=12s, InnerTask=4s
 - retry: 0（MVP）
 - cancel: 状態変化（force-room / emergency stop 等）でベストエフォートキャンセル
@@ -424,6 +444,7 @@ Provider方針:
     - `STORE_WRITE_PENDING(input: { personal_name: string, kind: "likes" | "food" | "play" | "hobby", value: string, source_quote?: string })`
 
 InnerTask JSON（最小）:
+
 - `consent_decision`: `{ "task": "consent_decision", "answer": "yes" | "no" | "unknown" }`
 - `memory_extract`: `{ "task": "memory_extract", "candidate": null | { "kind": "likes" | "food" | "play" | "hobby", "value": string, "source_quote"?: string } }`
 
@@ -471,6 +492,7 @@ Issue名: Web（KIOSK/STAFF）最小UI + SSE接続
 ### 4.2 依存関係図
 
 依存関係（関係を1行ずつ列挙）:
+
 - Issue 2 depends_on Issue 1
 - Issue 3 depends_on Issue 1
 - Issue 4 depends_on Issue 3
@@ -491,31 +513,37 @@ N/A（本Epicでは数値目標を置かない）
 PRD Q6-5: Yes
 
 扱うデータ:
+
 - 呼び名（`personal_name`）: 低リスクだが個人に紐づく可能性があるため最小化
 - 低センシティブ記憶（likes/food/play/hobby）: 職員Confirm後のみ保存
 - 音声/会話全文/STT全文: 永続保存しない
 
 認証/認可:
+
 - 認証方式: 共有パスコード（`STAFF_PASSCODE`） + セッションCookie
 - 認可モデル: STAFFセッション必須（KIOSKは不要）
 - ネットワーク制限: STAFF系はLAN内IPのみ許可
 
 LAN allowlist（remote address 判定）:
+
 - IPv4 private: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
 - IPv4 loopback: `127.0.0.0/8`
 - IPv6 local: `::1`（loopback）, `fc00::/7`（ULA）, `fe80::/10`（link-local）
 
 Trust Proxy（方針）:
+
 - MVPでは reverse proxy を前提にしない
 - アクセス制御の判定に `X-Forwarded-For` 等を信頼せず、TCP接続のremote address（サーバが観測する実IP）で判定する
 
 自動ロック / セッション失効:
+
 - 自動ロック: 3分（180_000ms）
 - 「無操作」はSTAFF UI上のユーザー操作（キー入力/マウス/タップ等）が無い状態を指す（SSE接続のみは操作に含めない）
 - STAFF UIは、ユーザー操作が継続している間だけ keepalive を送る（例: 30秒に1回、操作があった時にスケジュール）
 - keepalive がタイムアウト内に届かない場合、サーバはセッションを失効させる
 
 対策チェックリスト:
+
 - [ ] パスコード本文をログに出さない
 - [ ] LAN外からのSTAFFアクセスを拒否する
 - [ ] 自動ロック（keepaliveが無い場合はセッション失効）

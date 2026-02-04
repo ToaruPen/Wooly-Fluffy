@@ -11,6 +11,13 @@ export type ToolCall = {
   };
 };
 
+export type ToolCallLite = {
+  id: string;
+  function: {
+    name: string;
+  };
+};
+
 export type Phase =
   | "idle"
   | "listening"
@@ -84,6 +91,7 @@ export type OrchestratorEffect =
   | { type: "CALL_CHAT"; request_id: string; input: ChatInput }
   | ({ type: "CALL_INNER_TASK"; request_id: string } & InnerTaskInput)
   | { type: "SAY"; text: string }
+  | { type: "KIOSK_TOOL_CALLS"; tool_calls: ToolCallLite[] }
   | { type: "SET_EXPRESSION"; expression: Expression }
   | { type: "PLAY_MOTION"; motion_id: string; motion_instance_id: string }
   | { type: "SET_MODE"; mode: Mode; personal_name?: string }
@@ -97,6 +105,13 @@ export type OrchestratorEffect =
         source_quote?: string;
       };
     };
+
+const toToolCallLite = (call: ToolCall): ToolCallLite => ({
+  id: call.id,
+  function: {
+    name: call.function.name,
+  },
+});
 
 export type OrchestratorResult = {
   next_state: OrchestratorState;
@@ -441,9 +456,18 @@ export const reduceOrchestrator = (
         in_flight: { ...state.in_flight, chat_request_id: null },
       };
       const effects: OrchestratorEffect[] = [
-        { type: "SET_EXPRESSION", expression: event.expression },
-        { type: "SAY", text: event.assistant_text },
+        {
+          type: "SET_EXPRESSION",
+          expression: event.expression,
+        },
       ];
+      if (event.tool_calls.length > 0) {
+        effects.push({
+          type: "KIOSK_TOOL_CALLS",
+          tool_calls: event.tool_calls.map(toToolCallLite),
+        });
+      }
+      effects.push({ type: "SAY", text: event.assistant_text });
       if (cleared.mode === "PERSONAL" && cleared.memory_candidate === null) {
         const { id, state: withId } = nextRequestId(cleared, "inner");
         return {
