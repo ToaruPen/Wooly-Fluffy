@@ -108,6 +108,11 @@ ADR-10
 ステータス: 承認
 日付: 2026-02-02
 
+ADR-11
+タイトル: Mixamoモーションはローカル運用の仮素材として採用し、rawファイルをリポジトリに含めない
+ステータス: 承認
+日付: 2026-02-05
+
 ---
 
 ## ADR-1: データ最小化（保存/ログ）方針
@@ -524,3 +529,58 @@ VOICEVOX:
 
 - ADR-8: 一次情報URLの運用
 - Epic: `docs/epics/wooly-fluffy-mvp-epic.md` セクション 2.1（技術スタック）
+
+---
+
+## ADR-11: Mixamoモーションはローカル運用の仮素材として採用し、rawファイルをリポジトリに含めない
+
+### ステータス
+
+承認
+
+### 日付
+
+2026-02-05
+
+### コンテキスト
+
+KIOSKのリアリティ（待機モーション/しぐさ）を早期に検証したい。
+一方で、モーション資産のライセンスや「rawファイルの再配布」リスクを避け、運用事故（誤コミット/公開）を防ぐ必要がある。
+
+### 選択肢
+
+#### 案A: Mixamoを仮素材として使用（ローカル運用のみ、rawはリポジトリ外）
+
+- 説明: Mixamoのモーションを選定し、VRM向け（VRMA等）に変換してローカル配置で利用する。リポジトリにrawファイル（FBX/VRMA等）を含めない。
+- メリット: 早く検証できる、バリエーションを揃えやすい
+- デメリット: 将来の公開/配布形態によっては差し替えが必要になる
+
+#### 案B: CC0/OSS素材のみを採用
+
+- 説明: 最初からCC0/OSSのモーション素材のみで構成する
+- メリット: 将来の公開/配布にもそのまま使いやすい
+- デメリット: 素材探索/選定に時間がかかりやすい
+
+### 決定
+
+案Aを採用する。
+
+### 理由
+
+- 当面はローカル運用のみの前提であり、早期検証を優先する
+- rawファイルをリポジトリに含めない運用ルールにより、再配布/公開の事故を抑制できる
+- 将来公開する場合でも、`motion_id` 許可リスト + 変換パイプラインを維持して差し替え可能にする
+
+### 影響
+
+- Mixamo由来のrawファイル（FBX/VRMA等）はgit管理しない（コミット/公開しない）
+- KIOSKは `motion_id` の許可リスト運用とし、未知の `motion_id` は安全に無視する
+- 変換/配置/手動テスト手順をEpic/Issueに記録し、再現可能にする
+
+### 参照
+
+- PRD: `docs/prd/wooly-fluffy.md`
+- Epic: `docs/epics/wooly-fluffy-mvp-epic.md`（Server->KIOSK: `kiosk.command.play_motion`）
+- Epic: `docs/epics/provider-layer-epic.md`（芸事/許可リスト）
+- Issue: #38（Mixamo motion playback PoC）
+- Mixamo FAQ: https://community.adobe.com/t5/mixamo-discussions/mixamo-faq-licensing-royalties-ownership-eula-and-tos/td-p/13234775

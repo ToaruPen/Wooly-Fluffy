@@ -311,6 +311,10 @@ SSEエンドポイント:
 - `kiosk.command.play_motion`
   - `data`: `{ "motion_id": string, "motion_instance_id": string }`
   - 意味: 許可リストのモーションを再生する（`motion_instance_id` は重複排除/上書き制御用）
+  - 制約: 許可リスト外の `motion_id` は安全に無視する
+  - 初期許可リスト（PoC）: `idle` / `greeting` / `cheer`
+  - ローカル運用: モーション資産はローカル配置し、リポジトリにコミットしない（Mixamo等のrawファイル再配布を避ける）
+  - 参照: ADR-11（Mixamoモーション運用方針）, Issue #38（Mixamo motion playback PoC）
 
 - `kiosk.command.stop_output`
   - `data`: `{}`
