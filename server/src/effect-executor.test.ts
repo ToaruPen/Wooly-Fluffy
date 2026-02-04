@@ -56,6 +56,35 @@ describe("effect-executor", () => {
     ]);
   });
 
+  it("sends kiosk.command.tool_calls", () => {
+    const providers = createStubProviders();
+
+    const sent: Array<{ type: string; data: object }> = [];
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: (type, data) => sent.push({ type, data }),
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+    });
+
+    const events = executor.executeEffects([
+      {
+        type: "KIOSK_TOOL_CALLS",
+        tool_calls: [{ id: "call-1", function: { name: "get_weather" } }],
+      },
+    ]);
+    expect(events).toEqual([]);
+    expect(sent).toEqual([
+      {
+        type: "kiosk.command.tool_calls",
+        data: {
+          tool_calls: [{ id: "call-1", function: { name: "get_weather" } }],
+        },
+      },
+    ]);
+  });
+
   it("calls onSttRequested for CALL_STT", () => {
     const providers = createStubProviders();
 

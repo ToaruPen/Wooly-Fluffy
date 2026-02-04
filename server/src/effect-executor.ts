@@ -131,6 +131,11 @@ export const createEffectExecutor = (deps: {
             motion_instance_id: effect.motion_instance_id,
           });
           break;
+        case "KIOSK_TOOL_CALLS":
+          deps.sendKioskCommand("kiosk.command.tool_calls", {
+            tool_calls: effect.tool_calls,
+          });
+          break;
         case "STORE_WRITE_PENDING":
           deps.storeWritePending(effect.input);
           break;

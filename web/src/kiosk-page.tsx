@@ -6,6 +6,7 @@ import { connectSse, type ServerMessage } from "./sse-client";
 import { AudioPlayer } from "./components/audio-player";
 import { VrmAvatar, type ExpressionLabel } from "./components/vrm-avatar";
 import { parseExpressionLabel } from "./kiosk-expression";
+import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 
 type Mode = "ROOM" | "PERSONAL";
@@ -54,6 +55,7 @@ export const KioskPage = () => {
   const [snapshot, setSnapshot] = useState<KioskSnapshot | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [speech, setSpeech] = useState<SpeakState | null>(null);
+  const [toolCallsCount, setToolCallsCount] = useState(0);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export const KioskPage = () => {
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
   const ttsGenerationRef = useRef(0);
   const lastPlayedSayIdRef = useRef<string | null>(null);
+  const toolCallsRef = useRef<ToolCallLite[]>([]);
 
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
@@ -231,6 +234,13 @@ export const KioskPage = () => {
           return;
         }
 
+        if (message.type === "kiosk.command.tool_calls") {
+          const toolCalls = parseKioskToolCallsData(message.data);
+          toolCallsRef.current = toolCalls;
+          setToolCallsCount(toolCalls.length);
+          return;
+        }
+
         if (message.type === "kiosk.command.stop_output") {
           setSpeech(null);
           stopTtsAudio();
@@ -281,7 +291,7 @@ export const KioskPage = () => {
   const vrmUrl = import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm";
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-wf-tool-calls-count={toolCallsCount}>
       <header className={styles.header}>
         <h1>KIOSK</h1>
         <div className={styles.label}>Stream: /api/v1/kiosk/stream</div>

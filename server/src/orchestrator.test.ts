@@ -72,6 +72,43 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("emits kiosk tool_calls effect from CHAT_RESULT", () => {
+    const base = createInitialState(0);
+    const waitingChat: OrchestratorState = {
+      ...base,
+      phase: "waiting_chat",
+      request_seq: 1,
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingChat,
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "ok",
+        request_id: "chat-1",
+        expression: "neutral",
+        tool_calls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: { name: "get_weather", arguments: "{}" },
+          },
+        ],
+      },
+      1000,
+    );
+
+    expect(result.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "neutral" },
+      {
+        type: "KIOSK_TOOL_CALLS",
+        tool_calls: [{ id: "call-1", function: { name: "get_weather" } }],
+      },
+      { type: "SAY", text: "ok" },
+    ]);
+  });
+
   it("switches to personal mode with command", () => {
     const base = createInitialState(0);
     const state: OrchestratorState = {
