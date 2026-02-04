@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export type AudioPlayerProps = {
+type AudioPlayerProps = {
   wav: ArrayBuffer | null;
   playId: number;
   onEnded?: (playId: number) => void;

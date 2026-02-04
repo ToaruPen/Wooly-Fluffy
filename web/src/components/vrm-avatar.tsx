@@ -5,7 +5,7 @@ import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 
 export type ExpressionLabel = "neutral" | "happy" | "sad" | "surprised";
 
-export type VrmAvatarProps = {
+type VrmAvatarProps = {
   vrmUrl: string;
   expression: ExpressionLabel;
   mouthOpen: number;
