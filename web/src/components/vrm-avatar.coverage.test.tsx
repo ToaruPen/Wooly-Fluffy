@@ -166,7 +166,7 @@ describe("VrmAvatar (coverage)", () => {
 
   it("exports helper functions and handles missing managers", async () => {
     HTMLCanvasElement.prototype.getContext = () => null;
-    const mod = await import("./VrmAvatar");
+    const mod = await import("./vrm-avatar");
     const { __test__ } = mod;
 
     const setValue = vi.fn();
@@ -210,7 +210,7 @@ describe("VrmAvatar (coverage)", () => {
 
   it("renders fallback when WebGL is not available", async () => {
     HTMLCanvasElement.prototype.getContext = () => null;
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -228,7 +228,7 @@ describe("VrmAvatar (coverage)", () => {
 
   it("renders fallback when vrmUrl is empty", async () => {
     HTMLCanvasElement.prototype.getContext = () => null;
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -275,7 +275,7 @@ describe("VrmAvatar (coverage)", () => {
     });
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
 
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
@@ -323,7 +323,7 @@ describe("VrmAvatar (coverage)", () => {
     Object.defineProperty(window, "devicePixelRatio", { value: undefined, configurable: true });
 
     loadAsyncImpl = async () => ({ userData: {} });
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
@@ -365,7 +365,7 @@ describe("VrmAvatar (coverage)", () => {
       return await deferred;
     };
 
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
@@ -402,7 +402,7 @@ describe("VrmAvatar (coverage)", () => {
       throw new Error("bad");
     };
 
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
@@ -447,7 +447,7 @@ describe("VrmAvatar (coverage)", () => {
       throw new Error("deepDispose");
     };
 
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
@@ -489,7 +489,7 @@ describe("VrmAvatar (coverage)", () => {
         deferredReject = reject;
       });
 
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
@@ -521,7 +521,7 @@ describe("VrmAvatar (coverage)", () => {
         deferredResolve = resolve;
       });
 
-    const { VrmAvatar } = await import("./VrmAvatar");
+    const { VrmAvatar } = await import("./vrm-avatar");
 
     const container = document.createElement("div");
     container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;

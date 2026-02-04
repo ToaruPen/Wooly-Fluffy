@@ -3,8 +3,8 @@ import { postFormData, postJson } from "./api";
 import { convertRecordingBlobToWavFile } from "./kiosk-audio";
 import { startPttSession, type PttSession } from "./kiosk-ptt";
 import { connectSse, type ServerMessage } from "./sse-client";
-import { AudioPlayer } from "./components/AudioPlayer";
-import { VrmAvatar, type ExpressionLabel } from "./components/VrmAvatar";
+import { AudioPlayer } from "./components/audio-player";
+import { VrmAvatar, type ExpressionLabel } from "./components/vrm-avatar";
 import { parseExpressionLabel } from "./kiosk-expression";
 import styles from "./styles.module.css";
 

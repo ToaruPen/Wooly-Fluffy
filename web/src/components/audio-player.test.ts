@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clamp01, computeRmsFromByteTimeDomainData, smoothValue } from "./AudioPlayer";
+import { clamp01, computeRmsFromByteTimeDomainData, smoothValue } from "./audio-player";
 
 describe("AudioPlayer helpers", () => {
   it("clamp01 clamps range", () => {

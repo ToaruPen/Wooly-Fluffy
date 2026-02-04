@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
-import { VrmAvatar } from "./VrmAvatar";
+import { VrmAvatar } from "./vrm-avatar";
 
 describe("VrmAvatar", () => {
   it("shows fallback in jsdom without WebGL", () => {

@@ -1,4 +1,4 @@
-import type { ExpressionLabel } from "./components/VrmAvatar";
+import type { ExpressionLabel } from "./components/vrm-avatar";
 
 export const parseExpressionLabel = (value: unknown): ExpressionLabel => {
   if (value === "neutral" || value === "happy" || value === "sad" || value === "surprised") {

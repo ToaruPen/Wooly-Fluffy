@@ -8,14 +8,14 @@ let latestAudioPlayerProps: {
   onError?: (playId: number, message: string) => void;
 } | null = null;
 
-vi.mock("./components/AudioPlayer", () => ({
+vi.mock("./components/audio-player", () => ({
   AudioPlayer: (props: unknown) => {
     latestAudioPlayerProps = props as typeof latestAudioPlayerProps;
     return null;
   },
 }));
 
-vi.mock("./components/VrmAvatar", () => ({
+vi.mock("./components/vrm-avatar", () => ({
   VrmAvatar: () => null,
 }));
 

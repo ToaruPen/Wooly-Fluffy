@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AudioPlayer } from "./AudioPlayer";
+import { AudioPlayer } from "./audio-player";
 
 type FakeAudioInstance = {
   src: string;
