@@ -57,7 +57,7 @@ const isWebGlAvailable = () => {
 export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const webglOk = useMemo(() => isWebGlAvailable(), []);
+  const isWebGlOk = useMemo(() => isWebGlAvailable(), []);
 
   const expressionRef = useRef<ExpressionLabel>(expression);
   const mouthOpenRef = useRef<number>(mouthOpen);
@@ -76,7 +76,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
       return;
     }
 
-    if (!webglOk) {
+    if (!isWebGlOk) {
       setError("WebGL is not available");
       return;
     }
@@ -104,7 +104,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
     let rafId = 0;
     const clock = new THREE.Clock();
     let vrm: VRM | null = null;
-    let disposed = false;
+    let isDisposed = false;
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
@@ -123,7 +123,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
     void loader
       .loadAsync(vrmUrl)
       .then((gltf: GLTF) => {
-        if (disposed) {
+        if (isDisposed) {
           return;
         }
         const loaded = (gltf.userData as Record<string, unknown>).vrm as VRM | undefined;
@@ -141,7 +141,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
         scene.add(vrm.scene);
       })
       .catch((e: unknown) => {
-        if (disposed) {
+        if (isDisposed) {
           return;
         }
         setError(e instanceof Error ? e.message : "Failed to load VRM");
@@ -165,7 +165,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
     window.addEventListener("resize", onResize);
 
     return () => {
-      disposed = true;
+      isDisposed = true;
       window.removeEventListener("resize", onResize);
       cancelAnimationFrame(rafId);
 
@@ -189,7 +189,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen }: VrmAvatarProps) => 
         // ignore
       }
     };
-  }, [vrmUrl, webglOk]);
+  }, [vrmUrl, isWebGlOk]);
 
   if (error) {
     return (

@@ -259,8 +259,8 @@ export const KioskPage = () => {
   const mode = snapshot?.state.mode ?? null;
   const personalName = snapshot?.state.personal_name ?? null;
   const phase = snapshot?.state.phase ?? null;
-  const consentVisible = snapshot?.state.consent_ui_visible ?? false;
-  const showRecording = isRecording || phase === "listening";
+  const isConsentVisible = snapshot?.state.consent_ui_visible ?? false;
+  const shouldShowRecording = isRecording || phase === "listening";
 
   const sendConsent = async (answer: "yes" | "no") => {
     setConsentError(null);
@@ -299,7 +299,7 @@ export const KioskPage = () => {
             <div className={styles.kioskBadge}>Phase: {phase ?? "-"}</div>
           </div>
 
-          {showRecording ? <div className={styles.recordingPill}>Recording</div> : null}
+          {shouldShowRecording ? <div className={styles.recordingPill}>Recording</div> : null}
 
           {speech ? (
             <div className={styles.speechBubble}>
@@ -311,7 +311,7 @@ export const KioskPage = () => {
           {audioError ? <div className={styles.errorText}>Audio error: {audioError}</div> : null}
         </section>
 
-        {consentVisible ? (
+        {isConsentVisible ? (
           <div className={styles.modalBackdrop}>
             <div className={styles.modal} role="dialog" aria-label="Consent">
               <div className={styles.modalTitle}>覚えていい？</div>

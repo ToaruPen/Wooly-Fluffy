@@ -66,7 +66,8 @@ vi.mock("three", () => {
       rendererPixelRatios.push(_ratio);
       return undefined;
     }
-    setSize(_w: number, _h: number, _updateStyle: boolean) {
+    setSize(_w: number, _h: number, shouldUpdateStyle: boolean) {
+      void shouldUpdateStyle;
       return undefined;
     }
     render(scene: unknown, camera: unknown) {
