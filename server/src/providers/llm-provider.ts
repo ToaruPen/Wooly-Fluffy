@@ -4,7 +4,7 @@ import type {
   LlmProviderKind,
   LlmToolCall,
   ProviderHealth,
-  Providers
+  Providers,
 } from "./types.js";
 
 type FetchResponse = {
@@ -20,7 +20,7 @@ type FetchFn = (
     signal?: AbortSignal;
     headers?: Record<string, string>;
     body?: string;
-  }
+  },
 ) => Promise<FetchResponse>;
 
 type OpenAiCompatibleLlmProviderOptions = {
@@ -37,7 +37,7 @@ const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
 
 const withTimeout = async <T>(
   timeoutMs: number,
-  run: (signal: AbortSignal) => Promise<T>
+  run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -51,7 +51,9 @@ const withTimeout = async <T>(
 const isExpression = (value: unknown): value is LlmExpression =>
   value === "neutral" || value === "happy" || value === "sad" || value === "surprised";
 
-const parseChatContent = (content: unknown): { assistant_text: string; expression: LlmExpression } => {
+const parseChatContent = (
+  content: unknown,
+): { assistant_text: string; expression: LlmExpression } => {
   if (typeof content !== "string") {
     throw new Error("invalid_llm_content");
   }
@@ -88,14 +90,18 @@ const coerceToolCalls = (value: unknown): LlmToolCall[] => {
     if (!fn || typeof fn.name !== "string" || typeof fn.arguments !== "string") {
       continue;
     }
-    out.push({ id: obj.id, type: "function", function: { name: fn.name, arguments: fn.arguments } });
+    out.push({
+      id: obj.id,
+      type: "function",
+      function: { name: fn.name, arguments: fn.arguments },
+    });
   }
   return out;
 };
 
 const createAuthHeader = (
   kind: Exclude<LlmProviderKind, "stub">,
-  apiKey?: string
+  apiKey?: string,
 ): Record<string, string> => {
   if (kind !== "external") {
     return {};
@@ -111,11 +117,11 @@ const TOOL_CALLS_FALLBACK_TEXT = "ちょっと調べてみるね";
 const LLM_RETRY_POLICY = {
   // Explicit policy: no retries. (1 attempt total)
   max_attempts: 1 as const,
-  strategy: "none" as const
+  strategy: "none" as const,
 };
 
 export const createOpenAiCompatibleLlmProvider = (
-  options: OpenAiCompatibleLlmProviderOptions
+  options: OpenAiCompatibleLlmProviderOptions,
 ): Providers["llm"] => {
   const baseUrl = normalizeBaseUrl(options.base_url);
   const model = options.model;
@@ -129,11 +135,11 @@ export const createOpenAiCompatibleLlmProvider = (
         method: init?.method,
         signal: init?.signal,
         headers: init?.headers,
-        body: init?.body
+        body: init?.body,
       }).then((res) => ({
         ok: res.ok,
         status: res.status,
-        json: () => res.json() as Promise<unknown>
+        json: () => res.json() as Promise<unknown>,
       })));
 
   const authHeader = createAuthHeader(options.kind, options.api_key);
@@ -146,17 +152,17 @@ export const createOpenAiCompatibleLlmProvider = (
         {
           role: "system",
           content:
-            "Return JSON only: {\"assistant_text\": string, \"expression\": \"neutral\"|\"happy\"|\"sad\"|\"surprised\" }."
+            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised" }.',
         },
         {
           role: "user",
           content: JSON.stringify({
             mode: input.mode,
             personal_name: input.personal_name,
-            text: input.text
-          })
-        }
-      ]
+            text: input.text,
+          }),
+        },
+      ],
     };
 
     const res = await withTimeout(timeoutChatMs, (signal) =>
@@ -165,14 +171,14 @@ export const createOpenAiCompatibleLlmProvider = (
         signal,
         headers: {
           "content-type": "application/json",
-          ...authHeader
+          ...authHeader,
         },
-        body: JSON.stringify(body)
-      })
+        body: JSON.stringify(body),
+      }),
     );
     if (!res.ok) {
       throw new Error(
-        `llm chat failed: HTTP ${res.status} (retry_strategy=${LLM_RETRY_POLICY.strategy}, max_attempts=${LLM_RETRY_POLICY.max_attempts})`
+        `llm chat failed: HTTP ${res.status} (retry_strategy=${LLM_RETRY_POLICY.strategy}, max_attempts=${LLM_RETRY_POLICY.max_attempts})`,
       );
     }
 
@@ -191,9 +197,7 @@ export const createOpenAiCompatibleLlmProvider = (
     return { ...parsed, tool_calls: [] };
   };
 
-  const callInnerTask: Providers["llm"]["inner_task"]["call"] = async (
-    input: InnerTaskInput
-  ) => {
+  const callInnerTask: Providers["llm"]["inner_task"]["call"] = async (input: InnerTaskInput) => {
     const url = `${baseUrl}/chat/completions`;
     const task = input.task;
     const body = {
@@ -203,11 +207,11 @@ export const createOpenAiCompatibleLlmProvider = (
           role: "system",
           content:
             task === "consent_decision"
-              ? "Return JSON only: {\"task\":\"consent_decision\",\"answer\":\"yes\"|\"no\"|\"unknown\"}."
-              : "Return JSON only: {\"task\":\"memory_extract\",\"candidate\": null | {\"kind\":\"likes\"|\"food\"|\"play\"|\"hobby\",\"value\": string,\"source_quote\"?: string}}."
+              ? 'Return JSON only: {"task":"consent_decision","answer":"yes"|"no"|"unknown"}.'
+              : 'Return JSON only: {"task":"memory_extract","candidate": null | {"kind":"likes"|"food"|"play"|"hobby","value": string,"source_quote"?: string}}.',
         },
-        { role: "user", content: JSON.stringify(input) }
-      ]
+        { role: "user", content: JSON.stringify(input) },
+      ],
     };
 
     const res = await withTimeout(timeoutInnerTaskMs, (signal) =>
@@ -216,14 +220,14 @@ export const createOpenAiCompatibleLlmProvider = (
         signal,
         headers: {
           "content-type": "application/json",
-          ...authHeader
+          ...authHeader,
         },
-        body: JSON.stringify(body)
-      })
+        body: JSON.stringify(body),
+      }),
     );
     if (!res.ok) {
       throw new Error(
-        `llm inner_task failed: HTTP ${res.status} (retry_strategy=${LLM_RETRY_POLICY.strategy}, max_attempts=${LLM_RETRY_POLICY.max_attempts})`
+        `llm inner_task failed: HTTP ${res.status} (retry_strategy=${LLM_RETRY_POLICY.strategy}, max_attempts=${LLM_RETRY_POLICY.max_attempts})`,
       );
     }
 
@@ -243,8 +247,8 @@ export const createOpenAiCompatibleLlmProvider = (
         fetchFn(`${baseUrl}/models`, {
           method: "GET",
           signal,
-          headers: { ...authHeader }
-        })
+          headers: { ...authHeader },
+        }),
       );
       return res.ok ? { status: "ok" } : { status: "unavailable" };
     } catch {
@@ -256,36 +260,34 @@ export const createOpenAiCompatibleLlmProvider = (
     kind: options.kind,
     chat: { call: callChat },
     inner_task: { call: callInnerTask },
-    health
+    health,
   };
 };
 
-export const createLlmProviderFromEnv = (options?: {
-  fetch?: FetchFn;
-}): Providers["llm"] => {
+export const createLlmProviderFromEnv = (options?: { fetch?: FetchFn }): Providers["llm"] => {
   const kind = (process.env.LLM_PROVIDER_KIND ?? "stub") as LlmProviderKind;
   if (kind !== "local" && kind !== "external") {
     return {
       kind: "stub",
       chat: {
-        call: () => ({ assistant_text: "うんうん", expression: "neutral", tool_calls: [] })
+        call: () => ({ assistant_text: "うんうん", expression: "neutral", tool_calls: [] }),
       },
       inner_task: {
         call: (input) => {
           if (input.task === "consent_decision") {
             return {
-              json_text: JSON.stringify({ task: "consent_decision", answer: "unknown" })
+              json_text: JSON.stringify({ task: "consent_decision", answer: "unknown" }),
             };
           }
           return {
             json_text: JSON.stringify({
               task: "memory_extract",
-              candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" }
-            })
+              candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" },
+            }),
           };
-        }
+        },
       },
-      health: () => ({ status: "ok" })
+      health: () => ({ status: "ok" }),
     };
   }
 
@@ -297,14 +299,14 @@ export const createLlmProviderFromEnv = (options?: {
       chat: {
         call: async () => {
           throw new Error("llm is not configured: set LLM_BASE_URL and LLM_MODEL");
-        }
+        },
       },
       inner_task: {
         call: async () => {
           throw new Error("llm is not configured: set LLM_BASE_URL and LLM_MODEL");
-        }
+        },
       },
-      health: async () => ({ status: "unavailable" })
+      health: async () => ({ status: "unavailable" }),
     };
   }
 
@@ -313,6 +315,6 @@ export const createLlmProviderFromEnv = (options?: {
     base_url: baseUrl,
     model,
     api_key: process.env.LLM_API_KEY,
-    fetch: options?.fetch
+    fetch: options?.fetch,
   });
 };

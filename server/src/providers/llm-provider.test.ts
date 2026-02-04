@@ -28,7 +28,7 @@ const createAbortableNeverFetch = () => {
           err.name = "AbortError";
           reject(err);
         },
-        { once: true }
+        { once: true },
       );
     });
 };
@@ -48,17 +48,17 @@ describe("llm-provider (OpenAI-compatible)", () => {
             choices: [
               {
                 message: {
-                  content: JSON.stringify({ assistant_text: "Hello", expression: "neutral" })
-                }
-              }
-            ]
-          })
+                  content: JSON.stringify({ assistant_text: "Hello", expression: "neutral" }),
+                },
+              },
+            ],
+          }),
         };
-      }
+      },
     });
 
     await expect(
-      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
     ).resolves.toMatchObject({ assistant_text: "Hello" });
   });
 
@@ -72,8 +72,8 @@ describe("llm-provider (OpenAI-compatible)", () => {
         expect(init?.method).toBe("POST");
 
         const bodyText = String(init?.body ?? "");
-        expect(bodyText).toContain("\"model\":\"dummy-model\"");
-        expect(bodyText).toContain("\"messages\"");
+        expect(bodyText).toContain('"model":"dummy-model"');
+        expect(bodyText).toContain('"messages"');
 
         return {
           ok: true,
@@ -84,23 +84,23 @@ describe("llm-provider (OpenAI-compatible)", () => {
                 message: {
                   content: JSON.stringify({
                     assistant_text: "Hello",
-                    expression: "happy"
-                  })
-                }
-              }
-            ]
-          })
+                    expression: "happy",
+                  }),
+                },
+              },
+            ],
+          }),
         };
-      }
+      },
     });
 
-    await expect(
-      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
-    ).resolves.toEqual({
-      assistant_text: "Hello",
-      expression: "happy",
-      tool_calls: []
-    });
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      {
+        assistant_text: "Hello",
+        expression: "happy",
+        tool_calls: [],
+      },
+    );
   });
 
   it("falls back to neutral when expression is invalid", async () => {
@@ -117,22 +117,22 @@ describe("llm-provider (OpenAI-compatible)", () => {
               message: {
                 content: JSON.stringify({
                   assistant_text: "Hello",
-                  expression: "angry"
-                })
-              }
-            }
-          ]
-        })
-      })
+                  expression: "angry",
+                }),
+              },
+            },
+          ],
+        }),
+      }),
     });
 
-    await expect(
-      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
-    ).resolves.toEqual({
-      assistant_text: "Hello",
-      expression: "neutral",
-      tool_calls: []
-    });
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      {
+        assistant_text: "Hello",
+        expression: "neutral",
+        tool_calls: [],
+      },
+    );
   });
 
   it("detects tool_calls and returns them", async () => {
@@ -154,15 +154,15 @@ describe("llm-provider (OpenAI-compatible)", () => {
                     type: "function",
                     function: {
                       name: "get_weather",
-                      arguments: "{\"location\":\"Tokyo\"}"
-                    }
-                  }
-                ]
-              }
-            }
-          ]
-        })
-      })
+                      arguments: '{"location":"Tokyo"}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }),
     });
 
     const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
@@ -190,14 +190,14 @@ describe("llm-provider (OpenAI-compatible)", () => {
                   {
                     id: "call_ok",
                     type: "function",
-                    function: { name: "get_weather", arguments: "{}" }
-                  }
-                ]
-              }
-            }
-          ]
-        })
-      })
+                    function: { name: "get_weather", arguments: "{}" },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }),
     });
 
     const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
@@ -215,16 +215,16 @@ describe("llm-provider (OpenAI-compatible)", () => {
         json: async () => ({
           choices: [
             {
-              message: { content: JSON.stringify({ assistant_text: "Hello" }) }
-            }
-          ]
-        })
-      })
+              message: { content: JSON.stringify({ assistant_text: "Hello" }) },
+            },
+          ],
+        }),
+      }),
     });
 
-    await expect(
-      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
-    ).resolves.toEqual({ assistant_text: "Hello", expression: "neutral", tool_calls: [] });
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      { assistant_text: "Hello", expression: "neutral", tool_calls: [] },
+    );
   });
 
   it("throws when chat completion returns non-2xx", async () => {
@@ -236,15 +236,15 @@ describe("llm-provider (OpenAI-compatible)", () => {
       fetch: async () => {
         calls += 1;
         return {
-        ok: false,
-        status: 500,
-        json: async () => ({})
+          ok: false,
+          status: 500,
+          json: async () => ({}),
         };
-      }
+      },
     });
 
     await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow(
-      /HTTP 500/
+      /HTTP 500/,
     );
     expect(calls).toBe(1);
   });
@@ -254,10 +254,10 @@ describe("llm-provider (OpenAI-compatible)", () => {
       kind: "local",
       base_url: "http://lmstudio.local/v1",
       model: "dummy-model",
-      fetch: async () => ({ ok: true, status: 200, json: async () => ({ choices: [] }) })
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({ choices: [] }) }),
     });
     await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow(
-      /no message/
+      /no message/,
     );
   });
 
@@ -269,11 +269,11 @@ describe("llm-provider (OpenAI-compatible)", () => {
       fetch: async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: 123 } }] })
-      })
+        json: async () => ({ choices: [{ message: { content: 123 } }] }),
+      }),
     });
     await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow(
-      /invalid_llm_content/
+      /invalid_llm_content/,
     );
   });
 
@@ -285,10 +285,12 @@ describe("llm-provider (OpenAI-compatible)", () => {
       fetch: async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: "not json" } }] })
-      })
+        json: async () => ({ choices: [{ message: { content: "not json" } }] }),
+      }),
     });
-    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow();
+    await expect(
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+    ).rejects.toThrow();
   });
 
   it("throws when assistant_text is missing", async () => {
@@ -299,11 +301,11 @@ describe("llm-provider (OpenAI-compatible)", () => {
       fetch: async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: "{}" } }] })
-      })
+        json: async () => ({ choices: [{ message: { content: "{}" } }] }),
+      }),
     });
     await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow(
-      /invalid_llm_assistant_text/
+      /invalid_llm_assistant_text/,
     );
   });
 
@@ -313,9 +315,11 @@ describe("llm-provider (OpenAI-compatible)", () => {
       base_url: "http://lmstudio.local/v1",
       model: "dummy-model",
       timeout_ms_chat: 1,
-      fetch: createAbortableNeverFetch()
+      fetch: createAbortableNeverFetch(),
     });
-    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow();
+    await expect(
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+    ).rejects.toThrow();
   });
 
   it("executes inner_task for consent_decision", async () => {
@@ -330,14 +334,15 @@ describe("llm-provider (OpenAI-compatible)", () => {
           ok: true,
           status: 200,
           json: async () => ({
-            choices: [{ message: { content: "{\"task\":\"consent_decision\"}" } }]
-          })
+            choices: [{ message: { content: '{"task":"consent_decision"}' } }],
+          }),
         };
-      }
+      },
     });
 
-    await expect(llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } })).resolves
-      .toEqual({ json_text: "{\"task\":\"consent_decision\"}" });
+    await expect(
+      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
+    ).resolves.toEqual({ json_text: '{"task":"consent_decision"}' });
   });
 
   it("executes inner_task for memory_extract", async () => {
@@ -352,15 +357,15 @@ describe("llm-provider (OpenAI-compatible)", () => {
           ok: true,
           status: 200,
           json: async () => ({
-            choices: [{ message: { content: "{\"task\":\"memory_extract\"}" } }]
-          })
+            choices: [{ message: { content: '{"task":"memory_extract"}' } }],
+          }),
         };
-      }
+      },
     });
 
     await expect(
-      llm.inner_task.call({ task: "memory_extract", input: { assistant_text: "yo" } })
-    ).resolves.toEqual({ json_text: "{\"task\":\"memory_extract\"}" });
+      llm.inner_task.call({ task: "memory_extract", input: { assistant_text: "yo" } }),
+    ).resolves.toEqual({ json_text: '{"task":"memory_extract"}' });
   });
 
   it("throws when inner_task returns non-2xx", async () => {
@@ -372,10 +377,10 @@ describe("llm-provider (OpenAI-compatible)", () => {
       fetch: async () => {
         calls += 1;
         return { ok: false, status: 503, json: async () => ({}) };
-      }
+      },
     });
     await expect(
-      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } })
+      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
     ).rejects.toThrow(/HTTP 503/);
     expect(calls).toBe(1);
   });
@@ -388,11 +393,11 @@ describe("llm-provider (OpenAI-compatible)", () => {
       fetch: async () => ({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: null } }] })
-      })
+        json: async () => ({ choices: [{ message: { content: null } }] }),
+      }),
     });
     await expect(
-      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } })
+      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
     ).rejects.toThrow(/empty content/);
   });
 
@@ -402,10 +407,10 @@ describe("llm-provider (OpenAI-compatible)", () => {
       base_url: "http://lmstudio.local/v1",
       model: "dummy-model",
       timeout_ms_inner_task: 1,
-      fetch: createAbortableNeverFetch()
+      fetch: createAbortableNeverFetch(),
     });
     await expect(
-      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } })
+      llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
     ).rejects.toThrow();
   });
 
@@ -421,9 +426,9 @@ describe("llm-provider (OpenAI-compatible)", () => {
           ok: true,
           status: 200,
           json: async () => ({}),
-          arrayBuffer: async () => new ArrayBuffer(0)
+          arrayBuffer: async () => new ArrayBuffer(0),
         };
-      }
+      },
     });
 
     await expect(llm.health()).resolves.toEqual({ status: "ok" });
@@ -434,7 +439,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
       kind: "local",
       base_url: "http://lmstudio.local/v1",
       model: "dummy-model",
-      fetch: async () => ({ ok: false, status: 500, json: async () => ({}) })
+      fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }),
     });
     await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
   });
@@ -446,7 +451,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
       model: "dummy-model",
       fetch: async () => {
         throw new Error("offline");
-      }
+      },
     });
     await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
   });
@@ -456,8 +461,8 @@ describe("llm-provider (OpenAI-compatible)", () => {
       createOpenAiCompatibleLlmProvider({
         kind: "external",
         base_url: "http://api.local/v1",
-        model: "dummy-model"
-      })
+        model: "dummy-model",
+      }),
     ).toThrow(/missing_llm_api_key/);
   });
 
@@ -473,13 +478,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
           ok: true,
           status: 200,
           json: async () => ({
-            choices: [{ message: { content: "{\"assistant_text\":\"hi\"}" } }]
-          })
+            choices: [{ message: { content: '{"assistant_text":"hi"}' } }],
+          }),
         };
-      }
+      },
     });
     await expect(
-      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
     ).resolves.toMatchObject({ assistant_text: "hi" });
   });
 
@@ -487,21 +492,20 @@ describe("llm-provider (OpenAI-compatible)", () => {
     const originalFetch = globalThis.fetch;
     try {
       let calls = 0;
-      (globalThis as unknown as { fetch: unknown }).fetch =
-        (async (input: unknown) => {
-          calls += 1;
-          expect(String(input)).toBe("http://lmstudio.local/v1/models");
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({})
-          };
-        }) as unknown;
+      (globalThis as unknown as { fetch: unknown }).fetch = (async (input: unknown) => {
+        calls += 1;
+        expect(String(input)).toBe("http://lmstudio.local/v1/models");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+        };
+      }) as unknown;
 
       const llm = createOpenAiCompatibleLlmProvider({
         kind: "local",
         base_url: "http://lmstudio.local/v1",
-        model: "dummy-model"
+        model: "dummy-model",
       });
       await expect(llm.health()).resolves.toEqual({ status: "ok" });
       expect(calls).toBe(1);
@@ -517,7 +521,7 @@ describe("llm-provider (env)", () => {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
       LLM_BASE_URL: process.env.LLM_BASE_URL,
       LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY
+      LLM_API_KEY: process.env.LLM_API_KEY,
     };
     try {
       delete process.env.LLM_PROVIDER_KIND;
@@ -530,7 +534,7 @@ describe("llm-provider (env)", () => {
       expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).toEqual({
         assistant_text: "うんうん",
         expression: "neutral",
-        tool_calls: []
+        tool_calls: [],
       });
     } finally {
       process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
@@ -545,7 +549,7 @@ describe("llm-provider (env)", () => {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
       LLM_BASE_URL: process.env.LLM_BASE_URL,
       LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY
+      LLM_API_KEY: process.env.LLM_API_KEY,
     };
     try {
       process.env.LLM_PROVIDER_KIND = "local";
@@ -557,10 +561,10 @@ describe("llm-provider (env)", () => {
       expect(llm.kind).toBe("local");
       await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
       await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
       ).rejects.toThrow(/not configured/);
       await expect(
-        llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } })
+        llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
       ).rejects.toThrow(/not configured/);
     } finally {
       process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
@@ -575,7 +579,7 @@ describe("llm-provider (env)", () => {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
       LLM_BASE_URL: process.env.LLM_BASE_URL,
       LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY
+      LLM_API_KEY: process.env.LLM_API_KEY,
     };
     try {
       process.env.LLM_PROVIDER_KIND = "external";
@@ -597,7 +601,7 @@ describe("llm-provider (env)", () => {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
       LLM_BASE_URL: process.env.LLM_BASE_URL,
       LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY
+      LLM_API_KEY: process.env.LLM_API_KEY,
     };
     try {
       process.env.LLM_PROVIDER_KIND = "local";
@@ -614,14 +618,14 @@ describe("llm-provider (env)", () => {
             ok: true,
             status: 200,
             json: async () => ({
-              choices: [{ message: { content: "{\"assistant_text\":\"hi\"}" } }]
-            })
+              choices: [{ message: { content: '{"assistant_text":"hi"}' } }],
+            }),
           };
-        }
+        },
       });
 
       await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
       ).resolves.toMatchObject({ assistant_text: "hi" });
       expect(calls).toBe(1);
     } finally {

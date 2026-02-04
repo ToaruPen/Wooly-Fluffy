@@ -13,7 +13,7 @@ let staffCookie = "";
 const sendRequest = (
   method: string,
   path: string,
-  options?: { headers?: Record<string, string>; body?: string | Buffer }
+  options?: { headers?: Record<string, string>; body?: string | Buffer },
 ) =>
   new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>((resolve, reject) => {
     const req = request({ host: "127.0.0.1", port, method, path }, (res) => {
@@ -50,7 +50,7 @@ const cookieFromSetCookie = (setCookie: string): string => {
 const loginStaff = async (): Promise<string> => {
   const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ passcode: "test-pass" })
+    body: JSON.stringify({ passcode: "test-pass" }),
   });
   if (response.status !== 200) {
     throw new Error(`staff_login_failed:${response.status}`);
@@ -62,7 +62,7 @@ const loginStaff = async (): Promise<string> => {
 
 const withStaffCookie = (headers?: Record<string, string>): Record<string, string> => ({
   ...(headers ?? {}),
-  cookie: staffCookie
+  cookie: staffCookie,
 });
 
 const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) => {
@@ -76,14 +76,14 @@ const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) =>
     `Content-Type: audio/webm\r\n\r\n`,
     input.audio,
     `\r\n`,
-    `--${boundary}--\r\n`
+    `--${boundary}--\r\n`,
   ];
   const body = Buffer.concat(
-    lines.map((part) => (typeof part === "string" ? Buffer.from(part, "utf8") : part))
+    lines.map((part) => (typeof part === "string" ? Buffer.from(part, "utf8") : part)),
   );
   return {
     body,
-    contentType: `multipart/form-data; boundary=${boundary}`
+    contentType: `multipart/form-data; boundary=${boundary}`,
   };
 };
 
@@ -94,31 +94,13 @@ describe("http-server (async llm provider)", () => {
     process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
     process.env.LLM_MODEL = "dummy-model";
 
-    vi.stubGlobal(
-      "fetch",
-      (async (input: unknown, init?: { body?: unknown }) => {
-        const url = String(input);
-        if (!url.endsWith("/chat/completions")) {
-          throw new Error(`unexpected_fetch:${url}`);
-        }
-        const bodyText = String(init?.body ?? "");
-        if (bodyText.includes("memory_extract")) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              choices: [
-                {
-                  message: {
-                    content:
-                      "{\"task\":\"memory_extract\",\"candidate\":{\"kind\":\"likes\",\"value\":\"りんご\",\"source_quote\":\"りんごがすき\"}}"
-                  }
-                }
-              ]
-            }),
-            arrayBuffer: async () => new ArrayBuffer(0)
-          };
-        }
+    vi.stubGlobal("fetch", (async (input: unknown, init?: { body?: unknown }) => {
+      const url = String(input);
+      if (!url.endsWith("/chat/completions")) {
+        throw new Error(`unexpected_fetch:${url}`);
+      }
+      const bodyText = String(init?.body ?? "");
+      if (bodyText.includes("memory_extract")) {
         return {
           ok: true,
           status: 200,
@@ -126,15 +108,30 @@ describe("http-server (async llm provider)", () => {
             choices: [
               {
                 message: {
-                  content: "{\"assistant_text\":\"ok\",\"expression\":\"neutral\"}"
-                }
-              }
-            ]
+                  content:
+                    '{"task":"memory_extract","candidate":{"kind":"likes","value":"りんご","source_quote":"りんごがすき"}}',
+                },
+              },
+            ],
           }),
-          arrayBuffer: async () => new ArrayBuffer(0)
+          arrayBuffer: async () => new ArrayBuffer(0),
         };
-      }) as unknown as typeof fetch
-    );
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"assistant_text":"ok","expression":"neutral"}',
+              },
+            },
+          ],
+        }),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    }) as unknown as typeof fetch);
 
     store = createStore({ db_path: ":memory:" });
     server = createHttpServer({ store });
@@ -177,21 +174,21 @@ describe("http-server (async llm provider)", () => {
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
+        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
       });
       expect(down.status).toBe(200);
       const up = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" })
+        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
       });
       expect(up.status).toBe(200);
       const multipart = buildMultipartBody({
         stt_request_id: "stt-1",
-        audio: Buffer.from("dummy", "utf8")
+        audio: Buffer.from("dummy", "utf8"),
       });
       const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
         headers: { "content-type": multipart.contentType },
-        body: multipart.body
+        body: multipart.body,
       });
       expect(audio.status).toBe(202);
     }
@@ -200,21 +197,21 @@ describe("http-server (async llm provider)", () => {
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
+        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
       });
       expect(down.status).toBe(200);
       const up = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" })
+        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
       });
       expect(up.status).toBe(200);
       const multipart = buildMultipartBody({
         stt_request_id: "stt-2",
-        audio: Buffer.from("dummy", "utf8")
+        audio: Buffer.from("dummy", "utf8"),
       });
       const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
         headers: { "content-type": multipart.contentType },
-        body: multipart.body
+        body: multipart.body,
       });
       expect(audio.status).toBe(202);
     }
@@ -226,12 +223,12 @@ describe("http-server (async llm provider)", () => {
 
     const consent = await sendRequest("POST", "/api/v1/kiosk/event", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" })
+      body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
     });
     expect(consent.status).toBe(200);
 
     const list = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: withStaffCookie()
+      headers: withStaffCookie(),
     });
     expect(list.status).toBe(200);
     const parsed = JSON.parse(list.body) as { items: Array<{ id: string }> };

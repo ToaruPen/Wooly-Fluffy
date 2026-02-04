@@ -10,12 +10,12 @@ import {
   type OrchestratorEvent,
   type OrchestratorEffect,
   type OrchestratorResult,
-  type OrchestratorState
+  type OrchestratorState,
 } from "./orchestrator.js";
 
 const getEffect = <T extends OrchestratorEffect["type"]>(
   effects: OrchestratorEffect[],
-  type: T
+  type: T,
 ): Extract<OrchestratorEffect, { type: T }> | undefined =>
   effects.find((effect) => effect.type === type) as
     | Extract<OrchestratorEffect, { type: T }>
@@ -45,7 +45,7 @@ describe("orchestrator", () => {
     const sttResult = reduceOrchestrator(
       pttUp.next_state,
       { type: "STT_RESULT", text: "こんにちは", request_id: sttEffect?.request_id ?? "" },
-      210
+      210,
     );
     const chatEffect = getEffect(sttResult.effects, "CALL_CHAT");
 
@@ -60,15 +60,15 @@ describe("orchestrator", () => {
         assistant_text: "やあ",
         request_id: chatEffect?.request_id ?? "",
         expression: "neutral",
-        tool_calls: []
+        tool_calls: [],
       },
-      220
+      220,
     );
 
     expect(chatResult.next_state.phase).toBe("idle");
     expect(chatResult.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
-      { type: "SAY", text: "やあ" }
+      { type: "SAY", text: "やあ" },
     ]);
   });
 
@@ -77,19 +77,19 @@ describe("orchestrator", () => {
     const state: OrchestratorState = {
       ...base,
       phase: "waiting_stt",
-      in_flight: { ...base.in_flight, stt_request_id: "stt-1" }
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
     };
 
     const result = reduceOrchestrator(
       state,
       { type: "STT_RESULT", text: "パーソナル、たろう", request_id: "stt-1" },
-      1000
+      1000,
     );
 
     expect(result.next_state.mode).toBe("PERSONAL");
     expect(result.next_state.personal_name).toBe("たろう");
     expect(result.effects).toEqual([
-      { type: "SET_MODE", mode: "PERSONAL", personal_name: "たろう" }
+      { type: "SET_MODE", mode: "PERSONAL", personal_name: "たろう" },
     ]);
   });
 
@@ -102,13 +102,13 @@ describe("orchestrator", () => {
       phase: "waiting_stt",
       consent_deadline_at_ms: 5000,
       memory_candidate: { kind: "likes", value: "りんご" },
-      in_flight: { ...base.in_flight, stt_request_id: "stt-1" }
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
     };
 
     const result = reduceOrchestrator(
       state,
       { type: "STT_RESULT", text: "ルーム", request_id: "stt-1" },
-      6000
+      6000,
     );
 
     expect(result.next_state.mode).toBe("ROOM");
@@ -116,7 +116,7 @@ describe("orchestrator", () => {
     expect(result.next_state.memory_candidate).toBeNull();
     expect(result.effects).toEqual([
       { type: "SET_MODE", mode: "ROOM" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -128,7 +128,7 @@ describe("orchestrator", () => {
       personal_name: "たろう",
       phase: "waiting_chat",
       request_seq: 1,
-      in_flight: { ...base.in_flight, chat_request_id: "chat-1" }
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
     };
 
     const chatResult = reduceOrchestrator(
@@ -138,9 +138,9 @@ describe("orchestrator", () => {
         assistant_text: "いいね",
         request_id: "chat-1",
         expression: "neutral",
-        tool_calls: []
+        tool_calls: [],
       },
-      1000
+      1000,
     );
     const memoryEffect = getEffect(chatResult.effects, "CALL_INNER_TASK");
 
@@ -153,21 +153,21 @@ describe("orchestrator", () => {
         type: "INNER_TASK_RESULT",
         request_id: memoryEffect?.request_id ?? "",
         json_text:
-          "{\"task\":\"memory_extract\",\"candidate\":{\"kind\":\"likes\",\"value\":\"ぶどう\",\"source_quote\":\"ぶどうがすき\"}}"
+          '{"task":"memory_extract","candidate":{"kind":"likes","value":"ぶどう","source_quote":"ぶどうがすき"}}',
       },
-      2000
+      2000,
     );
 
     expect(memoryResult.next_state.phase).toBe("asking_consent");
     expect(memoryResult.effects).toEqual([
       { type: "SAY", text: "覚えていい？" },
-      { type: "SHOW_CONSENT_UI", visible: true }
+      { type: "SHOW_CONSENT_UI", visible: true },
     ]);
 
     const consentResult = reduceOrchestrator(
       memoryResult.next_state,
       { type: "UI_CONSENT_BUTTON", answer: "yes" },
-      2500
+      2500,
     );
 
     expect(consentResult.next_state.memory_candidate).toBeNull();
@@ -179,10 +179,10 @@ describe("orchestrator", () => {
           personal_name: "たろう",
           kind: "likes",
           value: "ぶどう",
-          source_quote: "ぶどうがすき"
-        }
+          source_quote: "ぶどうがすき",
+        },
       },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -195,7 +195,7 @@ describe("orchestrator", () => {
       phase: "asking_consent",
       consent_deadline_at_ms: 4000,
       memory_candidate: { kind: "food", value: "カレー" },
-      request_seq: 2
+      request_seq: 2,
     };
 
     const pttDown = reduceOrchestrator(asking, { type: "STAFF_PTT_DOWN" }, 100);
@@ -205,7 +205,7 @@ describe("orchestrator", () => {
     const sttResult = reduceOrchestrator(
       pttUp.next_state,
       { type: "STT_RESULT", text: "えっと", request_id: sttEffect?.request_id ?? "" },
-      300
+      300,
     );
     const innerEffect = getEffect(sttResult.effects, "CALL_INNER_TASK");
 
@@ -216,9 +216,9 @@ describe("orchestrator", () => {
       {
         type: "INNER_TASK_RESULT",
         request_id: innerEffect?.request_id ?? "",
-        json_text: "{}"
+        json_text: "{}",
       },
-      400
+      400,
     );
 
     expect(unknownResult.next_state.phase).toBe("asking_consent");
@@ -229,9 +229,9 @@ describe("orchestrator", () => {
       {
         type: "INNER_TASK_RESULT",
         request_id: innerEffect?.request_id ?? "",
-        json_text: "{\"task\":\"consent_decision\",\"answer\":\"yes\"}"
+        json_text: '{"task":"consent_decision","answer":"yes"}',
       },
-      500
+      500,
     );
 
     expect(yesResult.effects).toEqual([
@@ -240,10 +240,10 @@ describe("orchestrator", () => {
         input: {
           personal_name: "たろう",
           kind: "food",
-          value: "カレー"
-        }
+          value: "カレー",
+        },
       },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -255,7 +255,7 @@ describe("orchestrator", () => {
       personal_name: "たろう",
       phase: "asking_consent",
       consent_deadline_at_ms: 1000,
-      memory_candidate: { kind: "play", value: "サッカー" }
+      memory_candidate: { kind: "play", value: "サッカー" },
     };
 
     const result = reduceOrchestrator(asking, { type: "TICK" }, 1000);
@@ -263,7 +263,7 @@ describe("orchestrator", () => {
     expect(result.next_state.memory_candidate).toBeNull();
     expect(result.effects).toEqual([
       { type: "SAY", text: "さっきのことは忘れるね" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -273,7 +273,7 @@ describe("orchestrator", () => {
       ...base,
       mode: "PERSONAL",
       personal_name: "たろう",
-      last_action_at_ms: 0
+      last_action_at_ms: 0,
     };
 
     const result = reduceOrchestrator(personal, { type: "TICK" }, 300000);
@@ -281,7 +281,7 @@ describe("orchestrator", () => {
     expect(result.next_state.mode).toBe("ROOM");
     expect(result.effects).toEqual([
       { type: "SET_MODE", mode: "ROOM" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -290,13 +290,13 @@ describe("orchestrator", () => {
     const waiting: OrchestratorState = {
       ...base,
       phase: "waiting_stt",
-      in_flight: { ...base.in_flight, stt_request_id: "stt-1" }
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
     };
 
     const result = reduceOrchestrator(
       waiting,
       { type: "STT_RESULT", text: "やあ", request_id: "stt-99" },
-      10
+      10,
     );
 
     expect(result.next_state).toEqual(waiting);
@@ -322,7 +322,7 @@ describe("orchestrator", () => {
     expect(resumed.next_state.is_emergency_stopped).toBe(false);
     expect(resumed.effects).toEqual([
       { type: "SET_MODE", mode: "ROOM" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -331,34 +331,30 @@ describe("orchestrator", () => {
     const waitingStt: OrchestratorState = {
       ...base,
       phase: "waiting_stt",
-      in_flight: { ...base.in_flight, stt_request_id: "stt-1" }
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
     };
 
     const sttFailed = reduceOrchestrator(
       waitingStt,
       { type: "STT_FAILED", request_id: "stt-1" },
-      20
+      20,
     );
 
-    expect(sttFailed.effects).toEqual([
-      { type: "SAY", text: "ごめんね、もう一回言ってね" }
-    ]);
+    expect(sttFailed.effects).toEqual([{ type: "SAY", text: "ごめんね、もう一回言ってね" }]);
 
     const waitingChat: OrchestratorState = {
       ...base,
       phase: "waiting_chat",
-      in_flight: { ...base.in_flight, chat_request_id: "chat-1" }
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
     };
 
     const chatFailed = reduceOrchestrator(
       waitingChat,
       { type: "CHAT_FAILED", request_id: "chat-1" },
-      30
+      30,
     );
 
-    expect(chatFailed.effects).toEqual([
-      { type: "SAY", text: "ごめんね、もう一回言ってね" }
-    ]);
+    expect(chatFailed.effects).toEqual([{ type: "SAY", text: "ごめんね、もう一回言ってね" }]);
   });
 
   it("handles inner task failure and invalid payloads", () => {
@@ -366,13 +362,13 @@ describe("orchestrator", () => {
     const waitingInner: OrchestratorState = {
       ...base,
       phase: "waiting_inner_task",
-      in_flight: { ...base.in_flight, memory_extract_request_id: "inner-1" }
+      in_flight: { ...base.in_flight, memory_extract_request_id: "inner-1" },
     };
 
     const invalid = reduceOrchestrator(
       waitingInner,
       { type: "INNER_TASK_RESULT", request_id: "inner-1", json_text: "{}" },
-      10
+      10,
     );
 
     expect(invalid.next_state.phase).toBe("idle");
@@ -383,13 +379,13 @@ describe("orchestrator", () => {
       phase: "waiting_inner_task",
       consent_deadline_at_ms: 1000,
       memory_candidate: { kind: "hobby", value: "ぬりえ" },
-      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-2" }
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-2" },
     };
 
     const failed = reduceOrchestrator(
       consentWaiting,
       { type: "INNER_TASK_FAILED", request_id: "inner-2" },
-      20
+      20,
     );
 
     expect(failed.next_state.phase).toBe("asking_consent");
@@ -408,8 +404,8 @@ describe("orchestrator", () => {
       in_flight: {
         ...base.in_flight,
         chat_request_id: "chat-1",
-        memory_extract_request_id: "inner-1"
-      }
+        memory_extract_request_id: "inner-1",
+      },
     };
 
     const forced = reduceOrchestrator(personal, { type: "STAFF_FORCE_ROOM" }, 2000);
@@ -420,7 +416,7 @@ describe("orchestrator", () => {
     expect(forced.next_state.in_flight.chat_request_id).toBeNull();
     expect(forced.effects).toEqual([
       { type: "SET_MODE", mode: "ROOM" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -432,7 +428,7 @@ describe("orchestrator", () => {
     expect(stopped.next_state.is_emergency_stopped).toBe(true);
     expect(stopped.effects).toEqual([
       { type: "SET_MODE", mode: "ROOM" },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -442,12 +438,12 @@ describe("orchestrator", () => {
 
     expect(reduceOrchestrator(busy, { type: "STAFF_PTT_DOWN" }, 10)).toEqual({
       next_state: busy,
-      effects: []
+      effects: [],
     });
 
     expect(reduceOrchestrator(base, { type: "STAFF_PTT_UP" }, 20)).toEqual({
       next_state: base,
-      effects: []
+      effects: [],
     });
   });
 
@@ -458,7 +454,7 @@ describe("orchestrator", () => {
       phase: "waiting_stt",
       consent_deadline_at_ms: 9999,
       memory_candidate: { kind: "food", value: "カレー" },
-      in_flight: { ...base.in_flight, stt_request_id: "stt-1" }
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
     };
 
     const failed = reduceOrchestrator(asking, { type: "STT_FAILED", request_id: "stt-1" }, 10);
@@ -471,18 +467,26 @@ describe("orchestrator", () => {
 
     expect(
       reduceOrchestrator(
-        { ...base, phase: "waiting_stt", in_flight: { ...base.in_flight, stt_request_id: "stt-1" } },
+        {
+          ...base,
+          phase: "waiting_stt",
+          in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
+        },
         { type: "STT_FAILED", request_id: "stt-2" },
-        0
-      ).effects
+        0,
+      ).effects,
     ).toEqual([]);
 
     expect(
       reduceOrchestrator(
-        { ...base, phase: "waiting_chat", in_flight: { ...base.in_flight, chat_request_id: "chat-1" } },
+        {
+          ...base,
+          phase: "waiting_chat",
+          in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
+        },
         { type: "CHAT_FAILED", request_id: "chat-2" },
-        0
-      ).effects
+        0,
+      ).effects,
     ).toEqual([]);
   });
 
@@ -491,7 +495,7 @@ describe("orchestrator", () => {
     const waitingRoom: OrchestratorState = {
       ...base,
       phase: "waiting_chat",
-      in_flight: { ...base.in_flight, chat_request_id: "chat-1" }
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
     };
 
     const ignored = reduceOrchestrator(
@@ -501,9 +505,9 @@ describe("orchestrator", () => {
         assistant_text: "ignored",
         request_id: "chat-2",
         expression: "neutral",
-        tool_calls: []
+        tool_calls: [],
       },
-      10
+      10,
     );
     expect(ignored.effects).toEqual([]);
     expect(ignored.next_state).toEqual(waitingRoom);
@@ -515,14 +519,14 @@ describe("orchestrator", () => {
         assistant_text: "ok",
         request_id: "chat-1",
         expression: "happy",
-        tool_calls: []
+        tool_calls: [],
       },
-      20
+      20,
     );
     expect(getEffect(ok.effects, "CALL_INNER_TASK")).toBeUndefined();
     expect(ok.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "happy" },
-      { type: "SAY", text: "ok" }
+      { type: "SAY", text: "ok" },
     ]);
     expect(ok.next_state.phase).toBe("idle");
   });
@@ -536,7 +540,7 @@ describe("orchestrator", () => {
       phase: "waiting_inner_task",
       consent_deadline_at_ms: 1000,
       memory_candidate: { kind: "hobby", value: "ぬりえ" },
-      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" }
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" },
     };
 
     const noResult = reduceOrchestrator(
@@ -544,23 +548,23 @@ describe("orchestrator", () => {
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-1",
-        json_text: "{\"task\":\"consent_decision\",\"answer\":\"no\"}"
+        json_text: '{"task":"consent_decision","answer":"no"}',
       },
-      10
+      10,
     );
     expect(noResult.effects).toEqual([{ type: "SHOW_CONSENT_UI", visible: false }]);
 
     const unknownResult = reduceOrchestrator(
       {
         ...waitingConsent,
-        in_flight: { ...waitingConsent.in_flight, consent_inner_task_request_id: "inner-2" }
+        in_flight: { ...waitingConsent.in_flight, consent_inner_task_request_id: "inner-2" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-2",
-        json_text: "{\"task\":\"consent_decision\",\"answer\":\"unknown\"}"
+        json_text: '{"task":"consent_decision","answer":"unknown"}',
       },
-      20
+      20,
     );
     expect(unknownResult.next_state.phase).toBe("asking_consent");
     expect(unknownResult.effects).toEqual([]);
@@ -568,14 +572,14 @@ describe("orchestrator", () => {
     const invalidAnswer = reduceOrchestrator(
       {
         ...waitingConsent,
-        in_flight: { ...waitingConsent.in_flight, consent_inner_task_request_id: "inner-2b" }
+        in_flight: { ...waitingConsent.in_flight, consent_inner_task_request_id: "inner-2b" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-2b",
-        json_text: "{\"task\":\"consent_decision\",\"answer\":\"maybe\"}"
+        json_text: '{"task":"consent_decision","answer":"maybe"}',
       },
-      25
+      25,
     );
     expect(invalidAnswer.next_state.phase).toBe("asking_consent");
     expect(invalidAnswer.effects).toEqual([]);
@@ -583,10 +587,10 @@ describe("orchestrator", () => {
     const invalidJson = reduceOrchestrator(
       {
         ...waitingConsent,
-        in_flight: { ...waitingConsent.in_flight, consent_inner_task_request_id: "inner-3" }
+        in_flight: { ...waitingConsent.in_flight, consent_inner_task_request_id: "inner-3" },
       },
       { type: "INNER_TASK_RESULT", request_id: "inner-3", json_text: "not json" },
-      30
+      30,
     );
     expect(invalidJson.next_state.phase).toBe("asking_consent");
     expect(invalidJson.effects).toEqual([]);
@@ -601,7 +605,7 @@ describe("orchestrator", () => {
       phase: "waiting_inner_task",
       consent_deadline_at_ms: 1000,
       memory_candidate: { kind: "likes", value: "ぶどう", source_quote: "ぶどう" },
-      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" }
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" },
     };
 
     const result = reduceOrchestrator(
@@ -609,9 +613,9 @@ describe("orchestrator", () => {
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-1",
-        json_text: "{\"task\":\"consent_decision\",\"answer\":\"yes\"}"
+        json_text: '{"task":"consent_decision","answer":"yes"}',
       },
-      10
+      10,
     );
 
     expect(result.effects).toEqual([
@@ -621,10 +625,10 @@ describe("orchestrator", () => {
           personal_name: "たろう",
           kind: "likes",
           value: "ぶどう",
-          source_quote: "ぶどう"
-        }
+          source_quote: "ぶどう",
+        },
       },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -634,99 +638,100 @@ describe("orchestrator", () => {
       ...base,
       phase: "waiting_inner_task",
       mode: "PERSONAL",
-      personal_name: "たろう"
+      personal_name: "たろう",
     };
 
     const nullCandidate = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-1" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-1" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-1",
-        json_text: "{\"task\":\"memory_extract\",\"candidate\":null}"
+        json_text: '{"task":"memory_extract","candidate":null}',
       },
-      10
+      10,
     );
     expect(nullCandidate.effects).toEqual([]);
 
     const invalidKind = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-2" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-2" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-2",
-        json_text: "{\"task\":\"memory_extract\",\"candidate\":{\"kind\":\"secret\",\"value\":\"x\"}}"
+        json_text: '{"task":"memory_extract","candidate":{"kind":"secret","value":"x"}}',
       },
-      20
+      20,
     );
     expect(invalidKind.effects).toEqual([]);
 
     const invalidJson = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-3" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-3" },
       },
       { type: "INNER_TASK_RESULT", request_id: "inner-3", json_text: "not json" },
-      30
+      30,
     );
     expect(invalidJson.effects).toEqual([]);
 
     const wrongSourceType = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-4" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-4" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-4",
-        json_text: "{\"task\":\"memory_extract\",\"candidate\":{\"kind\":\"likes\",\"value\":\"x\",\"source_quote\":1}}"
+        json_text:
+          '{"task":"memory_extract","candidate":{"kind":"likes","value":"x","source_quote":1}}',
       },
-      40
+      40,
     );
     expect(wrongSourceType.effects).toEqual([]);
 
     const emptyValue = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-4b" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-4b" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-4b",
-        json_text: "{\"task\":\"memory_extract\",\"candidate\":{\"kind\":\"likes\",\"value\":\"\"}}"
+        json_text: '{"task":"memory_extract","candidate":{"kind":"likes","value":""}}',
       },
-      45
+      45,
     );
     expect(emptyValue.effects).toEqual([]);
 
     const okNoSource = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-5" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-5" },
       },
       {
         type: "INNER_TASK_RESULT",
         request_id: "inner-5",
-        json_text: "{\"task\":\"memory_extract\",\"candidate\":{\"kind\":\"likes\",\"value\":\"x\"}}"
+        json_text: '{"task":"memory_extract","candidate":{"kind":"likes","value":"x"}}',
       },
-      50
+      50,
     );
     expect(okNoSource.effects).toEqual([
       { type: "SAY", text: "覚えていい？" },
-      { type: "SHOW_CONSENT_UI", visible: true }
+      { type: "SHOW_CONSENT_UI", visible: true },
     ]);
 
     const extractFailed = reduceOrchestrator(
       {
         ...waitingInnerBase,
-        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-6" }
+        in_flight: { ...base.in_flight, memory_extract_request_id: "inner-6" },
       },
       { type: "INNER_TASK_FAILED", request_id: "inner-6" },
-      60
+      60,
     );
     expect(extractFailed.effects).toEqual([]);
   });
@@ -742,7 +747,7 @@ describe("orchestrator", () => {
       personal_name: "たろう",
       phase: "asking_consent",
       consent_deadline_at_ms: 1000,
-      memory_candidate: { kind: "likes", value: "りんご" }
+      memory_candidate: { kind: "likes", value: "りんご" },
     };
     const noResult = reduceOrchestrator(asking, { type: "UI_CONSENT_BUTTON", answer: "no" }, 10);
     expect(noResult.effects).toEqual([{ type: "SHOW_CONSENT_UI", visible: false }]);
@@ -753,7 +758,7 @@ describe("orchestrator", () => {
 
     const dummyInnerTaskInput: InnerTaskInput = {
       task: "memory_extract",
-      input: { assistant_text: "" }
+      input: { assistant_text: "" },
     };
     expect(dummyInnerTaskInput.input.assistant_text).toBe("");
   });
@@ -766,7 +771,7 @@ describe("orchestrator", () => {
       personal_name: "たろう",
       phase: "asking_consent",
       consent_deadline_at_ms: 1000,
-      memory_candidate: { kind: "likes", value: "りんご" }
+      memory_candidate: { kind: "likes", value: "りんご" },
     };
 
     const result = reduceOrchestrator(asking, { type: "UI_CONSENT_BUTTON", answer: "yes" }, 10);
@@ -774,9 +779,9 @@ describe("orchestrator", () => {
     expect(result.effects).toEqual([
       {
         type: "STORE_WRITE_PENDING",
-        input: { personal_name: "たろう", kind: "likes", value: "りんご" }
+        input: { personal_name: "たろう", kind: "likes", value: "りんご" },
       },
-      { type: "SHOW_CONSENT_UI", visible: false }
+      { type: "SHOW_CONSENT_UI", visible: false },
     ]);
   });
 
@@ -786,12 +791,16 @@ describe("orchestrator", () => {
     const result = reduceOrchestrator(
       base,
       { type: "INNER_TASK_RESULT", request_id: "inner-x", json_text: "{}" },
-      0
+      0,
     );
     expect(result.effects).toEqual([]);
     expect(result.next_state).toEqual(base);
 
-    const failed = reduceOrchestrator(base, { type: "INNER_TASK_FAILED", request_id: "inner-y" }, 0);
+    const failed = reduceOrchestrator(
+      base,
+      { type: "INNER_TASK_FAILED", request_id: "inner-y" },
+      0,
+    );
     expect(failed.effects).toEqual([]);
     expect(failed.next_state).toEqual(base);
   });

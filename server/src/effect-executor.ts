@@ -2,7 +2,7 @@ import type {
   InnerTaskInput,
   Mode,
   OrchestratorEffect,
-  OrchestratorEvent
+  OrchestratorEvent,
 } from "./orchestrator.js";
 import type { Providers } from "./providers/types.js";
 
@@ -15,16 +15,12 @@ type LlmChatResult = Awaited<ReturnType<Providers["llm"]["chat"]["call"]>>;
 type LlmInnerTaskResult = Awaited<ReturnType<Providers["llm"]["inner_task"]["call"]>>;
 
 type StoreWritePending = (
-  input: Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }>["input"]
+  input: Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }>["input"],
 ) => void;
 
 type EffectExecutor = {
   executeEffects: (effects: OrchestratorEffect[]) => OrchestratorEvent[];
-  transcribeStt: (input: {
-    request_id: string;
-    mode: Mode;
-    wav: Buffer;
-  }) => OrchestratorEvent;
+  transcribeStt: (input: { request_id: string; mode: Mode; wav: Buffer }) => OrchestratorEvent;
 };
 
 export const createEffectExecutor = (deps: {
@@ -61,7 +57,7 @@ export const createEffectExecutor = (deps: {
                     request_id: effect.request_id,
                     assistant_text: result.assistant_text,
                     expression: result.expression,
-                    tool_calls: result.tool_calls
+                    tool_calls: result.tool_calls,
                   });
                 })
                 .catch(() => {
@@ -74,7 +70,7 @@ export const createEffectExecutor = (deps: {
                 request_id: effect.request_id,
                 assistant_text: result.assistant_text,
                 expression: result.expression,
-                tool_calls: result.tool_calls
+                tool_calls: result.tool_calls,
               });
             }
           } catch {
@@ -95,7 +91,7 @@ export const createEffectExecutor = (deps: {
                   deps.enqueueEvent({
                     type: "INNER_TASK_RESULT",
                     request_id: effect.request_id,
-                    json_text: result.json_text
+                    json_text: result.json_text,
                   });
                 })
                 .catch(() => {
@@ -106,7 +102,7 @@ export const createEffectExecutor = (deps: {
               events.push({
                 type: "INNER_TASK_RESULT",
                 request_id: effect.request_id,
-                json_text: result.json_text
+                json_text: result.json_text,
               });
             }
           } catch {
@@ -118,11 +114,11 @@ export const createEffectExecutor = (deps: {
           saySeq += 1;
           const base = {
             say_id: `say-${saySeq}`,
-            text: effect.text
+            text: effect.text,
           };
           deps.sendKioskCommand(
             "kiosk.command.speak",
-            currentExpression ? { ...base, expression: currentExpression } : base
+            currentExpression ? { ...base, expression: currentExpression } : base,
           );
           break;
         }
@@ -132,7 +128,7 @@ export const createEffectExecutor = (deps: {
         case "PLAY_MOTION":
           deps.sendKioskCommand("kiosk.command.play_motion", {
             motion_id: effect.motion_id,
-            motion_instance_id: effect.motion_instance_id
+            motion_instance_id: effect.motion_instance_id,
           });
           break;
         case "STORE_WRITE_PENDING":
@@ -152,12 +148,12 @@ export const createEffectExecutor = (deps: {
     try {
       const result = deps.providers.stt.transcribe({
         mode: input.mode,
-        wav: input.wav
+        wav: input.wav,
       });
       return {
         type: "STT_RESULT",
         request_id: input.request_id,
-        text: result.text
+        text: result.text,
       };
     } catch {
       return { type: "STT_FAILED", request_id: input.request_id };

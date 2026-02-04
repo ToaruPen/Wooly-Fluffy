@@ -1,10 +1,4 @@
-import type {
-  ChatInput,
-  Expression,
-  InnerTaskInput,
-  Mode,
-  ToolCall
-} from "../orchestrator.js";
+import type { ChatInput, Expression, InnerTaskInput, Mode, ToolCall } from "../orchestrator.js";
 
 export type ProviderHealth = {
   status: "ok" | "unavailable";
@@ -30,9 +24,11 @@ export type Providers = {
   llm: {
     kind: LlmProviderKind;
     chat: {
-      call: (
-        input: ChatInput
-      ) => MaybePromise<{ assistant_text: string; expression: LlmExpression; tool_calls: LlmToolCall[] }>;
+      call: (input: ChatInput) => MaybePromise<{
+        assistant_text: string;
+        expression: LlmExpression;
+        tool_calls: LlmToolCall[];
+      }>;
     };
     inner_task: {
       call: (input: InnerTaskInput) => MaybePromise<{ json_text: string }>;

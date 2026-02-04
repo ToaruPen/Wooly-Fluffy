@@ -9,7 +9,7 @@ import {
   createStaffSnapshot,
   reduceOrchestrator,
   type OrchestratorEvent,
-  type OrchestratorState
+  type OrchestratorState,
 } from "./orchestrator.js";
 import { createEffectExecutor } from "./effect-executor.js";
 import type { createStore } from "./store.js";
@@ -31,21 +31,11 @@ const sendJson = (res: ServerResponse, statusCode: number, body: string) => {
   res.end(body);
 };
 
-const sendError = (
-  res: ServerResponse,
-  statusCode: number,
-  code: string,
-  message: string
-) => {
+const sendError = (res: ServerResponse, statusCode: number, code: string, message: string) => {
   sendJson(res, statusCode, createErrorBody(code, message));
 };
 
-const safeSendError = (
-  res: ServerResponse,
-  statusCode: number,
-  code: string,
-  message: string
-) => {
+const safeSendError = (res: ServerResponse, statusCode: number, code: string, message: string) => {
   if (res.writableEnded || res.destroyed) {
     return;
   }
@@ -136,7 +126,7 @@ const openSse = (
   snapshotType: string,
   snapshotData: object,
   onOpen: (client: SseClient) => void,
-  onClose: (client: SseClient) => void
+  onClose: (client: SseClient) => void,
 ) => {
   writeSseHeaders(res);
 
@@ -149,12 +139,12 @@ const openSse = (
   };
 
   let keepAlive: ReturnType<typeof setInterval> | null = null;
-  let closed = false;
+  let isClosed = false;
   const cleanupOnce = () => {
-    if (closed) {
+    if (isClosed) {
       return;
     }
-    closed = true;
+    isClosed = true;
     if (keepAlive) {
       clearInterval(keepAlive);
       keepAlive = null;
@@ -165,7 +155,7 @@ const openSse = (
 
   const client: SseClient = {
     send,
-    close: cleanupOnce
+    close: cleanupOnce,
   };
   onOpen(client);
 
@@ -259,7 +249,7 @@ const mapPendingToDto = (item: {
   ...(item.source_quote ? { source_quote: item.source_quote } : {}),
   status: item.status,
   created_at_ms: item.created_at_ms,
-  expires_at_ms: item.expires_at_ms
+  expires_at_ms: item.expires_at_ms,
 });
 
 export const createHttpServer = (options: CreateHttpServerOptions) => {
@@ -369,12 +359,12 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   const providers: Providers = {
     stt: {
       transcribe: (input) => ({
-        text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき"
+        text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
       }),
-      health: () => ({ status: "ok" })
+      health: () => ({ status: "ok" }),
     },
     tts: createVoiceVoxTtsProvider(),
-    llm: createLlmProviderFromEnv()
+    llm: createLlmProviderFromEnv(),
   };
 
   const effectExecutor = createEffectExecutor({
@@ -387,7 +377,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     storeWritePending: (input) => {
       store.createPending(input);
       broadcastStaffSnapshotIfChanged();
-    }
+    },
   });
 
   const processEvent = (event: OrchestratorEvent, now: number) => {
@@ -398,7 +388,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     for (const effect of result.effects) {
       if (effect.type === "KIOSK_RECORD_STOP") {
         sendKioskCommand("kiosk.command.record_stop", {
-          stt_request_id: state.in_flight.stt_request_id
+          stt_request_id: state.in_flight.stt_request_id,
         });
         continue;
       }
@@ -416,7 +406,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         const [stt, tts, llm] = await Promise.all([
           providers.stt.health(),
           providers.tts.health(),
-          providers.llm.health()
+          providers.llm.health(),
         ]);
         sendJson(
           res,
@@ -426,9 +416,9 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             providers: {
               stt,
               tts,
-              llm: { ...llm, kind: providers.llm.kind }
-            }
-          })
+              llm: { ...llm, kind: providers.llm.kind },
+            },
+          }),
         );
       })();
       return;
@@ -533,7 +523,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         },
         (client) => {
           kioskClients.delete(client);
-        }
+        },
       );
       return;
     }
@@ -562,7 +552,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         (client) => {
           staffClients.delete(client);
           staffSseSessions.delete(client);
-        }
+        },
       );
       return;
     }
@@ -699,8 +689,8 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         return;
       }
       const id = path.slice("/api/v1/staff/pending/".length, -"/confirm".length);
-      const ok = store.confirmById(id);
-      if (!ok) {
+      const didConfirm = store.confirmById(id);
+      if (!didConfirm) {
         sendJson(res, 404, notFoundBody);
         return;
       }
@@ -721,8 +711,8 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         return;
       }
       const id = path.slice("/api/v1/staff/pending/".length, -"/deny".length);
-      const ok = store.denyById(id);
-      if (!ok) {
+      const didDeny = store.denyById(id);
+      if (!didDeny) {
         sendJson(res, 404, notFoundBody);
         return;
       }
@@ -748,8 +738,8 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           parseSttAudioUploadMultipart({
             headers: req.headers,
             stream: Readable.from([body]),
-            max_file_bytes: 2_500_000
-          })
+            max_file_bytes: 2_500_000,
+          }),
         )
         .then((upload) => {
           const stt_request_id = upload.stt_request_id;
@@ -757,7 +747,10 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
-          if (!pendingStt.has(stt_request_id) || state.in_flight.stt_request_id !== stt_request_id) {
+          if (
+            !pendingStt.has(stt_request_id) ||
+            state.in_flight.stt_request_id !== stt_request_id
+          ) {
             sendError(res, 400, "invalid_request", "Invalid request");
             return;
           }
@@ -766,7 +759,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           const event = effectExecutor.transcribeStt({
             request_id: stt_request_id,
             mode: state.mode,
-            wav: upload.wav
+            wav: upload.wav,
           });
           enqueueEvent(event, nowMs());
           sendJson(res, 202, okBody);

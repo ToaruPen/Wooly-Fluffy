@@ -1,4 +1,9 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import base from "./eslint.config.js";
+
+const tsconfigRootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default base.map((config) => {
   if (!config.files) {
@@ -7,6 +12,14 @@ export default base.map((config) => {
 
   return {
     ...config,
+    languageOptions: {
+      ...(config.languageOptions ?? {}),
+      parserOptions: {
+        ...(config.languageOptions?.parserOptions ?? {}),
+        project: ["./tsconfig.json"],
+        tsconfigRootDir,
+      },
+    },
     rules: {
       ...(config.rules ?? {}),
       "@typescript-eslint/naming-convention": [
@@ -14,7 +27,7 @@ export default base.map((config) => {
         {
           selector: ["variable", "parameter"],
           types: ["boolean"],
-          format: ["camelCase"],
+          format: ["camelCase", "PascalCase"],
           prefix: ["is", "has", "can", "should", "did", "will"],
         },
         {
