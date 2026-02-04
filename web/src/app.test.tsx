@@ -10,8 +10,7 @@ type ConnectHandlers = {
 };
 
 beforeAll(() => {
-  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
 
 afterAll(() => {
@@ -35,14 +34,14 @@ const jsonResponse = (status: number, body: unknown): Response =>
   ({
     ok: status >= 200 && status < 300,
     status,
-    json: async () => body
+    json: async () => body,
   }) as unknown as Response;
 
 const wavResponse = (status: number, bytes: number[]): Response =>
   ({
     ok: status >= 200 && status < 300,
     status,
-    arrayBuffer: async () => new Uint8Array(bytes).buffer
+    arrayBuffer: async () => new Uint8Array(bytes).buffer,
   }) as unknown as Response;
 
 const setNativeInputValue = (input: HTMLInputElement, value: string) => {
@@ -89,8 +88,8 @@ describe("sse-client", () => {
       data: JSON.stringify({
         type: "kiosk.snapshot",
         seq: 1,
-        data: { state: { mode: "ROOM" } }
-      })
+        data: { state: { mode: "ROOM" } },
+      }),
     } as MessageEvent);
 
     expect(onSnapshot).toHaveBeenCalledWith({ state: { mode: "ROOM" } });
@@ -99,8 +98,8 @@ describe("sse-client", () => {
       data: JSON.stringify({
         type: "kiosk.command.record_start",
         seq: 2,
-        data: {}
-      })
+        data: {},
+      }),
     } as MessageEvent);
 
     expect(onSnapshot).toHaveBeenCalledTimes(1);
@@ -109,8 +108,8 @@ describe("sse-client", () => {
       data: JSON.stringify({
         type: 123,
         seq: 3,
-        data: {}
-      })
+        data: {},
+      }),
     } as MessageEvent);
 
     source.onmessage?.({ data: "not-json" } as MessageEvent);
@@ -157,15 +156,15 @@ describe("sse-client", () => {
       data: JSON.stringify({
         type: "staff.pending_list",
         seq: 123,
-        data: { items: [] }
-      })
+        data: { items: [] },
+      }),
     } as MessageEvent);
 
     expect(onSnapshot).toHaveBeenCalledTimes(0);
     expect(onMessage).toHaveBeenCalledWith({
       type: "staff.pending_list",
       seq: 123,
-      data: { items: [] }
+      data: { items: [] },
     });
   });
 
@@ -207,8 +206,8 @@ describe("sse-client", () => {
       data: JSON.stringify({
         type: 123,
         seq: 1,
-        data: {}
-      })
+        data: {},
+      }),
     } as MessageEvent);
 
     source.onerror?.(new Event("error"));
@@ -224,7 +223,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -236,7 +235,7 @@ describe("app", () => {
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
 
     const convertSpy = vi.fn(
-      async () => new File([new Uint8Array([0])], "stt-1.wav", { type: "audio/wav" })
+      async () => new File([new Uint8Array([0])], "stt-1.wav", { type: "audio/wav" }),
     );
     vi.doMock("./kiosk-audio", () => ({ convertRecordingBlobToWavFile: convertSpy }));
 
@@ -287,8 +286,8 @@ describe("app", () => {
           mode: "ROOM",
           personal_name: null,
           phase: "idle",
-          consent_ui_visible: false
-        }
+          consent_ui_visible: false,
+        },
       });
     });
 
@@ -303,17 +302,17 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 2,
-        data: { say_id: 1, text: "nope" }
+        data: { say_id: 1, text: "nope" },
       });
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 3,
-        data: { say_id: "say-1", text: "Hello" }
+        data: { say_id: "say-1", text: "Hello" },
       });
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 4,
-        data: { say_id: "say-1", text: "Hello" }
+        data: { say_id: "say-1", text: "Hello" },
       });
       await Promise.resolve();
     });
@@ -321,7 +320,7 @@ describe("app", () => {
     expect(document.body.textContent ?? "").toContain("Hello");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/kiosk/tts",
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -330,7 +329,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 6,
-        data: { say_id: "say-1", text: "Hello" }
+        data: { say_id: "say-1", text: "Hello" },
       });
       await Promise.resolve();
     });
@@ -346,14 +345,14 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.record_stop",
         seq: 6,
-        data: { stt_request_id: "stt-1" }
+        data: { stt_request_id: "stt-1" },
       });
       await Promise.resolve();
     });
     expect(document.body.textContent ?? "").not.toContain("Recording");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/kiosk/stt-audio",
-      expect.objectContaining({ method: "POST", body: expect.any(FormData) })
+      expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
     );
 
     await act(async () => {
@@ -362,8 +361,8 @@ describe("app", () => {
           mode: "PERSONAL",
           personal_name: null,
           phase: "listening",
-          consent_ui_visible: true
-        }
+          consent_ui_visible: true,
+        },
       });
     });
 
@@ -377,14 +376,14 @@ describe("app", () => {
           mode: "PERSONAL",
           personal_name: "taro",
           phase: "listening",
-          consent_ui_visible: true
-        }
+          consent_ui_visible: true,
+        },
       });
     });
     expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");
 
     const yesButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").trim() === "はい"
+      (b) => (b.textContent ?? "").trim() === "はい",
     );
     expect(yesButton).toBeTruthy();
     await act(async () => {
@@ -392,11 +391,11 @@ describe("app", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/kiosk/event",
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
 
     const noButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").trim() === "いいえ"
+      (b) => (b.textContent ?? "").trim() === "いいえ",
     );
     expect(noButton).toBeTruthy();
     await act(async () => {
@@ -426,8 +425,10 @@ describe("app", () => {
   it("plays TTS audio on kiosk.command.speak when Audio/URL are available", async () => {
     vi.resetModules();
 
-    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
-    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+      .createObjectURL;
+    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+      .revokeObjectURL;
 
     (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
     (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
@@ -449,7 +450,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -483,8 +484,8 @@ describe("app", () => {
             mode: "ROOM",
             personal_name: null,
             phase: "idle",
-            consent_ui_visible: false
-          }
+            consent_ui_visible: false,
+          },
         });
       });
 
@@ -492,14 +493,14 @@ describe("app", () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
           seq: 1,
-          data: { say_id: "say-1", text: "Hello" }
+          data: { say_id: "say-1", text: "Hello" },
         });
         await Promise.resolve();
       });
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/v1/kiosk/tts",
-        expect.objectContaining({ method: "POST" })
+        expect.objectContaining({ method: "POST" }),
       );
       expect(FakeAudio.instances.length).toBe(1);
       expect(FakeAudio.instances[0]!.src).toBe("blob:tts");
@@ -508,7 +509,7 @@ describe("app", () => {
       FakeAudio.latest?.onended?.();
       expect(FakeAudio.latest?.pause).toHaveBeenCalled();
       expect(
-        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL as unknown
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL as unknown,
       ).toBeTruthy();
 
       await act(async () => {
@@ -539,15 +540,16 @@ describe("app", () => {
   it("shows kiosk audio error when TTS fetch fails", async () => {
     vi.resetModules();
 
-    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+      .createObjectURL;
     (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
-    vi.stubGlobal("Audio", (function AudioCtor() {
+    vi.stubGlobal("Audio", function AudioCtor() {
       return { play: async () => undefined, pause: () => undefined };
-    }) as unknown as typeof Audio);
+    } as unknown as typeof Audio);
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -561,7 +563,7 @@ describe("app", () => {
           throw new Error("offline");
         }
         return jsonResponse(404, { error: { code: "not_found", message: String(input) } });
-      })
+      }),
     );
 
     try {
@@ -579,8 +581,8 @@ describe("app", () => {
             mode: "ROOM",
             personal_name: null,
             phase: "idle",
-            consent_ui_visible: false
-          }
+            consent_ui_visible: false,
+          },
         });
       });
 
@@ -588,7 +590,7 @@ describe("app", () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
           seq: 1,
-          data: { say_id: "say-1", text: "Hello" }
+          data: { say_id: "say-1", text: "Hello" },
         });
         await Promise.resolve();
       });
@@ -606,8 +608,10 @@ describe("app", () => {
   it("shows kiosk audio error when audio.play rejects (and cleanup is best-effort)", async () => {
     vi.resetModules();
 
-    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
-    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+      .createObjectURL;
+    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+      .revokeObjectURL;
 
     (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
     (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => {
@@ -631,7 +635,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -647,7 +651,7 @@ describe("app", () => {
           return wavResponse(200, [1, 2, 3]);
         }
         return jsonResponse(404, { error: { code: "not_found", message: url } });
-      })
+      }),
     );
 
     try {
@@ -667,8 +671,8 @@ describe("app", () => {
             mode: "ROOM",
             personal_name: null,
             phase: "idle",
-            consent_ui_visible: false
-          }
+            consent_ui_visible: false,
+          },
         });
       });
 
@@ -676,7 +680,7 @@ describe("app", () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
           seq: 1,
-          data: { say_id: "say-1", text: "Hello" }
+          data: { say_id: "say-1", text: "Hello" },
         });
         await Promise.resolve();
       });
@@ -712,7 +716,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -725,10 +729,10 @@ describe("app", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url === "/api/v1/kiosk/tts" && method === "POST") {
-          return ({ ok: false, status: 500 } as unknown) as Response;
+          return { ok: false, status: 500 } as unknown as Response;
         }
         return jsonResponse(404, { error: { code: "not_found", message: url } });
-      })
+      }),
     );
 
     window.history.pushState({}, "", "/kiosk");
@@ -746,8 +750,8 @@ describe("app", () => {
           mode: "ROOM",
           personal_name: null,
           phase: "idle",
-          consent_ui_visible: false
-        }
+          consent_ui_visible: false,
+        },
       });
     });
 
@@ -755,7 +759,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 1,
-        data: { say_id: "say-1", text: "Hello" }
+        data: { say_id: "say-1", text: "Hello" },
       });
       await Promise.resolve();
     });
@@ -766,8 +770,10 @@ describe("app", () => {
   it("ignores stale TTS responses after stop_output", async () => {
     vi.resetModules();
 
-    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
-    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+      .createObjectURL;
+    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+      .revokeObjectURL;
 
     (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
     (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
@@ -786,7 +792,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -823,8 +829,8 @@ describe("app", () => {
             mode: "ROOM",
             personal_name: null,
             phase: "idle",
-            consent_ui_visible: false
-          }
+            consent_ui_visible: false,
+          },
         });
       });
 
@@ -832,7 +838,7 @@ describe("app", () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
           seq: 1,
-          data: { say_id: "say-1", text: "Hello" }
+          data: { say_id: "say-1", text: "Hello" },
         });
         await Promise.resolve();
       });
@@ -869,8 +875,10 @@ describe("app", () => {
   it("ignores stale TTS wav when stop_output happens during arrayBuffer", async () => {
     vi.resetModules();
 
-    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
-    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+      .createObjectURL;
+    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+      .revokeObjectURL;
 
     (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
     (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
@@ -888,7 +896,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -903,17 +911,17 @@ describe("app", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url === "/api/v1/kiosk/tts" && method === "POST") {
-          return ({
+          return {
             ok: true,
             status: 200,
             arrayBuffer: async () =>
               await new Promise<ArrayBuffer>((resolve) => {
                 resolveArrayBuffer = resolve;
-              })
-          } as unknown) as Response;
+              }),
+          } as unknown as Response;
         }
         return jsonResponse(404, { error: { code: "not_found", message: url } });
-      })
+      }),
     );
 
     try {
@@ -933,8 +941,8 @@ describe("app", () => {
             mode: "ROOM",
             personal_name: null,
             phase: "idle",
-            consent_ui_visible: false
-          }
+            consent_ui_visible: false,
+          },
         });
       });
 
@@ -942,7 +950,7 @@ describe("app", () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
           seq: 1,
-          data: { say_id: "say-1", text: "Hello" }
+          data: { say_id: "say-1", text: "Hello" },
         });
         await Promise.resolve();
       });
@@ -981,7 +989,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1000,7 +1008,7 @@ describe("app", () => {
           });
         }
         return jsonResponse(404, { error: { code: "not_found", message: url } });
-      })
+      }),
     );
 
     window.history.pushState({}, "", "/kiosk");
@@ -1019,8 +1027,8 @@ describe("app", () => {
           mode: "ROOM",
           personal_name: null,
           phase: "idle",
-          consent_ui_visible: false
-        }
+          consent_ui_visible: false,
+        },
       });
     });
 
@@ -1028,7 +1036,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 1,
-        data: { say_id: "say-1", text: "Hello" }
+        data: { say_id: "say-1", text: "Hello" },
       });
       await Promise.resolve();
     });
@@ -1039,7 +1047,7 @@ describe("app", () => {
     });
 
     await act(async () => {
-      resolveTts?.(({ ok: false, status: 500 } as unknown) as Response);
+      resolveTts?.({ ok: false, status: 500 } as unknown as Response);
       await Promise.resolve();
     });
 
@@ -1053,8 +1061,10 @@ describe("app", () => {
   it("ignores stale audio.play rejection after stop_output", async () => {
     vi.resetModules();
 
-    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
-    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+      .createObjectURL;
+    const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+      .revokeObjectURL;
 
     (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
     (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
@@ -1065,7 +1075,7 @@ describe("app", () => {
         async () =>
           await new Promise<void>((_resolve, reject) => {
             rejectPlay = () => reject(new Error("blocked"));
-          })
+          }),
       );
       pause = vi.fn(() => undefined);
       constructor(_src: string) {
@@ -1075,7 +1085,7 @@ describe("app", () => {
     vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1091,7 +1101,7 @@ describe("app", () => {
           return wavResponse(200, [1, 2, 3]);
         }
         return jsonResponse(404, { error: { code: "not_found", message: url } });
-      })
+      }),
     );
 
     try {
@@ -1111,8 +1121,8 @@ describe("app", () => {
             mode: "ROOM",
             personal_name: null,
             phase: "idle",
-            consent_ui_visible: false
-          }
+            consent_ui_visible: false,
+          },
         });
       });
 
@@ -1120,7 +1130,7 @@ describe("app", () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
           seq: 1,
-          data: { say_id: "say-1", text: "Hello" }
+          data: { say_id: "say-1", text: "Hello" },
         });
         await Promise.resolve();
       });
@@ -1158,7 +1168,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1175,7 +1185,7 @@ describe("app", () => {
           });
         }
         return jsonResponse(404, { error: { code: "not_found", message: String(input) } });
-      })
+      }),
     );
 
     window.history.pushState({}, "", "/kiosk");
@@ -1194,8 +1204,8 @@ describe("app", () => {
           mode: "ROOM",
           personal_name: null,
           phase: "idle",
-          consent_ui_visible: false
-        }
+          consent_ui_visible: false,
+        },
       });
     });
 
@@ -1203,7 +1213,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.speak",
         seq: 1,
-        data: { say_id: "say-1", text: "Hello" }
+        data: { say_id: "say-1", text: "Hello" },
       });
       await Promise.resolve();
     });
@@ -1229,13 +1239,16 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
       return { ...actual, connectSse: connectSseMock };
     });
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1255,13 +1268,16 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
       return { ...actual, connectSse: connectSseMock };
     });
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1281,7 +1297,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1293,9 +1309,14 @@ describe("app", () => {
     });
     vi.doMock("./kiosk-ptt", () => ({ startPttSession }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1309,7 +1330,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.record_stop",
         seq: 2,
-        data: { stt_request_id: "stt-1" }
+        data: { stt_request_id: "stt-1" },
       });
       await Promise.resolve();
     });
@@ -1322,7 +1343,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1333,9 +1354,14 @@ describe("app", () => {
     const startSpy = vi.fn(async () => ({ stop: stopSpy }));
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1366,7 +1392,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1377,9 +1403,14 @@ describe("app", () => {
     const startSpy = vi.fn(async () => ({ stop: stopSpy }));
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1406,7 +1437,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1419,13 +1450,18 @@ describe("app", () => {
       async () =>
         await new Promise<{ stop: () => Promise<Blob> }>((resolve) => {
           resolveSession = resolve;
-        })
+        }),
     );
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1456,7 +1492,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1468,9 +1504,14 @@ describe("app", () => {
     });
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: vi.fn(async () => ({ stop: stopSpy })) }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1500,13 +1541,16 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
       return { ...actual, connectSse: connectSseMock };
     });
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1519,7 +1563,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.record_stop",
         seq: 1,
-        data: { stt_request_id: "stt-1" }
+        data: { stt_request_id: "stt-1" },
       });
     });
 
@@ -1530,7 +1574,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1540,9 +1584,14 @@ describe("app", () => {
     const startSpy = vi.fn(async () => ({ stop: vi.fn(async () => new Blob()) }));
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1565,7 +1614,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1578,7 +1627,9 @@ describe("app", () => {
       .mockRejectedValueOnce(new Error("no mic"));
     vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -1604,7 +1655,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.record_stop",
         seq: 2,
-        data: { stt_request_id: "stt-1" }
+        data: { stt_request_id: "stt-1" },
       });
       await Promise.resolve();
     });
@@ -1622,7 +1673,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1633,13 +1684,18 @@ describe("app", () => {
       startPttSession: vi.fn(async () => ({
         stop: vi.fn(async () => {
           throw new Error("stop failed");
-        })
-      }))
+        }),
+      })),
     }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1654,7 +1710,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.record_stop",
         seq: 2,
-        data: { stt_request_id: "stt-1" }
+        data: { stt_request_id: "stt-1" },
       });
       await Promise.resolve();
     });
@@ -1666,7 +1722,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1676,12 +1732,17 @@ describe("app", () => {
     vi.doMock("./kiosk-ptt", () => ({
       startPttSession: vi.fn(async () => {
         throw "boom";
-      })
+      }),
     }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1702,7 +1763,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: () => {}
+      close: () => {},
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1713,13 +1774,18 @@ describe("app", () => {
       startPttSession: vi.fn(async () => ({
         stop: vi.fn(async () => {
           throw "boom";
-        })
-      }))
+        }),
+      })),
     }));
     vi.doMock("./kiosk-audio", () => ({
-      convertRecordingBlobToWavFile: vi.fn(async () => new File([], "x.wav", { type: "audio/wav" }))
+      convertRecordingBlobToWavFile: vi.fn(
+        async () => new File([], "x.wav", { type: "audio/wav" }),
+      ),
     }));
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(202, { ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(202, { ok: true })),
+    );
 
     window.history.pushState({}, "", "/kiosk");
     document.body.innerHTML = '<div id="root"></div>';
@@ -1734,7 +1800,7 @@ describe("app", () => {
       handlers.onMessage?.({
         type: "kiosk.command.record_stop",
         seq: 2,
-        data: { stt_request_id: "stt-1" }
+        data: { stt_request_id: "stt-1" },
       });
       await Promise.resolve();
     });
@@ -1749,7 +1815,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -1774,9 +1840,9 @@ describe("app", () => {
               source_quote: "likes curry",
               status: "pending",
               created_at_ms: 0,
-              expires_at_ms: 1
-            }
-          ]
+              expires_at_ms: 1,
+            },
+          ],
         });
       }
       if (url === "/api/v1/staff/event" && method === "POST") {
@@ -1816,8 +1882,8 @@ describe("app", () => {
     });
     await act(async () => {});
 
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(signIn).toBeTruthy();
     expect((signIn as HTMLButtonElement).disabled).toBe(false);
@@ -1828,7 +1894,7 @@ describe("app", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/staff/auth/login",
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
 
     expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
@@ -1840,7 +1906,7 @@ describe("app", () => {
     await act(async () => {
       handlers.onSnapshot({
         state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
-        pending: { count: 1 }
+        pending: { count: 1 },
       });
       handlers.onError?.(new Error("boom"));
       handlers.onMessage?.({ type: "staff.snapshot", seq: 1, data: {} });
@@ -1849,7 +1915,7 @@ describe("app", () => {
       handlers.onMessage?.({ type: "staff.pending_list", seq: 3, data: { items: [] } });
       handlers.onSnapshot({
         state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-        pending: { count: 0 }
+        pending: { count: 0 },
       });
     });
     expect(document.body.textContent ?? "").toContain("boom");
@@ -1859,13 +1925,13 @@ describe("app", () => {
     await act(async () => {
       handlers.onSnapshot({
         state: { mode: "ROOM", personal_name: null, phase: "idle" },
-        pending: { count: 0 }
+        pending: { count: 0 },
       });
     });
     expect(document.body.textContent ?? "").toContain("Mode: ROOM");
 
-    const ptt = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Push to talk")
+    const ptt = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Push to talk"),
     );
     expect(ptt).toBeTruthy();
     await act(async () => {
@@ -1874,7 +1940,9 @@ describe("app", () => {
       ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       ptt?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
     });
-    const staffEventCalls = fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/v1/staff/event");
+    const staffEventCalls = fetchMock.mock.calls.filter(
+      (c) => String(c[0]) === "/api/v1/staff/event",
+    );
     expect(staffEventCalls.length).toBeGreaterThanOrEqual(2);
 
     await act(async () => {
@@ -1883,7 +1951,7 @@ describe("app", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/staff/event",
-      expect.objectContaining({ method: "POST" })
+      expect.objectContaining({ method: "POST" }),
     );
 
     await act(async () => {
@@ -1893,7 +1961,7 @@ describe("app", () => {
       vi.advanceTimersByTime(30_000);
     });
     const keepaliveCalls = fetchMock.mock.calls.filter(
-      (c) => String(c[0]) === "/api/v1/staff/auth/keepalive"
+      (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
     );
     expect(keepaliveCalls).toHaveLength(1);
 
@@ -1902,26 +1970,26 @@ describe("app", () => {
       vi.advanceTimersByTime(30_000);
     });
     const keepaliveCalls2 = fetchMock.mock.calls.filter(
-      (c) => String(c[0]) === "/api/v1/staff/auth/keepalive"
+      (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
     );
     expect(keepaliveCalls2.length).toBeGreaterThan(1);
 
-    const refresh = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Refresh")
+    const refresh = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Refresh"),
     );
     expect(refresh).toBeTruthy();
     await act(async () => {
       refresh?.click();
     });
 
-    const forceRoom = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Force ROOM")
+    const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Force ROOM"),
     );
-    const emergencyStop = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Emergency stop")
+    const emergencyStop = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Emergency stop"),
     );
-    const resume = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Resume")
+    const resume = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Resume"),
     );
     expect(forceRoom).toBeTruthy();
     expect(emergencyStop).toBeTruthy();
@@ -1932,11 +2000,11 @@ describe("app", () => {
       resume?.click();
     });
 
-    const confirm = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Confirm")
+    const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Confirm"),
     );
-    const deny = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Deny")
+    const deny = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Deny"),
     );
     expect(confirm).toBeTruthy();
     expect(deny).toBeTruthy();
@@ -1958,10 +2026,10 @@ describe("app", () => {
               value: "curry",
               status: "pending",
               created_at_ms: 0,
-              expires_at_ms: 1
-            }
-          ]
-        }
+              expires_at_ms: 1,
+            },
+          ],
+        },
       });
     });
     expect(document.body.textContent ?? "").toContain("taro / food / curry");
@@ -1994,7 +2062,7 @@ describe("app", () => {
 
     const closeSpy = vi.fn();
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: closeSpy
+      close: closeSpy,
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2033,8 +2101,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2062,8 +2130,8 @@ describe("app", () => {
     expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
     expect(document.body.textContent ?? "").toContain("HTTP 500");
 
-    const forceRoom = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Force ROOM")
+    const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Force ROOM"),
     );
     expect(forceRoom).toBeTruthy();
     await act(async () => {
@@ -2105,7 +2173,7 @@ describe("app", () => {
     vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: vi.fn()
+      close: vi.fn(),
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2138,8 +2206,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2154,8 +2222,8 @@ describe("app", () => {
       signIn?.click();
     });
 
-    const forceRoom = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Force ROOM")
+    const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Force ROOM"),
     );
     expect(forceRoom).toBeTruthy();
     await act(async () => {
@@ -2174,7 +2242,7 @@ describe("app", () => {
     vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: vi.fn()
+      close: vi.fn(),
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2204,8 +2272,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2232,7 +2300,7 @@ describe("app", () => {
     vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: vi.fn()
+      close: vi.fn(),
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2262,8 +2330,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2288,7 +2356,7 @@ describe("app", () => {
     vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: vi.fn()
+      close: vi.fn(),
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2312,9 +2380,9 @@ describe("app", () => {
               value: "curry",
               status: "pending",
               created_at_ms: 0,
-              expires_at_ms: 1
-            }
-          ]
+              expires_at_ms: 1,
+            },
+          ],
         });
       }
       if (url.startsWith("/api/v1/staff/pending/") && method === "POST") {
@@ -2341,8 +2409,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2355,11 +2423,11 @@ describe("app", () => {
       signIn?.click();
     });
 
-    const confirm = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Confirm")
+    const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Confirm"),
     );
-    const deny = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Deny")
+    const deny = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Deny"),
     );
     expect(confirm).toBeTruthy();
     expect(deny).toBeTruthy();
@@ -2388,7 +2456,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: vi.fn()
+      close: vi.fn(),
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2415,8 +2483,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2441,7 +2509,7 @@ describe("app", () => {
     vi.resetModules();
 
     const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-      close: vi.fn()
+      close: vi.fn(),
     }));
     vi.doMock("./sse-client", async () => {
       const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -2471,8 +2539,8 @@ describe("app", () => {
     });
 
     const input = document.querySelector("input") as HTMLInputElement | null;
-    const signIn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("Sign in")
+    const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Sign in"),
     );
     expect(input).toBeTruthy();
     expect(signIn).toBeTruthy();
@@ -2489,7 +2557,7 @@ describe("app", () => {
     await act(async () => {
       handlers.onSnapshot({
         state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
-        pending: { count: 0 }
+        pending: { count: 0 },
       });
     });
     expect(document.body.textContent ?? "").toContain("Mode: PERSONAL");
@@ -2498,7 +2566,7 @@ describe("app", () => {
     await act(async () => {
       handlers.onSnapshot({
         state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-        pending: { count: 0 }
+        pending: { count: 0 },
       });
     });
     expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");

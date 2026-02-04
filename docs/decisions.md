@@ -421,6 +421,7 @@ MVPを最短で成立させつつ、Provider（STT/TTS/LLM）を差し替えて�
 ### 一次情報URL（抜粋）
 
 App / DB / Kiosk:
+
 - TypeScript: https://raw.githubusercontent.com/microsoft/TypeScript/main/LICENSE.txt
 - Node.js: https://raw.githubusercontent.com/nodejs/node/main/LICENSE
 - React: https://github.com/facebook/react/blob/main/LICENSE
@@ -431,15 +432,18 @@ App / DB / Kiosk:
 - better-sqlite3: https://raw.githubusercontent.com/WiseLibs/better-sqlite3/master/LICENSE
 
 STT:
+
 - whisper.cpp: https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE
 - OpenAI Audio API docs/pricing: https://platform.openai.com/docs/guides/speech-to-text , https://platform.openai.com/docs/pricing
 
 TTS:
+
 - VOICEVOX engine LICENSE: https://raw.githubusercontent.com/VOICEVOX/voicevox_engine/master/LICENSE
 - VOICEVOX terms: https://voicevox.hiroshiba.jp/term/
 - VOICEVOX Nemo terms: https://voicevox.hiroshiba.jp/nemo/term/
 
 Local LLM:
+
 - llama.cpp: https://raw.githubusercontent.com/ggml-org/llama.cpp/master/LICENSE
 - Ollama: https://raw.githubusercontent.com/ollama/ollama/main/LICENSE
 - Qwen2.5 7B: https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/LICENSE
@@ -499,12 +503,20 @@ Provider Layer で利用する外部アセット（VRM モデル、whisper.cpp�
 ### 一次情報URL
 
 VRM:
+
 - VRM CC0 ライセンス: https://vroid.pixiv.help/hc/en-us/articles/4402614652569
 
+Web (VRM rendering):
+
+- three.js LICENSE: https://github.com/mrdoob/three.js/blob/dev/LICENSE
+- @pixiv/three-vrm LICENSE: https://github.com/pixiv/three-vrm/blob/dev/LICENSE
+
 whisper.cpp:
+
 - whisper.cpp LICENSE: https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE
 
 VOICEVOX:
+
 - VOICEVOX 利用規約: https://voicevox.hiroshiba.jp/term/
 - 帰属表記要件: VOICEVOX を利用したことがわかるクレジット表記が必要
 
