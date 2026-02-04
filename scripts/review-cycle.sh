@@ -34,7 +34,10 @@ Required environment:
   GH_ISSUE_BODY_FILE   Local file containing issue body (test/offline)
   SOT_FILES            Extra SoT files (repo-relative paths, space-separated)
   SOT_MAX_CHARS        Max chars for assembled SoT bundle (0 = no limit)
-  TEST_COMMAND     Command to run tests (captures full output to tests.txt)
+  TEST_COMMAND         Command to run tests (captures full output to tests.txt)
+  TEST_STDERR_POLICY   warn|fail|ignore (default: warn). When TEST_COMMAND is set,
+                     detect stderr output (and Vitest-style "stderr |" reports).
+                     Writes tests.stderr alongside tests.txt.
   DIFF_MODE        pr|staged|worktree|auto (default: pr)
   DIFF_FILE        Optional path to a diff file (overrides DIFF_MODE)
   OUTPUT_ROOT      Output root (default: <repo_root>/.agentic-sdd/reviews)
@@ -154,6 +157,10 @@ format_json="${FORMAT_JSON:-1}"
 sot="${SOT:-}"
 tests_summary="${TESTS:-}"
 test_command="${TEST_COMMAND:-}"
+test_stderr_policy="${TEST_STDERR_POLICY:-warn}"
+tests_stderr_present=0
+tests_stderr_summary="unknown"
+tests_stderr_violation=0
 
 gh_issue="${GH_ISSUE:-}"
 gh_repo="${GH_REPO:-}"
@@ -203,6 +210,7 @@ run_dir="${scope_root}/${run_id}"
 out_json="${run_dir}/review.json"
 out_diff="${run_dir}/diff.patch"
 out_tests="${run_dir}/tests.txt"
+out_tests_stderr="${run_dir}/tests.stderr"
 
 out_sot="${run_dir}/sot.txt"
 out_issue_json="${run_dir}/issue.json"
@@ -228,16 +236,30 @@ ensure_run_dir() {
 
 write_tests() {
   local exit_code=0
+  local reported_stderr=0
+  local tmp_tests_stdout=""
 
   if [[ -n "$test_command" ]]; then
+    case "$test_stderr_policy" in
+      warn|fail|ignore) ;;
+      *)
+        eprint "Invalid TEST_STDERR_POLICY: $test_stderr_policy (use warn|fail|ignore)"
+        exit 2
+        ;;
+    esac
+
     if [[ "$DRY_RUN" -eq 1 ]]; then
       if [[ -z "$tests_summary" ]]; then
         tests_summary="command: ${test_command} (not run: --dry-run)"
       fi
+      tests_stderr_summary="not checked (dry-run)"
       return 0
     fi
 
     ensure_run_dir
+    tmp_tests_stdout="${run_dir}/tests.stdout.tmp.$$"
+    : > "$out_tests_stderr"
+    : > "$tmp_tests_stdout"
     {
       printf 'Command: %s\n' "$test_command"
       printf 'Started: %s\n' "$(date +"%Y-%m-%dT%H:%M:%S%z")"
@@ -245,22 +267,73 @@ write_tests() {
     } > "$out_tests"
 
     set +e
-    bash -lc "$test_command" >> "$out_tests" 2>&1
+    bash -lc "$test_command" >"$tmp_tests_stdout" 2>"$out_tests_stderr"
     exit_code=$?
     set -e
+
+    if grep -qE '^[[:space:]]*stderr [|]' "$tmp_tests_stdout"; then
+      reported_stderr=1
+      tests_stderr_present=1
+    fi
+
+    cat "$tmp_tests_stdout" >>"$out_tests"
+    if [[ -s "$out_tests_stderr" ]]; then
+      {
+        printf '\n'
+        printf '\n'
+        printf '[stderr]\n'
+      } >>"$out_tests"
+      cat "$out_tests_stderr" >>"$out_tests"
+      tests_stderr_present=1
+    fi
+    rm -f "$tmp_tests_stdout" 2>/dev/null || true
+
+    if [[ "$tests_stderr_present" -eq 1 ]]; then
+      if [[ "$reported_stderr" -eq 1 && -s "$out_tests_stderr" ]]; then
+        tests_stderr_summary="present (process-stderr + reported)"
+      elif [[ "$reported_stderr" -eq 1 ]]; then
+        tests_stderr_summary="present (reported)"
+      else
+        tests_stderr_summary="present (process-stderr)"
+      fi
+    else
+      tests_stderr_summary="none"
+    fi
 
     {
       printf '\n'
       printf 'Exit: %s\n' "$exit_code"
       printf 'Finished: %s\n' "$(date +"%Y-%m-%dT%H:%M:%S%z")"
+      printf 'Stderr: %s\n' "$tests_stderr_summary"
+      printf 'Stderr-Policy: %s\n' "$test_stderr_policy"
     } >> "$out_tests"
 
     if [[ -z "$tests_summary" ]]; then
       if [[ "$exit_code" -eq 0 ]]; then
-        tests_summary="command: ${test_command} (exit=0)"
+        if [[ "$tests_stderr_present" -eq 1 ]]; then
+          tests_summary="command: ${test_command} (exit=0, stderr=present)"
+        else
+          tests_summary="command: ${test_command} (exit=0)"
+        fi
       else
-        tests_summary="command: ${test_command} (exit=${exit_code})"
+        if [[ "$tests_stderr_present" -eq 1 ]]; then
+          tests_summary="command: ${test_command} (exit=${exit_code}, stderr=present)"
+        else
+          tests_summary="command: ${test_command} (exit=${exit_code})"
+        fi
       fi
+    fi
+
+    if [[ "$tests_stderr_present" -eq 1 ]]; then
+      case "$test_stderr_policy" in
+        warn)
+          eprint "WARNING: test command produced stderr output (exit=${exit_code}). See: $out_tests_stderr"
+          ;;
+        fail)
+          tests_stderr_violation=1
+          ;;
+        ignore) ;;
+      esac
     fi
   else
     if [[ -z "$tests_summary" ]]; then
@@ -273,6 +346,8 @@ write_tests() {
       eprint "Set TEST_COMMAND to actually run tests, or use TESTS='not run: <reason>'."
       exit 2
     fi
+
+    tests_stderr_summary="not checked (no TEST_COMMAND)"
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
       return 0
@@ -448,6 +523,7 @@ print_plan() {
   eprint "- out_json: $out_json"
   eprint "- out_diff: $out_diff"
   eprint "- out_tests: $out_tests"
+  eprint "- out_tests_stderr: $out_tests_stderr"
   eprint "- out_sot: $out_sot"
   eprint "- diff_mode: $diff_mode"
   if [[ -n "$diff_source" ]]; then
@@ -493,6 +569,8 @@ print_plan() {
     eprint "- test_command: $test_command"
   fi
   eprint "- tests_summary: $tests_summary"
+  eprint "- tests_stderr_policy: $test_stderr_policy"
+  eprint "- tests_stderr: $tests_stderr_summary"
 }
 
 write_sot() {
@@ -563,6 +641,12 @@ collect_changed_files
 if [[ "$DRY_RUN" -eq 1 ]]; then
   print_plan
   exit 0
+fi
+
+if [[ "$tests_stderr_violation" -eq 1 ]]; then
+  eprint "TEST_STDERR_POLICY=fail: failing due to stderr output from test command."
+  eprint "See: $out_tests_stderr"
+  exit 3
 fi
 
 if [[ ! -f "$schema_path" ]]; then
@@ -661,6 +745,8 @@ PROMPT
   cat "$out_sot"
   printf '\n'
   printf 'Tests: %s\n' "$tests_summary"
+  printf 'Tests-Stderr: %s\n' "$tests_stderr_summary"
+  printf 'Tests-Stderr-Policy: %s\n' "$test_stderr_policy"
   printf 'Constraints: %s\n' "$constraints"
   printf 'Diff-Source: %s\n' "$diff_source"
   printf 'Diff-File: %s\n' "$diff_path_for_prompt"
