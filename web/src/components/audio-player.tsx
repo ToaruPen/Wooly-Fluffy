@@ -150,29 +150,71 @@ export const AudioPlayer = ({ wav, playId, onEnded, onError, onLevel }: AudioPla
         const audioContext = new AudioContextCtor();
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
-        const source = audioContext.createMediaElementSource(audio);
-        source.connect(analyser);
-        analyser.connect(audioContext.destination);
 
         runtime.audioContext = audioContext;
         runtime.analyser = analyser;
-        runtime.source = source;
 
-        void audioContext.resume().catch(() => undefined);
-
-        const buffer = new Uint8Array(analyser.fftSize);
-        const tick = () => {
-          if (runtimeRef.current !== runtime) {
+        const setupWebAudio = async () => {
+          try {
+            await audioContext.resume();
+          } catch {
+            try {
+              await audioContext.close();
+            } catch {
+              // ignore
+            }
+            if (runtimeRef.current === runtime) {
+              runtime.audioContext = null;
+              runtime.analyser = null;
+              runtime.source = null;
+            }
             return;
           }
-          analyser.getByteTimeDomainData(buffer);
-          const rms = computeRmsFromByteTimeDomainData(buffer);
-          const next = smoothValue(runtime.currentLevel, rms, 0.65, 0.25);
-          runtime.currentLevel = next;
-          onLevelRef.current?.(playId, next);
+
+          if (runtimeRef.current !== runtime) {
+            try {
+              await audioContext.close();
+            } catch {
+              // ignore
+            }
+            return;
+          }
+
+          const isRunning = audioContext.state === "running";
+          if (!isRunning) {
+            try {
+              await audioContext.close();
+            } catch {
+              // ignore
+            }
+            runtime.audioContext = null;
+            runtime.analyser = null;
+            runtime.source = null;
+            return;
+          }
+
+          const source = audioContext.createMediaElementSource(audio);
+          source.connect(analyser);
+          analyser.connect(audioContext.destination);
+
+          runtime.source = source;
+
+          const buffer = new Uint8Array(analyser.fftSize);
+          const tick = () => {
+            if (runtimeRef.current !== runtime) {
+              return;
+            }
+            analyser.getByteTimeDomainData(buffer);
+            const rms = computeRmsFromByteTimeDomainData(buffer);
+            const next = smoothValue(runtime.currentLevel, rms, 0.65, 0.25);
+            runtime.currentLevel = next;
+            onLevelRef.current?.(playId, next);
+            runtime.rafId = requestAnimationFrame(tick);
+          };
           runtime.rafId = requestAnimationFrame(tick);
         };
-        runtime.rafId = requestAnimationFrame(tick);
+
+        void setupWebAudio();
       } catch {
         // If WebAudio fails, still attempt to play audio.
       }

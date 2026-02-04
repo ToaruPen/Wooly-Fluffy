@@ -85,10 +85,15 @@ describe("AudioPlayer (component)", () => {
     }
 
     class FakeAudioContext {
+      state: AudioContextState = "suspended";
       destination = {} as AudioDestinationNode;
+      createMediaElementSource = vi.fn(
+        () => new FakeSource() as unknown as MediaElementAudioSourceNode,
+      );
       createAnalyser = () => new FakeAnalyser() as unknown as AnalyserNode;
-      createMediaElementSource = () => new FakeSource() as unknown as MediaElementAudioSourceNode;
-      resume = vi.fn(async () => undefined);
+      resume = vi.fn(async () => {
+        this.state = "running";
+      });
       close = vi.fn(async () => undefined);
     }
     (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
@@ -103,6 +108,7 @@ describe("AudioPlayer (component)", () => {
       root.render(
         <AudioPlayer wav={new ArrayBuffer(1)} playId={7} onLevel={onLevel} onEnded={onEnded} />,
       );
+      await Promise.resolve();
     });
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
@@ -110,6 +116,10 @@ describe("AudioPlayer (component)", () => {
     expect(instances[0]!.src).toBe("blob:tts");
     expect(instances[0]!.play).toHaveBeenCalled();
     expect(onLevel).toHaveBeenCalledWith(7, expect.any(Number));
+
+    expect(
+      (window as unknown as { AudioContext?: { prototype?: unknown } }).AudioContext,
+    ).toBeTruthy();
 
     instances[0]!.onended?.();
     expect(onEnded).toHaveBeenCalledWith(7);
@@ -250,6 +260,412 @@ describe("AudioPlayer (component)", () => {
     document.body.removeChild(container);
   });
 
+  it("falls back to direct playback when audioContext.resume rejects", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(() => undefined),
+    } as unknown as typeof URL);
+
+    class FakeAudio {
+      static instances: FakeAudio[] = [];
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => undefined);
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+        FakeAudio.instances.push(this);
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    const ctxInstances: FakeAudioContext[] = [];
+    class FakeAudioContext {
+      destination = {} as AudioDestinationNode;
+      createAnalyser = vi.fn(() => ({
+        fftSize: 0,
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+        getByteTimeDomainData: vi.fn(() => undefined),
+      })) as unknown as () => AnalyserNode;
+      createMediaElementSource = vi.fn(() => ({
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+      })) as unknown as () => MediaElementAudioSourceNode;
+      constructor() {
+        ctxInstances.push(this);
+      }
+      resume = vi.fn(async () => {
+        throw new Error("no-gesture");
+      });
+      close = vi.fn(async () => {
+        throw new Error("close");
+      });
+    }
+    (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} />);
+      await Promise.resolve();
+    });
+
+    expect(FakeAudio.instances.length).toBe(1);
+    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    // If resume fails, do not route the media element through AudioContext.
+    expect(ctxInstances.length).toBe(1);
+    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("closes audioContext cleanly when resume rejects", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(() => undefined),
+    } as unknown as typeof URL);
+
+    class FakeAudio {
+      static instances: FakeAudio[] = [];
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => undefined);
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+        FakeAudio.instances.push(this);
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    const ctxInstances: FakeAudioContext[] = [];
+    class FakeAudioContext {
+      destination = {} as AudioDestinationNode;
+      createAnalyser = vi.fn(() => ({
+        fftSize: 0,
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+        getByteTimeDomainData: vi.fn(() => undefined),
+      })) as unknown as () => AnalyserNode;
+      createMediaElementSource = vi.fn(() => ({
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+      })) as unknown as () => MediaElementAudioSourceNode;
+      constructor() {
+        ctxInstances.push(this);
+      }
+      resume = vi.fn(async () => {
+        throw new Error("no-gesture");
+      });
+      close = vi.fn(async () => undefined);
+    }
+    (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(FakeAudio.instances.length).toBe(1);
+    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(ctxInstances.length).toBe(1);
+    expect(ctxInstances[0]!.close).toHaveBeenCalled();
+    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("avoids routing audio when audioContext does not become running", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(() => undefined),
+    } as unknown as typeof URL);
+
+    class FakeAudio {
+      static instances: FakeAudio[] = [];
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => undefined);
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+        FakeAudio.instances.push(this);
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    const ctxInstances: FakeAudioContext[] = [];
+    class FakeAudioContext {
+      state: AudioContextState = "suspended";
+      destination = {} as AudioDestinationNode;
+      createAnalyser = vi.fn(() => ({
+        fftSize: 0,
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+        getByteTimeDomainData: vi.fn(() => undefined),
+      })) as unknown as () => AnalyserNode;
+      createMediaElementSource = vi.fn(() => ({
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+      })) as unknown as () => MediaElementAudioSourceNode;
+      constructor() {
+        ctxInstances.push(this);
+      }
+      resume = vi.fn(async () => undefined);
+      close = vi.fn(async () => {
+        throw new Error("close");
+      });
+    }
+    (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(FakeAudio.instances.length).toBe(1);
+    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(ctxInstances.length).toBe(1);
+    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("closes audioContext cleanly when it does not become running", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(() => undefined),
+    } as unknown as typeof URL);
+
+    class FakeAudio {
+      static instances: FakeAudio[] = [];
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => undefined);
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+        FakeAudio.instances.push(this);
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    const ctxInstances: FakeAudioContext[] = [];
+    class FakeAudioContext {
+      state: AudioContextState = "suspended";
+      destination = {} as AudioDestinationNode;
+      createAnalyser = vi.fn(() => ({
+        fftSize: 0,
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+        getByteTimeDomainData: vi.fn(() => undefined),
+      })) as unknown as () => AnalyserNode;
+      createMediaElementSource = vi.fn(() => ({
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+      })) as unknown as () => MediaElementAudioSourceNode;
+      constructor() {
+        ctxInstances.push(this);
+      }
+      resume = vi.fn(async () => undefined);
+      close = vi.fn(async () => undefined);
+    }
+    (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(FakeAudio.instances.length).toBe(1);
+    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(ctxInstances.length).toBe(1);
+    expect(ctxInstances[0]!.close).toHaveBeenCalled();
+    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("closes audioContext when runtime changes before resume completes", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(() => undefined),
+    } as unknown as typeof URL);
+
+    class FakeAudio {
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => undefined);
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    let resumeResolve!: () => void;
+    const resumePromise = new Promise<void>((resolve) => {
+      resumeResolve = resolve;
+    });
+
+    const ctxInstances: FakeAudioContext[] = [];
+    class FakeAudioContext {
+      state: AudioContextState = "suspended";
+      destination = {} as AudioDestinationNode;
+      createAnalyser = vi.fn(() => ({
+        fftSize: 0,
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+        getByteTimeDomainData: vi.fn(() => undefined),
+      })) as unknown as () => AnalyserNode;
+      createMediaElementSource = vi.fn(() => ({
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+      })) as unknown as () => MediaElementAudioSourceNode;
+      constructor() {
+        ctxInstances.push(this);
+      }
+      resume = vi.fn(async () => {
+        await resumePromise;
+        this.state = "running";
+      });
+      close = vi.fn(async () => {
+        throw new Error("close");
+      });
+    }
+    (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(2)} playId={2} />);
+      await Promise.resolve();
+    });
+
+    resumeResolve();
+    await Promise.resolve();
+
+    expect(ctxInstances.length).toBe(2);
+    expect(ctxInstances[0]!.close).toHaveBeenCalled();
+    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("closes audioContext cleanly when runtime changes before resume completes", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(() => undefined),
+    } as unknown as typeof URL);
+
+    class FakeAudio {
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => undefined);
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    let resumeResolve!: () => void;
+    const resumePromise = new Promise<void>((resolve) => {
+      resumeResolve = resolve;
+    });
+
+    const ctxInstances: FakeAudioContext[] = [];
+    class FakeAudioContext {
+      state: AudioContextState = "suspended";
+      destination = {} as AudioDestinationNode;
+      createAnalyser = vi.fn(() => ({
+        fftSize: 0,
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+        getByteTimeDomainData: vi.fn(() => undefined),
+      })) as unknown as () => AnalyserNode;
+      createMediaElementSource = vi.fn(() => ({
+        connect: vi.fn(() => undefined),
+        disconnect: vi.fn(() => undefined),
+      })) as unknown as () => MediaElementAudioSourceNode;
+      constructor() {
+        ctxInstances.push(this);
+      }
+      resume = vi.fn(async () => {
+        await resumePromise;
+        this.state = "running";
+      });
+      close = vi.fn(async () => undefined);
+    }
+    (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.render(<AudioPlayer wav={new ArrayBuffer(2)} playId={2} />);
+      await Promise.resolve();
+    });
+
+    resumeResolve();
+    await Promise.resolve();
+
+    expect(ctxInstances.length).toBe(2);
+    expect(ctxInstances[0]!.close).toHaveBeenCalled();
+    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
   it("returns early in tick when runtime changes", async () => {
     vi.stubGlobal("URL", {
       createObjectURL: vi.fn(() => "blob:tts"),
@@ -287,10 +703,13 @@ describe("AudioPlayer (component)", () => {
     }
 
     class FakeAudioContext {
+      state: AudioContextState = "suspended";
       destination = {} as AudioDestinationNode;
       createAnalyser = () => new FakeAnalyser() as unknown as AnalyserNode;
       createMediaElementSource = () => new FakeSource() as unknown as MediaElementAudioSourceNode;
-      resume = vi.fn(async () => undefined);
+      resume = vi.fn(async () => {
+        this.state = "running";
+      });
       close = vi.fn(async () => undefined);
     }
     (window as unknown as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
@@ -357,11 +776,14 @@ describe("AudioPlayer (component)", () => {
     }
 
     class ThrowingAudioContext {
+      state: AudioContextState = "suspended";
       destination = {} as AudioDestinationNode;
       createAnalyser = () => new ThrowingAnalyser() as unknown as AnalyserNode;
       createMediaElementSource = () =>
         new ThrowingSource() as unknown as MediaElementAudioSourceNode;
-      resume = vi.fn(async () => undefined);
+      resume = vi.fn(async () => {
+        this.state = "running";
+      });
       close = vi.fn(async () => {
         throw new Error("close");
       });
