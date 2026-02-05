@@ -231,7 +231,15 @@ describe("http-server (async llm provider)", () => {
     }) as unknown as typeof fetch);
 
     store = createStore({ db_path: ":memory:" });
-    server = createHttpServer({ store });
+    server = createHttpServer({
+      store,
+      stt_provider: {
+        transcribe: (input) => ({
+          text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
+        }),
+        health: () => ({ status: "ok" }),
+      },
+    });
     await new Promise<void>((resolve) => {
       server.listen(0, "127.0.0.1", resolve);
     });
