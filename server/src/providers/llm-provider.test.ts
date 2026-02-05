@@ -170,6 +170,205 @@ describe("llm-provider (OpenAI-compatible)", () => {
     expect(result.tool_calls[0]?.function.name).toBe("get_weather");
   });
 
+  it("executes allowlisted tool_calls and follows up to return final assistant_text", async () => {
+    let chatCalls = 0;
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async (input) => {
+        if (input.endsWith("/chat/completions")) {
+          chatCalls += 1;
+          if (chatCalls === 1) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                choices: [
+                  {
+                    message: {
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "call_1",
+                          type: "function",
+                          function: {
+                            name: "get_weather",
+                            arguments: '{"location":"Tokyo"}',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              }),
+            };
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
+                  },
+                },
+              ],
+            }),
+          };
+        }
+
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
+    });
+
+    const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+    expect(chatCalls).toBe(2);
+    expect(result.assistant_text).toBe("OK");
+    expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather"]);
+  });
+
+  it("throws when follow-up chat completion returns non-2xx", async () => {
+    let chatCalls = 0;
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async (input) => {
+        if (input.endsWith("/chat/completions")) {
+          chatCalls += 1;
+          if (chatCalls === 1) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                choices: [
+                  {
+                    message: {
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "call_1",
+                          type: "function",
+                          function: {
+                            name: "get_weather",
+                            arguments: '{"location":"Tokyo"}',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              }),
+            };
+          }
+          return { ok: false, status: 500, json: async () => ({}) };
+        }
+
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow(
+      /HTTP 500/,
+    );
+  });
+
+  it("throws when follow-up chat response has no message", async () => {
+    let chatCalls = 0;
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async (input) => {
+        if (input.endsWith("/chat/completions")) {
+          chatCalls += 1;
+          if (chatCalls === 1) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                choices: [
+                  {
+                    message: {
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "call_1",
+                          type: "function",
+                          function: {
+                            name: "get_weather",
+                            arguments: '{"location":"Tokyo"}',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              }),
+            };
+          }
+          return { ok: true, status: 200, json: async () => ({ choices: [] }) };
+        }
+
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).rejects.toThrow(
+      /no message/,
+    );
+  });
+
   it("filters malformed tool_calls", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
       kind: "local",
