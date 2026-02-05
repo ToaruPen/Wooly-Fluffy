@@ -295,6 +295,7 @@ beforeEach(async () => {
   process.env.STAFF_PASSCODE = "test-pass";
   delete process.env.TEST_STT_THROW;
   delete process.env.TEST_STT_HEALTH;
+  delete process.env.TEST_STT_DELAY_MS;
 
   store = createStore({ db_path: ":memory:" });
   server = createHttpServer({
@@ -303,6 +304,14 @@ beforeEach(async () => {
       transcribe: (input) => {
         if (process.env.TEST_STT_THROW === "1") {
           throw new Error("test_stt_boom");
+        }
+        const delayMs = Number(process.env.TEST_STT_DELAY_MS ?? "0");
+        if (Number.isFinite(delayMs) && delayMs > 0) {
+          return new Promise<{ text: string }>((resolve) => {
+            setTimeout(() => {
+              resolve({ text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき" });
+            }, delayMs);
+          });
         }
         return {
           text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
@@ -341,6 +350,7 @@ afterEach(async () => {
   delete process.env.STAFF_PASSCODE;
   delete process.env.TEST_STT_THROW;
   delete process.env.TEST_STT_HEALTH;
+  delete process.env.TEST_STT_DELAY_MS;
   staffCookie = "";
 
   vi.unstubAllGlobals();
@@ -1149,6 +1159,43 @@ describe("http-server", () => {
 
     const health = await sendRequest("GET", "/health");
     expect(health.status).toBe(200);
+  });
+
+  it("does not block /health while stt transcription is in flight", async () => {
+    process.env.TEST_STT_DELAY_MS = "500";
+
+    const down = await sendRequest("POST", "/api/v1/staff/event", {
+      headers: withStaffCookie({ "content-type": "application/json" }),
+      body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+    });
+    expect(down.status).toBe(200);
+
+    const up = await sendRequest("POST", "/api/v1/staff/event", {
+      headers: withStaffCookie({ "content-type": "application/json" }),
+      body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+    });
+    expect(up.status).toBe(200);
+
+    const multipart = buildMultipartBody({
+      stt_request_id: "stt-1",
+      audio: Buffer.from("dummy", "utf8"),
+    });
+    const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+      headers: { "content-type": multipart.contentType },
+      body: multipart.body,
+    });
+    expect(audio.status).toBe(202);
+
+    const start = Date.now();
+    const health = await sendRequest("GET", "/health");
+    const elapsed = Date.now() - start;
+    expect(health.status).toBe(200);
+    expect(elapsed).toBeLessThan(250);
+
+    // Avoid in-flight promise resolving after teardown.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 550);
+    });
   });
 
   it("supports staff pending deny endpoint", async () => {

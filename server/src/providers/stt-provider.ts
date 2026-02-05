@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-imports */
 
-import { execFileSync as execFileSyncBuiltin } from "node:child_process";
+import { execFile as execFileBuiltin } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -8,27 +8,28 @@ import path from "node:path";
 import type { Mode } from "../orchestrator.js";
 import type { ProviderHealth, Providers } from "./types.js";
 
-type ExecFileSync = (
+type ExecFile = (
   file: string,
   args: string[],
   options?: {
     timeout?: number;
     killSignal?: NodeJS.Signals;
     encoding?: BufferEncoding;
-  }
-) => string;
+    maxBuffer?: number;
+  },
+) => Promise<string>;
 
 type WhisperCppSttProviderOptions = {
   cli_path?: string;
   model_path?: string;
   timeout_ms?: number;
   tmp_dir?: string;
-  execFileSync?: ExecFileSync;
+  execFile?: ExecFile;
 };
 
 const createConfigError = (): Error => {
   const err = new Error(
-    "whisper.cpp is not configured: set WHISPER_CPP_CLI_PATH and WHISPER_CPP_MODEL_PATH"
+    "whisper.cpp is not configured: set WHISPER_CPP_CLI_PATH and WHISPER_CPP_MODEL_PATH",
   );
   err.name = "SttConfigError";
   return err;
@@ -36,16 +37,15 @@ const createConfigError = (): Error => {
 
 const classifyExecError = (cause: unknown): Error => {
   if (cause instanceof Error) {
-    const code = (cause as Error & { code?: unknown }).code;
-    if (code === "ETIMEDOUT") {
+    const meta = cause as Error & { code?: unknown; killed?: unknown; signal?: unknown };
+    const code = meta.code;
+    if (code === "ETIMEDOUT" || (meta.killed === true && meta.signal === "SIGKILL")) {
       const err = new Error("whisper.cpp timed out");
       err.name = "SttTimeoutError";
       return err;
     }
     if (code === "ENOENT") {
-      const err = new Error(
-        "whisper.cpp executable not found (check WHISPER_CPP_CLI_PATH)"
-      );
+      const err = new Error("whisper.cpp executable not found (check WHISPER_CPP_CLI_PATH)");
       err.name = "SttConfigError";
       return err;
     }
@@ -76,16 +76,33 @@ const healthFromPaths = (cliPath: string | null, modelPath: string | null): Prov
 };
 
 export const createWhisperCppSttProvider = (
-  options: WhisperCppSttProviderOptions = {}
+  options: WhisperCppSttProviderOptions = {},
 ): Providers["stt"] => {
   const cliPath = options.cli_path ?? process.env.WHISPER_CPP_CLI_PATH ?? null;
   const modelPath = options.model_path ?? process.env.WHISPER_CPP_MODEL_PATH ?? null;
   const timeoutMs = options.timeout_ms ?? 15_000;
   const tmpDir = options.tmp_dir ?? os.tmpdir();
-  const execFileSync: ExecFileSync =
-    options.execFileSync ??
+  const execFile: ExecFile =
+    options.execFile ??
     ((file, args, execOptions) =>
-      execFileSyncBuiltin(file, args, { ...execOptions, encoding: "utf8" }));
+      new Promise<string>((resolve, reject) => {
+        execFileBuiltin(
+          file,
+          args,
+          {
+            ...execOptions,
+            encoding: "utf8",
+            maxBuffer: 10 * 1024 * 1024,
+          },
+          (err, stdout) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve(String(stdout));
+          },
+        );
+      }));
 
   const resolveConfigured = (): { cli: string; model: string } => {
     if (!cliPath || !modelPath) {
@@ -94,10 +111,7 @@ export const createWhisperCppSttProvider = (
     return { cli: cliPath, model: modelPath };
   };
 
-  const transcribe: Providers["stt"]["transcribe"] = (input: {
-    mode: Mode;
-    wav: Buffer;
-  }) => {
+  const transcribe: Providers["stt"]["transcribe"] = async (input: { mode: Mode; wav: Buffer }) => {
     void input.mode;
     const configured = resolveConfigured();
     const wavPath = path.join(tmpDir, `wf-stt-${randomUUID()}.wav`);
@@ -110,10 +124,10 @@ export const createWhisperCppSttProvider = (
 
       let stdout: string;
       try {
-        stdout = execFileSync(
+        stdout = await execFile(
           configured.cli,
           ["-m", configured.model, "-f", wavPath, "-l", "ja", "-nt"],
-          { timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8" }
+          { timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8" },
         );
       } catch (cause: unknown) {
         throw classifyExecError(cause);
@@ -136,6 +150,6 @@ export const createWhisperCppSttProvider = (
 
   return {
     transcribe,
-    health: () => healthFromPaths(cliPath, modelPath)
+    health: () => healthFromPaths(cliPath, modelPath),
   };
 };

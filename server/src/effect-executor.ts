@@ -20,7 +20,7 @@ type StoreWritePending = (
 
 type EffectExecutor = {
   executeEffects: (effects: OrchestratorEffect[]) => OrchestratorEvent[];
-  transcribeStt: (input: { request_id: string; mode: Mode; wav: Buffer }) => OrchestratorEvent;
+  transcribeStt: (input: { request_id: string; mode: Mode; wav: Buffer }) => void;
 };
 
 export const createEffectExecutor = (deps: {
@@ -151,17 +151,31 @@ export const createEffectExecutor = (deps: {
 
   const transcribeStt: EffectExecutor["transcribeStt"] = (input) => {
     try {
-      const result = deps.providers.stt.transcribe({
+      const maybe = deps.providers.stt.transcribe({
         mode: input.mode,
         wav: input.wav,
       });
-      return {
+      if (isThenable<{ text: string }>(maybe)) {
+        void maybe
+          .then((result) => {
+            deps.enqueueEvent({
+              type: "STT_RESULT",
+              request_id: input.request_id,
+              text: result.text,
+            });
+          })
+          .catch(() => {
+            deps.enqueueEvent({ type: "STT_FAILED", request_id: input.request_id });
+          });
+        return;
+      }
+      deps.enqueueEvent({
         type: "STT_RESULT",
         request_id: input.request_id,
-        text: result.text,
-      };
+        text: maybe.text,
+      });
     } catch {
-      return { type: "STT_FAILED", request_id: input.request_id };
+      deps.enqueueEvent({ type: "STT_FAILED", request_id: input.request_id });
     }
   };
 

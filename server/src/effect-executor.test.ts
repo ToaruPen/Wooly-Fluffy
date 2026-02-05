@@ -517,20 +517,23 @@ describe("effect-executor", () => {
       sttTranscribe: () => ({ text: "hi" }),
     });
 
+    const enqueued: unknown[] = [];
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
-      enqueueEvent: () => {},
+      enqueueEvent: (event) => {
+        enqueued.push(event);
+      },
       onSttRequested: () => {},
       storeWritePending: () => {},
     });
 
-    const event = executor.transcribeStt({
+    executor.transcribeStt({
       request_id: "stt-1",
       mode: "ROOM",
       wav: Buffer.from("dummy"),
     });
-    expect(event).toEqual({ type: "STT_RESULT", request_id: "stt-1", text: "hi" });
+    expect(enqueued).toEqual([{ type: "STT_RESULT", request_id: "stt-1", text: "hi" }]);
   });
 
   it("converts STT provider error into STT_FAILED", () => {
@@ -540,19 +543,51 @@ describe("effect-executor", () => {
       },
     });
 
+    const enqueued: unknown[] = [];
     const executor = createEffectExecutor({
       providers,
       sendKioskCommand: () => {},
-      enqueueEvent: () => {},
+      enqueueEvent: (event) => {
+        enqueued.push(event);
+      },
       onSttRequested: () => {},
       storeWritePending: () => {},
     });
 
-    const event = executor.transcribeStt({
+    executor.transcribeStt({
       request_id: "stt-9",
       mode: "ROOM",
       wav: Buffer.from("dummy"),
     });
-    expect(event).toEqual({ type: "STT_FAILED", request_id: "stt-9" });
+    expect(enqueued).toEqual([{ type: "STT_FAILED", request_id: "stt-9" }]);
+  });
+
+  it("enqueues STT_RESULT when provider resolves async", async () => {
+    const providers = createStubProviders({
+      sttTranscribe: async () => ({ text: "hello" }),
+    });
+
+    const enqueued: unknown[] = [];
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: (event) => {
+        enqueued.push(event);
+      },
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+    });
+
+    executor.transcribeStt({
+      request_id: "stt-2",
+      mode: "ROOM",
+      wav: Buffer.from("dummy"),
+    });
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(enqueued).toEqual([{ type: "STT_RESULT", request_id: "stt-2", text: "hello" }]);
   });
 });

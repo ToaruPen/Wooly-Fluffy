@@ -6,15 +6,16 @@ import path from "node:path";
 import os from "node:os";
 import { createWhisperCppSttProvider } from "./stt-provider.js";
 
-type ExecFileSync = (
+type ExecFile = (
   file: string,
   args: string[],
   options?: {
     timeout?: number;
     killSignal?: NodeJS.Signals;
     encoding?: BufferEncoding;
-  }
-) => string;
+    maxBuffer?: number;
+  },
+) => Promise<string>;
 
 const withCleanEnv = async (run: () => Promise<void> | void) => {
   const prevCli = process.env.WHISPER_CPP_CLI_PATH;
@@ -39,7 +40,7 @@ const withCleanEnv = async (run: () => Promise<void> | void) => {
 
 const withEnv = async (
   env: { WHISPER_CPP_CLI_PATH?: string; WHISPER_CPP_MODEL_PATH?: string },
-  run: () => Promise<void> | void
+  run: () => Promise<void> | void,
 ) => {
   const prevCli = process.env.WHISPER_CPP_CLI_PATH;
   const prevModel = process.env.WHISPER_CPP_MODEL_PATH;
@@ -73,12 +74,14 @@ describe("stt-provider (whisper.cpp)", () => {
   it("fails fast with a clear error when env vars are missing", async () => {
     await withCleanEnv(() => {
       const stt = createWhisperCppSttProvider();
-      expect(() =>
-        stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })
-      ).toThrow(/WHISPER_CPP_CLI_PATH/);
-      expect(() =>
-        stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })
-      ).toThrow(/WHISPER_CPP_MODEL_PATH/);
+      return Promise.all([
+        expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toThrow(
+          /WHISPER_CPP_CLI_PATH/,
+        ),
+        expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toThrow(
+          /WHISPER_CPP_MODEL_PATH/,
+        ),
+      ]).then(() => {});
     });
   });
 
@@ -93,19 +96,19 @@ describe("stt-provider (whisper.cpp)", () => {
     await withEnv(
       {
         WHISPER_CPP_CLI_PATH: "/definitely-not-a-real-path/whisper-cli",
-        WHISPER_CPP_MODEL_PATH: "/definitely-not-a-real-path/model.bin"
+        WHISPER_CPP_MODEL_PATH: "/definitely-not-a-real-path/model.bin",
       },
       () => {
         const stt = createWhisperCppSttProvider();
         expect(stt.health()).toEqual({ status: "unavailable" });
-      }
+      },
     );
   });
 
   it("reports unavailable health when configured paths do not exist", () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/definitely-not-a-real-path/whisper-cli",
-      model_path: "/definitely-not-a-real-path/model.bin"
+      model_path: "/definitely-not-a-real-path/model.bin",
     });
     expect(stt.health()).toEqual({ status: "unavailable" });
   });
@@ -157,7 +160,7 @@ describe("stt-provider (whisper.cpp)", () => {
 
     const stt = createWhisperCppSttProvider({
       cli_path: cliPath,
-      model_path: path.join(tmpRoot, "missing-model.bin")
+      model_path: path.join(tmpRoot, "missing-model.bin"),
     });
     expect(stt.health()).toEqual({ status: "unavailable" });
   });
@@ -167,24 +170,24 @@ describe("stt-provider (whisper.cpp)", () => {
       { WHISPER_CPP_CLI_PATH: "/path/to/whisper-cli", WHISPER_CPP_MODEL_PATH: undefined },
       () => {
         const stt = createWhisperCppSttProvider();
-        expect(() => stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toThrow(
-          /WHISPER_CPP_MODEL_PATH/
+        return expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toThrow(
+          /WHISPER_CPP_MODEL_PATH/,
         );
-      }
+      },
     );
 
     await withEnv(
       { WHISPER_CPP_CLI_PATH: undefined, WHISPER_CPP_MODEL_PATH: "/path/to/model.bin" },
       () => {
         const stt = createWhisperCppSttProvider();
-        expect(() => stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toThrow(
-          /WHISPER_CPP_CLI_PATH/
+        return expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toThrow(
+          /WHISPER_CPP_CLI_PATH/,
         );
-      }
+      },
     );
   });
 
-  it("always deletes the temp wav file (success)", () => {
+  it("always deletes the temp wav file (success)", async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     const createdWavPaths: string[] = [];
 
@@ -192,7 +195,7 @@ describe("stt-provider (whisper.cpp)", () => {
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
       tmp_dir: tmpRoot,
-      execFileSync: ((file, args) => {
+      execFile: (async (file, args) => {
         void file;
         const fIndex = args.indexOf("-f");
         const wavPath = fIndex >= 0 ? args[fIndex + 1] : undefined;
@@ -204,31 +207,33 @@ describe("stt-provider (whisper.cpp)", () => {
         const mode = fs.statSync(wavPath).mode & 0o777;
         expect(mode).toBe(0o600);
         return "こんにちは";
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
-    const result = stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
+    const result = await stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
     expect(result).toEqual({ text: "こんにちは" });
     expect(createdWavPaths.length).toBe(1);
     expect(fs.existsSync(createdWavPaths[0]!)).toBe(false);
   });
 
-  it("passes timeout_ms to whisper.cpp invocation", () => {
+  it("passes timeout_ms to whisper.cpp invocation", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
       timeout_ms: 123,
-      execFileSync: ((file, _args, options) => {
+      execFile: (async (file, _args, options) => {
         void file;
         expect(options?.timeout).toBe(123);
         return "ok";
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
-    expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toEqual({ text: "ok" });
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).resolves.toEqual({
+      text: "ok",
+    });
   });
 
-  it("times out via real subprocess and leaves no temp wav file behind", () => {
+  it("times out via real subprocess and leaves no temp wav file behind", async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     const cliPath = path.join(tmpRoot, "whisper-cli");
     const modelPath = path.join(tmpRoot, "model.bin");
@@ -236,9 +241,9 @@ describe("stt-provider (whisper.cpp)", () => {
     fs.writeFileSync(
       cliPath,
       "#!/usr/bin/env bash\n" +
-        "# Intentionally sleep longer than timeout to exercise execFileSync timeout path\n" +
+        "# Intentionally sleep longer than timeout to exercise execFile timeout path\n" +
         "sleep 0.2\n",
-      { mode: 0o755 }
+      { mode: 0o755 },
     );
     fs.writeFileSync(modelPath, "x");
 
@@ -246,25 +251,23 @@ describe("stt-provider (whisper.cpp)", () => {
       cli_path: cliPath,
       model_path: modelPath,
       tmp_dir: tmpRoot,
-      timeout_ms: 50
+      timeout_ms: 50,
     });
 
     const start = Date.now();
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-      throw new Error("expected_timeout");
-    } catch (err: unknown) {
-      const elapsedMs = Date.now() - start;
-      expect(elapsedMs).toBeLessThan(1000);
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttTimeoutError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttTimeoutError",
+      },
+    );
+    const elapsedMs = Date.now() - start;
+    expect(elapsedMs).toBeLessThan(1000);
 
     const files = fs.readdirSync(tmpRoot);
     expect(files.some((f) => f.startsWith("wf-stt-") && f.endsWith(".wav"))).toBe(false);
   });
 
-  it("classifies temp write failure as SttProcessError", () => {
+  it("classifies temp write failure as SttProcessError", async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     const notADir = path.join(tmpRoot, "not-a-dir");
     fs.writeFileSync(notADir, "x");
@@ -273,18 +276,17 @@ describe("stt-provider (whisper.cpp)", () => {
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
       tmp_dir: notADir,
-      execFileSync: (() => "ok") satisfies ExecFileSync
+      execFile: (async () => "ok") satisfies ExecFile,
     });
 
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttProcessError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttProcessError",
+      },
+    );
   });
 
-  it("always deletes the temp wav file (failure)", () => {
+  it("always deletes the temp wav file (failure)", async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     const createdWavPaths: string[] = [];
 
@@ -292,7 +294,7 @@ describe("stt-provider (whisper.cpp)", () => {
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
       tmp_dir: tmpRoot,
-      execFileSync: ((file, args) => {
+      execFile: (async (file, args) => {
         void file;
         const fIndex = args.indexOf("-f");
         const wavPath = fIndex >= 0 ? args[fIndex + 1] : undefined;
@@ -301,102 +303,97 @@ describe("stt-provider (whisper.cpp)", () => {
           expect(fs.existsSync(wavPath)).toBe(true);
         }
         throw new Error("boom");
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
-    expect(() => stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toThrow();
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toBeTruthy();
     expect(createdWavPaths.length).toBe(1);
     expect(fs.existsSync(createdWavPaths[0]!)).toBe(false);
   });
 
-  it("classifies timeout as SttTimeoutError", () => {
+  it("classifies timeout as SttTimeoutError", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
-      execFileSync: (() => {
+      execFile: (async () => {
         const err = new Error("timeout") as Error & { code?: string };
         err.code = "ETIMEDOUT";
         throw err;
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
-    expect(() => stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toThrow(
-      /timed out/
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toThrow(
+      /timed out/,
     );
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttTimeoutError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttTimeoutError",
+      },
+    );
   });
 
-  it("classifies missing executable as SttConfigError", () => {
+  it("classifies missing executable as SttConfigError", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
-      execFileSync: (() => {
+      execFile: (async () => {
         const err = new Error("enoent") as Error & { code?: string };
         err.code = "ENOENT";
         throw err;
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttConfigError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttConfigError",
+      },
+    );
   });
 
-  it("uses the builtin execFileSync wrapper when execFileSync is not injected", () => {
+  it("uses the builtin execFile wrapper when execFile is not injected", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/definitely-not-a-real-path/whisper-cli",
-      model_path: "/definitely-not-a-real-path/model.bin"
+      model_path: "/definitely-not-a-real-path/model.bin",
     });
 
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttConfigError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttConfigError",
+      },
+    );
   });
 
-  it("keeps parse errors as SttParseError", () => {
+  it("keeps parse errors as SttParseError", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
-      execFileSync: (() => "\n") satisfies ExecFileSync
+      execFile: (async () => "\n") satisfies ExecFile,
     });
 
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttParseError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttParseError",
+      },
+    );
   });
 
-  it("classifies non-Error throws as SttProcessError", () => {
+  it("classifies non-Error throws as SttProcessError", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
-      execFileSync: (() => {
+      execFile: (async () => {
         throw "boom";
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
-    try {
-      stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(Error);
-      expect((err as Error).name).toBe("SttProcessError");
-    }
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttProcessError",
+      },
+    );
   });
 
-  it("does not fail if temp cleanup throws", () => {
+  it("does not fail if temp cleanup throws", async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     let wavPath = "";
 
@@ -404,7 +401,7 @@ describe("stt-provider (whisper.cpp)", () => {
       cli_path: "/path/to/whisper-cli",
       model_path: "/path/to/model.bin",
       tmp_dir: tmpRoot,
-      execFileSync: ((file, args) => {
+      execFile: (async (file, args) => {
         void file;
         const fIndex = args.indexOf("-f");
         const p = fIndex >= 0 ? args[fIndex + 1] : undefined;
@@ -412,7 +409,7 @@ describe("stt-provider (whisper.cpp)", () => {
           wavPath = p;
         }
         return "hi";
-      }) satisfies ExecFileSync
+      }) satisfies ExecFile,
     });
 
     const originalRmSync = fs.rmSync;
@@ -421,8 +418,8 @@ describe("stt-provider (whisper.cpp)", () => {
       fsMutable.rmSync = () => {
         throw new Error("rm_failed");
       };
-      expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).toEqual({
-        text: "hi"
+      await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).resolves.toEqual({
+        text: "hi",
       });
     } finally {
       fsMutable.rmSync = originalRmSync;

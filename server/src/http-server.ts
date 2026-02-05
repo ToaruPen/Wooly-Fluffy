@@ -753,12 +753,11 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           }
           pendingStt.delete(stt_request_id);
 
-          const event = effectExecutor.transcribeStt({
+          effectExecutor.transcribeStt({
             request_id: stt_request_id,
             mode: state.mode,
             wav: upload.wav,
           });
-          enqueueEvent(event, nowMs());
           sendJson(res, 202, okBody);
         })
         .catch((err: unknown) => {
