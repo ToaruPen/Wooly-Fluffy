@@ -363,6 +363,32 @@ describe("stt-provider (whisper.cpp)", () => {
     );
   });
 
+  it("uses the builtin execFile wrapper when a runnable cli is configured", async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const cliPath = path.join(tmpRoot, "whisper-cli");
+    const modelPath = path.join(tmpRoot, "model.bin");
+
+    fs.writeFileSync(
+      cliPath,
+      "#!/usr/bin/env bash\n" + "# Minimal fake whisper.cpp CLI for tests\n" + "echo hello\n",
+      { mode: 0o755 },
+    );
+    fs.writeFileSync(modelPath, "x");
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: cliPath,
+      model_path: modelPath,
+      tmp_dir: tmpRoot,
+    });
+
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).resolves.toEqual({
+      text: "hello",
+    });
+
+    const files = fs.readdirSync(tmpRoot);
+    expect(files.some((f) => f.startsWith("wf-stt-") && f.endsWith(".wav"))).toBe(false);
+  });
+
   it("keeps parse errors as SttParseError", async () => {
     const stt = createWhisperCppSttProvider({
       cli_path: "/path/to/whisper-cli",

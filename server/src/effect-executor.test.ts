@@ -590,4 +590,35 @@ describe("effect-executor", () => {
 
     expect(enqueued).toEqual([{ type: "STT_RESULT", request_id: "stt-2", text: "hello" }]);
   });
+
+  it("enqueues STT_FAILED when provider rejects async", async () => {
+    const providers = createStubProviders({
+      sttTranscribe: async () => {
+        throw new Error("boom");
+      },
+    });
+
+    const enqueued: unknown[] = [];
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: (event) => {
+        enqueued.push(event);
+      },
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+    });
+
+    executor.transcribeStt({
+      request_id: "stt-3",
+      mode: "ROOM",
+      wav: Buffer.from("dummy"),
+    });
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(enqueued).toEqual([{ type: "STT_FAILED", request_id: "stt-3" }]);
+  });
 });
