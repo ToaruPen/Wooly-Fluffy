@@ -3,15 +3,18 @@
 M0 bootstrap with a minimal HTTP server, SSE endpoints, and a web skeleton.
 
 ## Requirements
+
 - Node.js LTS
 - npm
 
 ## Install
+
 ```
 npm install
 ```
 
 ## Checks
+
 ```
 npm run typecheck
 npm run lint
@@ -21,6 +24,7 @@ npm run deadcode
 ```
 
 ## CI (GitHub Actions)
+
 - `.github/workflows/ci.yml`: runs on pull requests and pushes to `main`.
   - `npm ci`
   - `npm audit --audit-level=high --omit=dev` (prod deps only)
@@ -31,6 +35,7 @@ npm run deadcode
   - `npm audit --audit-level=high` (including dev deps)
 
 ## Run server
+
 ```
 npm run -w server start
 ```
@@ -38,29 +43,35 @@ npm run -w server start
 Defaults: `HOST=127.0.0.1`, `PORT=3000`.
 
 ## Run web (dev)
+
 ```
 npm run -w web dev
 ```
 
 Open:
+
 - `http://127.0.0.1:5173/kiosk`
 - `http://127.0.0.1:5173/staff`
 
 The dev server proxies `/api` to `http://127.0.0.1:3000`.
 
-## Provider Layer Setup
+## Main loop setup (external deps + env vars + manual smoke)
 
-This project integrates external providers for STT (whisper.cpp), TTS (VOICEVOX), and 3D avatar (VRM). These assets are **not** included in the repository and must be set up manually.
+This project integrates external providers for STT (whisper.cpp), TTS (VOICEVOX), and LLM (LM Studio or an external OpenAI-compatible provider), plus a VRM model for the KIOSK avatar.
+
+These assets/services are **not** included in the repository and must be set up manually.
 
 ### Prerequisites
 
 - **Platform**: macOS Apple Silicon (M1/M2/M3)
 - **Tools**: Homebrew, Docker Desktop
-- **Account**: pixiv account (for VRoid Hub access)
+- **Optional**: pixiv account (for VRoid Hub access)
 
-### 1. whisper.cpp (Speech-to-Text)
+### External dependencies (local-only)
 
-Build whisper.cpp with Core ML support for optimized inference on Apple Silicon:
+#### 1) whisper.cpp (Speech-to-Text)
+
+Build whisper.cpp with Core ML support for optimized inference on Apple Silicon (optional):
 
 ```bash
 # Install build tools
@@ -81,6 +92,7 @@ pip install ane_transformers openai-whisper coremltools
 ```
 
 **Verification**:
+
 ```bash
 ./build/bin/whisper-cli --help
 ls -lah models/ggml-base.bin  # Should be ~141MB
@@ -88,7 +100,7 @@ ls -lah models/ggml-base.bin  # Should be ~141MB
 
 **Fallback**: If Core ML build fails, the CPU backend will be used automatically.
 
-### 2. VOICEVOX (Text-to-Speech)
+#### 2) VOICEVOX (Text-to-Speech)
 
 Run VOICEVOX engine via Docker:
 
@@ -107,7 +119,25 @@ curl -s http://localhost:50021/version
 
 **Note**: VOICEVOX requires attribution ("VOICEVOX を利用したことがわかるクレジット表記") per [利用規約](https://voicevox.hiroshiba.jp/term/).
 
-### 3. VRM Model (3D Avatar)
+#### 3) LLM (LM Studio local OR external provider)
+
+This server expects an **OpenAI-compatible** HTTP API.
+
+Option A: LM Studio (local)
+
+1. Install LM Studio
+2. Download a model and start the local server (OpenAI-compatible)
+3. Verify the server:
+
+```bash
+curl -s http://127.0.0.1:1234/v1/models
+```
+
+Option B: external provider (OpenAI-compatible)
+
+- Prepare a provider API key and a base URL (example: `https://api.openai.com/v1`)
+
+#### 4) VRM Model (3D Avatar)
 
 Download a CC0-licensed VRM model from VRoid Hub:
 
@@ -116,7 +146,10 @@ Download a CC0-licensed VRM model from VRoid Hub:
 3. Download `.vrm` file
 4. Place in `web/public/assets/vrm/` directory
 
+If you want to use the default path without configuration, name it `web/public/assets/vrm/mascot.vrm`.
+
 **Verification**:
+
 ```bash
 ls -lah web/public/assets/vrm/*.vrm
 ```
@@ -131,5 +164,99 @@ ls -lah web/public/assets/vrm/*.vrm
 
 See `docs/decisions.md` (ADR-9) for full license documentation.
 
+### Required environment variables
+
+Server (required unless noted):
+
+- `STAFF_PASSCODE` (required): passcode for `/staff` login (STAFF APIs are LAN-only)
+- `DB_PATH` (optional): defaults to `var/wooly-fluffy.sqlite3`
+- `VOICEVOX_ENGINE_URL` (optional): defaults to `http://127.0.0.1:50021`
+- `LLM_PROVIDER_KIND` (required for non-stub): `local` or `external` (default: `stub`)
+- `LLM_BASE_URL` (required for `local`/`external`): OpenAI-compatible base URL (include `/v1`)
+- `LLM_MODEL` (required for `local`/`external`): model id string
+- `LLM_API_KEY` (external only): API key string (keep secret)
+- `WHISPER_CPP_CLI_PATH` (required for STT): path to `whisper-cli`
+- `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file
+
+Web (optional):
+
+- `VITE_VRM_URL` (optional): defaults to `/assets/vrm/mascot.vrm`
+
+Example (bash; placeholders):
+
+```bash
+export STAFF_PASSCODE="<choose-a-passcode>"
+export WHISPER_CPP_CLI_PATH="/ABS/PATH/TO/whisper.cpp/build/bin/whisper-cli"
+export WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-base.bin"
+
+export LLM_PROVIDER_KIND="local"
+export LLM_BASE_URL="http://127.0.0.1:1234/v1"
+export LLM_MODEL="<lm-studio-model-id>"
+
+# Optional overrides
+# export VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
+# export DB_PATH="$(pwd)/var/wooly-fluffy.sqlite3"
+```
+
+### Minimal manual smoke steps
+
+1. Start the server and web
+
+```bash
+npm run -w server start
+```
+
+In another terminal:
+
+```bash
+npm run -w web dev
+```
+
+2. Open pages
+
+- `http://127.0.0.1:5173/kiosk` (allow microphone)
+- `http://127.0.0.1:5173/staff` (LAN-only)
+
+3. Login to staff
+
+- Enter `STAFF_PASSCODE` and log in
+
+4. PTT -> STT -> response -> TTS playback
+
+- Press and hold the PTT button in `/staff`
+- Speak into the KIOSK machine microphone
+- Release PTT
+- Confirm: KIOSK shows recording while held, then the assistant responds and TTS plays audio
+
+5. Check provider health
+
+```bash
+curl -s http://127.0.0.1:3000/health
+```
+
+Expected shape:
+
+- `status: ok`
+- `providers.stt/tts/llm.status` should be `ok` when configured
+
+### Common failure modes (what to check)
+
+- `/health` shows `providers.stt.status: unavailable`
+  - `WHISPER_CPP_CLI_PATH` / `WHISPER_CPP_MODEL_PATH` are missing or wrong
+  - Verify locally: `"$WHISPER_CPP_CLI_PATH" --help`
+- `/health` shows `providers.tts.status: unavailable`
+  - VOICEVOX engine is not running or not reachable
+  - Verify: `curl -s http://127.0.0.1:50021/version`
+- `/health` shows `providers.llm.status: unavailable` (when `LLM_PROVIDER_KIND=local|external`)
+  - `LLM_BASE_URL` is wrong (must include `/v1`) or the server is not running
+  - Verify: `curl -s "$LLM_BASE_URL/models"`
+- `/staff` login returns `Server misconfigured`
+  - `STAFF_PASSCODE` is unset
+- `/staff` is `Forbidden`
+  - STAFF endpoints are LAN-only; access from a non-LAN address is rejected
+- VRM does not load
+  - Place `web/public/assets/vrm/mascot.vrm` or set `VITE_VRM_URL` and restart `npm run -w web dev`
+
 ## Healthcheck
-`GET http://127.0.0.1:3000/health` returns `200` with `{"status":"ok"}`
+
+`GET http://127.0.0.1:3000/health` returns `200` with `{"status":"ok","providers":{...}}`

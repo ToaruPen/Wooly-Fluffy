@@ -13,13 +13,13 @@ const isIgnoredPath = (p) =>
   p.startsWith("server/coverage/") ||
   p.startsWith("var/");
 
-const shouldCheckExtension = (p) =>
-  /\.(ts|tsx|js|jsx|css|md|yml|yaml|json|html)$/i.test(p);
+const shouldCheckExtension = (p) => /\.(ts|tsx|js|jsx|css|md|yml|yaml|json|html)$/i.test(p);
 
 const isKebabSegment = (s) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s);
 
 const isAllowedSpecialCase = (p) =>
   p === ".github/pull_request_template.md" ||
+  p === "README.md" ||
   (p.startsWith("docs/") && path.posix.basename(p).startsWith("_"));
 
 const validateFileName = (p) => {
