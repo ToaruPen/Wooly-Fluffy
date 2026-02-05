@@ -16,7 +16,7 @@ type FetchFn = (
   },
 ) => Promise<FetchResponse>;
 
-export type ToolCall = {
+type ToolCall = {
   id: string;
   type: "function";
   function: {
@@ -25,7 +25,7 @@ export type ToolCall = {
   };
 };
 
-export type ToolMessage = {
+type ToolMessage = {
   role: "tool";
   tool_call_id: string;
   content: string;
