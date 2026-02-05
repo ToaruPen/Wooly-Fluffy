@@ -6,6 +6,7 @@ import type {
   ProviderHealth,
   Providers,
 } from "./types.js";
+import { executeToolCalls } from "../tools/tool-executor.js";
 
 type FetchResponse = {
   ok: boolean;
@@ -114,6 +115,24 @@ const createAuthHeader = (
 
 const TOOL_CALLS_FALLBACK_TEXT = "ちょっと調べてみるね";
 
+const CHAT_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "get_weather",
+      description: "Get current weather for a location.",
+      parameters: {
+        type: "object",
+        properties: {
+          location: { type: "string" },
+        },
+        required: ["location"],
+        additionalProperties: false,
+      },
+    },
+  },
+] as const;
+
 const LLM_RETRY_POLICY = {
   // Explicit policy: no retries. (1 attempt total)
   max_attempts: 1 as const,
@@ -146,6 +165,15 @@ export const createOpenAiCompatibleLlmProvider = (
 
   const callChat: Providers["llm"]["chat"]["call"] = async (input: ChatInput) => {
     const url = `${baseUrl}/chat/completions`;
+    const userMessage = {
+      role: "user",
+      content: JSON.stringify({
+        mode: input.mode,
+        personal_name: input.personal_name,
+        text: input.text,
+      }),
+    };
+
     const body = {
       model,
       messages: [
@@ -154,15 +182,9 @@ export const createOpenAiCompatibleLlmProvider = (
           content:
             'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised" }.',
         },
-        {
-          role: "user",
-          content: JSON.stringify({
-            mode: input.mode,
-            personal_name: input.personal_name,
-            text: input.text,
-          }),
-        },
+        userMessage,
       ],
+      tools: CHAT_TOOLS,
     };
 
     const res = await withTimeout(timeoutChatMs, (signal) =>
@@ -191,7 +213,61 @@ export const createOpenAiCompatibleLlmProvider = (
     }
     const tool_calls = coerceToolCalls(first.tool_calls);
     if (tool_calls.length > 0) {
-      return { assistant_text: TOOL_CALLS_FALLBACK_TEXT, expression: "neutral", tool_calls };
+      const toolResult = await executeToolCalls({
+        tool_calls,
+        fetch: fetchFn,
+        timeout_ms: Math.min(2_000, timeoutChatMs),
+      });
+
+      const followUpBody = {
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised" }.',
+          },
+          userMessage,
+          {
+            role: "assistant",
+            content: null,
+            tool_calls,
+          },
+          ...toolResult.tool_messages,
+        ],
+        tools: CHAT_TOOLS,
+      };
+
+      const followUpRes = await withTimeout(timeoutChatMs, (signal) =>
+        fetchFn(url, {
+          method: "POST",
+          signal,
+          headers: {
+            "content-type": "application/json",
+            ...authHeader,
+          },
+          body: JSON.stringify(followUpBody),
+        }),
+      );
+      if (!followUpRes.ok) {
+        throw new Error(
+          `llm chat failed: HTTP ${followUpRes.status} (retry_strategy=${LLM_RETRY_POLICY.strategy}, max_attempts=${LLM_RETRY_POLICY.max_attempts})`,
+        );
+      }
+
+      const followUpJson = (await followUpRes.json()) as {
+        choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown } }>;
+      };
+      const followUpMessage = followUpJson.choices?.[0]?.message;
+      if (!followUpMessage) {
+        throw new Error("llm chat returned no message");
+      }
+      const tool_calls_2 = coerceToolCalls(followUpMessage.tool_calls);
+      if (tool_calls_2.length > 0) {
+        return { assistant_text: TOOL_CALLS_FALLBACK_TEXT, expression: "neutral", tool_calls };
+      }
+      const parsed2 = parseChatContent(followUpMessage.content);
+      return { ...parsed2, tool_calls };
     }
     const parsed = parseChatContent(first.content);
     return { ...parsed, tool_calls: [] };
