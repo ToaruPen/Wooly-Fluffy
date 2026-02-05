@@ -14,7 +14,7 @@ export type LlmToolCall = ToolCall;
 
 export type Providers = {
   stt: {
-    transcribe: (input: { mode: Mode; wav: Buffer }) => { text: string };
+    transcribe: (input: { mode: Mode; wav: Buffer }) => MaybePromise<{ text: string }>;
     health: () => MaybePromise<ProviderHealth>;
   };
   tts: {

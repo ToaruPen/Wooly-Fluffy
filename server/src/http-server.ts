@@ -15,6 +15,7 @@ import { createEffectExecutor } from "./effect-executor.js";
 import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
 import type { Providers } from "./providers/types.js";
+import { createWhisperCppSttProvider } from "./providers/stt-provider.js";
 import { createVoiceVoxTtsProvider } from "./providers/tts-provider.js";
 import { createLlmProviderFromEnv } from "./providers/llm-provider.js";
 
@@ -52,6 +53,7 @@ type CreateHttpServerOptions = {
   store: Store;
   now_ms?: () => number;
   get_remote_address?: (req: IncomingMessage) => string;
+  stt_provider?: Providers["stt"];
 };
 
 type StaffSession = {
@@ -357,12 +359,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   };
 
   const providers: Providers = {
-    stt: {
-      transcribe: (input) => ({
-        text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
-      }),
-      health: () => ({ status: "ok" }),
-    },
+    stt: options.stt_provider ?? createWhisperCppSttProvider(),
     tts: createVoiceVoxTtsProvider(),
     llm: createLlmProviderFromEnv(),
   };
@@ -756,12 +753,11 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           }
           pendingStt.delete(stt_request_id);
 
-          const event = effectExecutor.transcribeStt({
+          effectExecutor.transcribeStt({
             request_id: stt_request_id,
             mode: state.mode,
             wav: upload.wav,
           });
-          enqueueEvent(event, nowMs());
           sendJson(res, 202, okBody);
         })
         .catch((err: unknown) => {

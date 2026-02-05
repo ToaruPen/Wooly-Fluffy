@@ -319,6 +319,20 @@ Issue名: 芸事（モーション）再生コマンド
 依存: #11
 実装Issue（PoC）: #38（Mixamo motion playback PoC）
 
+Issue-14
+番号: 14
+Issue名: 主要ループ（外部依存）: STTを実行経路に接続（スタブ撤去）
+概要: サーバのSTTスタブをwhisper.cpp Providerへ差し替え、未設定/失敗時も会話が止まらないことをテストで固定する（/healthのsttステータスも実態と一致させる）
+推定行数: 80-180行
+依存: #6, #8
+
+Issue-15
+番号: 15
+Issue名: Runbook: 外部依存/環境変数セットアップ + 主要ループ手動スモーク
+概要: whisper.cpp / VOICEVOX / LLM（LM Studioまたは外部）/ VRMのセットアップと環境変数一覧、主要ループの手動スモーク手順をREADMEへ追記する
+推定行数: 50-120行
+依存: #14
+
 ### 4.2 依存関係図
 
 依存関係（関係を1行ずつ列挙）:
@@ -333,6 +347,9 @@ Issue名: 芸事（モーション）再生コマンド
 - Issue 11 depends_on Issue 10
 - Issue 12 depends_on Issue 6
 - Issue 13 depends_on Issue 11
+- Issue 14 depends_on Issue 6
+- Issue 14 depends_on Issue 8
+- Issue 15 depends_on Issue 14
 
 ---
 
