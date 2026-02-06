@@ -21,4 +21,28 @@ describe("VrmAvatar", () => {
     });
     document.body.removeChild(container);
   });
+
+  it("does not crash when a motion is requested without WebGL", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/assets/vrm/mascot.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+    });
+
+    expect(container.querySelector('[data-testid="mascot-stage-fallback"]')).toBeTruthy();
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
 });

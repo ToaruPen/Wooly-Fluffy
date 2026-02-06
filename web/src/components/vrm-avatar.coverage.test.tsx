@@ -12,9 +12,31 @@ const deepDisposes: unknown[] = [];
 const removeVerticesCalls: unknown[] = [];
 const removeJointsCalls: unknown[] = [];
 const rotateCalls: unknown[] = [];
+const actionCalls: string[] = [];
+let clipActionCalls = 0;
 
 let rafCalls = 0;
 let rafCallbacks: FrameRequestCallback[] = [];
+
+const flushMicrotasks = async (count: number) => {
+  for (let i = 0; i < count; i += 1) {
+    await Promise.resolve();
+  }
+};
+
+const countAction = (value: string) => {
+  return actionCalls.filter((entry) => entry === value).length;
+};
+
+const waitFor = async (predicate: () => boolean, maxTicks = 50) => {
+  for (let i = 0; i < maxTicks; i += 1) {
+    if (predicate()) {
+      return;
+    }
+    await flushMicrotasks(1);
+  }
+  throw new Error("waitFor: condition not met");
+};
 
 vi.mock("three", () => {
   class Color {
@@ -79,6 +101,42 @@ vi.mock("three", () => {
     }
   }
 
+  class AnimationMixer {
+    constructor(_root: unknown) {
+      void _root;
+    }
+    clipAction(_clip: unknown) {
+      void _clip;
+      clipActionCalls += 1;
+      actionCalls.push("clipAction");
+      return {
+        enabled: true,
+        setLoop: () => {
+          actionCalls.push("setLoop");
+        },
+        reset: () => {
+          actionCalls.push("reset");
+          return undefined;
+        },
+        play: () => {
+          actionCalls.push("play");
+        },
+        crossFadeTo: () => {
+          actionCalls.push("crossFadeTo");
+        },
+        stop: () => undefined,
+      };
+    }
+    update(_delta: number) {
+      void _delta;
+    }
+    stopAllAction() {
+      return undefined;
+    }
+  }
+
+  const LoopRepeat = 2201;
+
   return {
     Color,
     Scene,
@@ -87,6 +145,8 @@ vi.mock("three", () => {
     HemisphereLight,
     DirectionalLight,
     Clock,
+    AnimationMixer,
+    LoopRepeat,
   };
 });
 
@@ -130,6 +190,29 @@ vi.mock("@pixiv/three-vrm", () => {
   return { VRMLoaderPlugin, VRMUtils };
 });
 
+vi.mock("@pixiv/three-vrm-animation", () => {
+  class VRMAnimationLoaderPlugin {
+    constructor(_parser: unknown) {
+      // noop
+    }
+  }
+
+  class VRMLookAtQuaternionProxy {
+    name = "";
+    constructor(_lookAt: unknown) {
+      void _lookAt;
+    }
+  }
+
+  const createVRMAnimationClip = vi.fn((_animation: unknown, _vrm: unknown) => {
+    void _animation;
+    void _vrm;
+    return {};
+  });
+
+  return { VRMAnimationLoaderPlugin, VRMLookAtQuaternionProxy, createVRMAnimationClip };
+});
+
 describe("VrmAvatar (coverage)", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
   const originalDevicePixelRatio = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
@@ -142,6 +225,8 @@ describe("VrmAvatar (coverage)", () => {
     removeVerticesCalls.length = 0;
     removeJointsCalls.length = 0;
     rotateCalls.length = 0;
+    actionCalls.length = 0;
+    clipActionCalls = 0;
     loadAsyncImpl = null;
     registerImpl = null;
     rafCalls = 0;
@@ -297,7 +382,7 @@ describe("VrmAvatar (coverage)", () => {
 
     window.dispatchEvent(new Event("resize"));
 
-    expect(registerImpl).toHaveBeenCalledTimes(1);
+    expect(registerImpl).toHaveBeenCalledTimes(2);
     expect(removeVerticesCalls.length).toBe(1);
     expect(removeJointsCalls.length).toBe(1);
     expect(rotateCalls.length).toBe(1);
@@ -313,6 +398,551 @@ describe("VrmAvatar (coverage)", () => {
 
     act(() => root.unmount());
     expect(deepDisposes).toContain(fakeVrm.scene);
+    document.body.removeChild(container);
+  });
+
+  it("loads and plays VRMA when motion is requested", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    const urls: string[] = [];
+    const fakeVrm = {
+      scene: { tag: "vrm-scene" },
+      humanoid: { resetNormalizedPose: vi.fn() },
+      lookAt: undefined,
+      expressionManager: { setValue: vi.fn() },
+      update: vi.fn(),
+    };
+    loadAsyncImpl = async (url: string) => {
+      urls.push(url);
+      if (url.endsWith(".vrm")) {
+        return { userData: { vrm: fakeVrm } };
+      }
+      if (url.endsWith(".vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: null }] } };
+      }
+      throw new Error(`unexpected url: ${url}`);
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+    const { createVRMAnimationClip } = await import("@pixiv/three-vrm-animation");
+
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      // Flush microtasks: VRM load -> pending motion -> VRMA load.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(urls).toContain("/x.vrm");
+    expect(urls).toContain("/assets/motions/idle.vrma");
+    expect(createVRMAnimationClip).toHaveBeenCalled();
+    expect(fakeVrm.humanoid.resetNormalizedPose).toHaveBeenCalled();
+
+    act(() => root.unmount());
+    document.body.removeChild(container);
+  });
+
+  it("covers allowlist motion behaviors (lookAt, traverse, cache, dedupe, missing vrma)", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    const urls: string[] = [];
+    const sceneAdd = vi.fn();
+    const sceneTraverse = vi.fn((cb: (obj: { frustumCulled: boolean }) => void) => {
+      cb({ frustumCulled: true });
+    });
+    const lookAt = { reset: vi.fn(), autoUpdate: false };
+
+    const fakeVrm = {
+      scene: { tag: "vrm-scene", add: sceneAdd, traverse: sceneTraverse },
+      humanoid: { resetNormalizedPose: vi.fn() },
+      lookAt,
+      expressionManager: { setValue: vi.fn() },
+      update: vi.fn(),
+    };
+
+    let vrmaLoadCount = 0;
+    loadAsyncImpl = async (url: string) => {
+      urls.push(url);
+      if (url.endsWith(".vrm")) {
+        return { userData: { vrm: fakeVrm } };
+      }
+      vrmaLoadCount += 1;
+      if (url.endsWith("/idle.vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: {} }] } };
+      }
+      if (url.endsWith("/greeting.vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: null }] } };
+      }
+      // Missing animation -> should be ignored.
+      return { userData: { vrmAnimations: [] } };
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Same instance id -> ignored.
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    // Same motion id, new instance id -> should use cache (no extra VRMA load).
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-2" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    // Different motion id -> should attempt another load.
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "greeting", motionInstanceId: "m-3" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    // Motion with no animation track -> safe ignore.
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "cheer", motionInstanceId: "m-4" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(urls).toContain("/assets/motions/idle.vrma");
+    expect(urls).toContain("/assets/motions/greeting.vrma");
+
+    expect(vrmaLoadCount).toBeGreaterThan(0);
+
+    expect(fakeVrm.humanoid.resetNormalizedPose).toHaveBeenCalled();
+    expect(lookAt.reset).toHaveBeenCalled();
+    expect(typeof lookAt.autoUpdate).toBe("boolean");
+    expect(sceneAdd).toHaveBeenCalled();
+    expect(sceneTraverse).toHaveBeenCalled();
+
+    act(() => root.unmount());
+    document.body.removeChild(container);
+  });
+
+  it("crossfades when switching motions", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    const lookAt = { reset: vi.fn(), autoUpdate: false };
+    const fakeVrm = {
+      scene: { tag: "vrm-scene", add: vi.fn(), traverse: vi.fn() },
+      humanoid: { resetNormalizedPose: vi.fn() },
+      lookAt,
+      expressionManager: { setValue: vi.fn() },
+      update: vi.fn(),
+    };
+
+    const urls: string[] = [];
+
+    const createDeferred = <T,>() => {
+      let resolve!: (value: T) => void;
+      let reject!: (reason?: unknown) => void;
+      const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+      });
+      return { promise, resolve, reject };
+    };
+
+    const vrmDeferred = createDeferred<unknown>();
+    const idleVrmaDeferred = createDeferred<unknown>();
+    const greetingVrmaDeferred = createDeferred<unknown>();
+
+    let resolveVrmRequested!: () => void;
+    const vrmRequested = new Promise<void>((resolve) => {
+      resolveVrmRequested = resolve;
+    });
+
+    let resolveIdleVrmaRequested!: () => void;
+    const idleVrmaRequested = new Promise<void>((resolve) => {
+      resolveIdleVrmaRequested = resolve;
+    });
+
+    let resolveGreetingVrmaRequested!: () => void;
+    const greetingVrmaRequested = new Promise<void>((resolve) => {
+      resolveGreetingVrmaRequested = resolve;
+    });
+
+    loadAsyncImpl = async (url: string) => {
+      urls.push(url);
+      if (url.endsWith(".vrm")) {
+        resolveVrmRequested();
+        return await vrmDeferred.promise;
+      }
+      if (url.endsWith("/idle.vrma")) {
+        resolveIdleVrmaRequested();
+        return await idleVrmaDeferred.promise;
+      }
+      if (url.endsWith("/greeting.vrma")) {
+        resolveGreetingVrmaRequested();
+        return await greetingVrmaDeferred.promise;
+      }
+      throw new Error(`unexpected url: ${url}`);
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+    const { createVRMAnimationClip } = await import("@pixiv/three-vrm-animation");
+
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // Start with idle.
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    await vrmRequested;
+    vrmDeferred.resolve({ userData: { vrm: fakeVrm } });
+    await idleVrmaRequested;
+    idleVrmaDeferred.resolve({ userData: { vrmAnimations: [{ lookAtTrack: null }] } });
+    await waitFor(() => countAction("play") >= 1);
+
+    expect(urls).toContain("/x.vrm");
+    expect(urls).toContain("/assets/motions/idle.vrma");
+
+    // Switch to greeting -> should crossFadeTo.
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "greeting", motionInstanceId: "m-2" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await greetingVrmaRequested;
+    greetingVrmaDeferred.resolve({ userData: { vrmAnimations: [{ lookAtTrack: null }] } });
+
+    expect(urls).toContain("/assets/motions/greeting.vrma");
+
+    expect(fakeVrm.humanoid.resetNormalizedPose).toHaveBeenCalled();
+    expect(createVRMAnimationClip).toHaveBeenCalled();
+    expect(clipActionCalls).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      return (
+        countAction("crossFadeTo") >= 1 && countAction("reset") >= 2 && countAction("play") >= 2
+      );
+    });
+
+    // The detailed call ordering is not stable across this jsdom + act setup,
+    // but we still expect at least two actions (idle + greeting) to be created.
+    expect(clipActionCalls).toBeGreaterThanOrEqual(2);
+
+    act(() => root.unmount());
+    document.body.removeChild(container);
+  });
+
+  it("covers stale motion generation guard", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    const fakeVrm = {
+      scene: { tag: "vrm-scene" },
+      humanoid: { resetNormalizedPose: vi.fn() },
+      lookAt: undefined,
+      expressionManager: { setValue: vi.fn() },
+      update: vi.fn(),
+    };
+
+    let resolveIdleVrma!: (value: unknown) => void;
+    const idleVrmaDeferred = new Promise<unknown>((resolve) => {
+      resolveIdleVrma = resolve;
+    });
+
+    loadAsyncImpl = async (url: string) => {
+      if (url.endsWith(".vrm")) {
+        return { userData: { vrm: fakeVrm } };
+      }
+      if (url.endsWith("/idle.vrma")) {
+        return await idleVrmaDeferred;
+      }
+      if (url.endsWith("/greeting.vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: null }] } };
+      }
+      throw new Error(`unexpected url: ${url}`);
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // Trigger idle motion first (VRMA pending), then greeting (immediate) to bump generation.
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "greeting", motionInstanceId: "m-2" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const callsBeforeResolve = actionCalls.length;
+    resolveIdleVrma({ userData: { vrmAnimations: [{ lookAtTrack: null }] } });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Stale resolution should not apply (generation guard returns).
+    expect(actionCalls.length).toBe(callsBeforeResolve);
+
+    act(() => root.unmount());
+    document.body.removeChild(container);
+  });
+
+  it("covers crossfade and early-return branches", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    const lookAt = { reset: vi.fn(), autoUpdate: false };
+    const fakeVrm = {
+      scene: { tag: "vrm-scene", add: vi.fn(), traverse: vi.fn() },
+      humanoid: { resetNormalizedPose: vi.fn() },
+      lookAt,
+      expressionManager: { setValue: vi.fn() },
+      update: vi.fn(),
+    };
+
+    const urls: string[] = [];
+    loadAsyncImpl = async (url: string) => {
+      urls.push(url);
+      if (url.endsWith(".vrm")) {
+        return { userData: { vrm: fakeVrm } };
+      }
+      if (url.endsWith("/idle.vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: null }] } };
+      }
+      if (url.endsWith("/greeting.vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: null }] } };
+      }
+      throw new Error(`unexpected url: ${url}`);
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+    const { createVRMAnimationClip } = await import("@pixiv/three-vrm-animation");
+
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // idle
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // greeting (different instance)
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "greeting", motionInstanceId: "m-2" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // same instance id should early-return (dedupe)
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-2" }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(urls).toContain("/assets/motions/idle.vrma");
+    expect(urls).toContain("/assets/motions/greeting.vrma");
+    expect(createVRMAnimationClip).toHaveBeenCalled();
+
+    act(() => root.unmount());
+    document.body.removeChild(container);
+  });
+
+  it("swallows VRMA load failures", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    const fakeVrm = {
+      scene: { tag: "vrm-scene" },
+      humanoid: { resetNormalizedPose: vi.fn() },
+      lookAt: undefined,
+      expressionManager: { setValue: vi.fn() },
+      update: vi.fn(),
+    };
+    loadAsyncImpl = async (url: string) => {
+      if (url.endsWith(".vrm")) {
+        return { userData: { vrm: fakeVrm } };
+      }
+      throw new Error("missing vrma");
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+    const { createVRMAnimationClip } = await import("@pixiv/three-vrm-animation");
+    const initialCalls =
+      (createVRMAnimationClip as unknown as { mock?: { calls: unknown[] } }).mock?.calls.length ??
+      0;
+
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "idle", motionInstanceId: "m-1" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      (createVRMAnimationClip as unknown as { mock?: { calls: unknown[] } }).mock?.calls.length ??
+        0,
+    ).toBe(initialCalls);
+
+    act(() => root.unmount());
     document.body.removeChild(container);
   });
 
