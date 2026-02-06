@@ -6,6 +6,11 @@ import { connectSse, type ServerMessage } from "./sse-client";
 import { AudioPlayer } from "./components/audio-player";
 import { VrmAvatar, type ExpressionLabel } from "./components/vrm-avatar";
 import { parseExpressionLabel } from "./kiosk-expression";
+import {
+  parseKioskPlayMotionData,
+  type MotionId,
+  type PlayMotionCommand,
+} from "./kiosk-play-motion";
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 
@@ -63,6 +68,9 @@ export const KioskPage = () => {
   const [ttsPlayId, setTtsPlayId] = useState(0);
   const ttsPlayIdRef = useRef(0);
   const [mouthOpen, setMouthOpen] = useState(0);
+  const [motion, setMotion] = useState<PlayMotionCommand | null>(null);
+  const lastPlayedMotionInstanceIdRef = useRef<string | null>(null);
+  const devMotionSeqRef = useRef(0);
   const pttSessionRef = useRef<PttSession | null>(null);
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
   const ttsGenerationRef = useRef(0);
@@ -115,6 +123,19 @@ export const KioskPage = () => {
 
   useEffect(() => {
     const ignoreStopError = (_err: unknown) => undefined;
+
+    if (import.meta.env.DEV) {
+      const w = window as Window & {
+        __wfPlayMotion?: (motionId: MotionId) => void;
+      };
+      w.__wfPlayMotion = (motionId) => {
+        if (motionId !== "idle" && motionId !== "greeting" && motionId !== "cheer") {
+          return;
+        }
+        devMotionSeqRef.current += 1;
+        setMotion({ motionId, motionInstanceId: `dev-${devMotionSeqRef.current}` });
+      };
+    }
 
     const client = connectSse("/api/v1/kiosk/stream", {
       onSnapshot: (data) => {
@@ -241,6 +262,19 @@ export const KioskPage = () => {
           return;
         }
 
+        if (message.type === "kiosk.command.play_motion") {
+          const parsed = parseKioskPlayMotionData(message.data);
+          if (!parsed) {
+            return;
+          }
+          if (lastPlayedMotionInstanceIdRef.current === parsed.motionInstanceId) {
+            return;
+          }
+          lastPlayedMotionInstanceIdRef.current = parsed.motionInstanceId;
+          setMotion(parsed);
+          return;
+        }
+
         if (message.type === "kiosk.command.stop_output") {
           setSpeech(null);
           stopTtsAudio();
@@ -253,6 +287,12 @@ export const KioskPage = () => {
     });
 
     return () => {
+      if (import.meta.env.DEV) {
+        const w = window as Window & {
+          __wfPlayMotion?: (motionId: MotionId) => void;
+        };
+        delete w.__wfPlayMotion;
+      }
       const session = pttSessionRef.current;
       const startPromise = pttStartRef.current;
       pttSessionRef.current = null;
@@ -300,7 +340,12 @@ export const KioskPage = () => {
 
       <main className={styles.kioskLayout}>
         <section className={styles.kioskStage} aria-label="Mascot stage">
-          <VrmAvatar vrmUrl={vrmUrl} expression={vrmExpression} mouthOpen={mouthOpen} />
+          <VrmAvatar
+            vrmUrl={vrmUrl}
+            expression={vrmExpression}
+            mouthOpen={mouthOpen}
+            motion={motion}
+          />
         </section>
 
         <section className={styles.kioskOverlay} aria-label="Kiosk overlay">

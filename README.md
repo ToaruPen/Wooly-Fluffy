@@ -156,6 +156,33 @@ ls -lah web/public/assets/vrm/*.vrm
 
 **License**: Ensure the model is CC0 or compatible with commercial use. See [VRM CC0 License](https://vroid.pixiv.help/hc/en-us/articles/4402614652569).
 
+#### 5) VRMA Motions (local-only)
+
+Issue #38 adds local-only motion playback in `/kiosk` via SSE `kiosk.command.play_motion`.
+
+1. Prepare 3 VRMA files (do not commit/distribute raw assets)
+2. Place them under `web/public/assets/motions/` with these exact filenames:
+
+- `idle.vrma`
+- `greeting.vrma`
+- `cheer.vrma`
+
+These files are ignored by git via `.gitignore`.
+
+**Manual verification (dev)**:
+
+1. Run web dev server: `npm run -w web dev`
+2. Open `http://127.0.0.1:5173/kiosk`
+3. Open DevTools console and run:
+
+```js
+window.__wfPlayMotion?.("idle");
+window.__wfPlayMotion?.("greeting");
+window.__wfPlayMotion?.("cheer");
+```
+
+If the VRMA files are present and valid, the avatar should start playing the requested motion.
+
 ### License References
 
 - whisper.cpp: [MIT License](https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE)

@@ -26,3 +26,4 @@ web/playwright-report/
 # Provider Layer assets (large binaries, manual setup)
 whisper.cpp/
 web/public/assets/vrm/*.vrm
+web/public/assets/motions/*.vrma
