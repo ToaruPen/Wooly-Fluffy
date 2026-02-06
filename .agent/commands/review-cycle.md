@@ -87,7 +87,7 @@ Both engines may open repo files for context, but findings must still be grounde
 
 - `CODEX_BIN`: codex binary (default: `codex`)
 - `MODEL`: Codex model (default: `gpt-5.3-codex`)
-- `REASONING_EFFORT`: `minimal` | `low` | `medium` | `high` | `xhigh` (default: `xhigh`)
+- `REASONING_EFFORT`: `minimal` | `low` | `medium` | `high` | `xhigh` (default: `high`)
   - Note: `REASONING_EFFORT=none` is accepted as an alias for `minimal` (backward compatibility).
   - Note: This script passes the value via `codex exec -c model_reasoning_effort=...`, so it overrides global Codex config for the run.
 
@@ -121,7 +121,7 @@ SOT="docs/prd/example.md docs/epics/example.md" \
 TEST_COMMAND="npm test" \
 DIFF_MODE=pr \
 MODEL=gpt-5.3-codex \
-REASONING_EFFORT=xhigh \
+REASONING_EFFORT=high \
 ./scripts/review-cycle.sh issue-123
 ```
 
