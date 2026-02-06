@@ -26,6 +26,10 @@ web/playwright-report/
 .codex/
 .sisyphus/
 
+# Python
+__pycache__/
+*.pyc
+
 # Provider Layer assets (large binaries, manual setup)
 whisper.cpp/
 web/public/assets/vrm/*.vrm

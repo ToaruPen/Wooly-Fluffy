@@ -1,5 +1,5 @@
 import { act } from "react";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Root } from "react-dom/client";
 
 type MockServerMessage = { type: string; seq: number; data: unknown };
@@ -8,15 +8,6 @@ type ConnectHandlers = {
   onMessage?: (message: MockServerMessage) => void;
   onError?: (error: Error) => void;
 };
-
-beforeAll(() => {
-  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-});
-
-afterAll(() => {
-  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    false;
-});
 
 const resetDom = () => {
   document.body.innerHTML = "";
@@ -506,7 +497,9 @@ describe("app", () => {
       expect(FakeAudio.instances[0]!.src).toBe("blob:tts");
       expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
 
-      FakeAudio.latest?.onended?.();
+      act(() => {
+        FakeAudio.latest?.onended?.();
+      });
       expect(FakeAudio.latest?.pause).toHaveBeenCalled();
       expect(
         (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL as unknown,
@@ -518,7 +511,9 @@ describe("app", () => {
       });
       expect(FakeAudio.latest?.pause).toHaveBeenCalled();
 
-      FakeAudio.latest?.onended?.();
+      act(() => {
+        FakeAudio.latest?.onended?.();
+      });
 
       await act(async () => {
         appRoot.unmount();

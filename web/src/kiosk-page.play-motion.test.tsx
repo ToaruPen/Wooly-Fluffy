@@ -1,4 +1,4 @@
-import { act } from "react-dom/test-utils";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
@@ -93,8 +93,11 @@ describe("KioskPage play_motion", () => {
 
     // Dev helper (if enabled): should ignore unknown and accept allowlisted.
     const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
-    w.__wfPlayMotion?.("dance");
-    w.__wfPlayMotion?.("idle");
+    await act(async () => {
+      w.__wfPlayMotion?.("dance");
+      w.__wfPlayMotion?.("idle");
+      await Promise.resolve();
+    });
 
     act(() => root.unmount());
     document.body.removeChild(container);

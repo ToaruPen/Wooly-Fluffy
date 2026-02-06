@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { act } from "react-dom/test-utils";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let loadAsyncImpl: ((url: string) => Promise<unknown>) | null = null;
@@ -1109,7 +1109,11 @@ describe("VrmAvatar (coverage)", () => {
       return originalRemoveChild(node);
     }) as unknown as typeof originalRemoveChild;
 
-    expect(() => root.unmount()).not.toThrow();
+    expect(() => {
+      act(() => {
+        root.unmount();
+      });
+    }).not.toThrow();
     document.body.removeChild(container);
   });
 

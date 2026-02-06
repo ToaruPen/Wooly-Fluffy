@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import { act } from "react-dom/test-utils";
+import { act } from "react";
 import { VrmAvatar } from "./vrm-avatar";
 
 describe("VrmAvatar", () => {
