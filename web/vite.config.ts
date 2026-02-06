@@ -5,11 +5,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api": "http://127.0.0.1:3000"
-    }
+      "/api": "http://127.0.0.1:3000",
+    },
   },
   test: {
     environment: "jsdom",
+    setupFiles: ["./src/vitest.setup.ts"],
     exclude: ["e2e/**"],
     coverage: {
       provider: "v8",
@@ -18,11 +19,11 @@ export default defineConfig({
         statements: 100,
         branches: 100,
         functions: 100,
-        lines: 100
+        lines: 100,
       },
       all: true,
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/vite-env.d.ts"]
-    }
-  }
+      exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/vite-env.d.ts"],
+    },
+  },
 });
