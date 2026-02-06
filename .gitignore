@@ -11,6 +11,9 @@ var/*
 *.sqlite3
 *.db
 
+# Local UI snapshots
+web/var/
+
 # Playwright
 web/test-results/
 web/playwright-report/
