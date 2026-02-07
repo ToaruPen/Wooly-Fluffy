@@ -57,10 +57,10 @@ export const StaffPage = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [pendingError, setPendingError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pttHeld, setPttHeld] = useState(false);
+  const [isPttHeld, setIsPttHeld] = useState(false);
   const [lastActivityAtMs, setLastActivityAtMs] = useState(() => Date.now());
 
-  const pttHeldRef = useRef(false);
+  const isPttHeldRef = useRef(false);
 
   const activitySeqRef = useRef(0);
   const keepaliveSeqRef = useRef(0);
@@ -70,17 +70,17 @@ export const StaffPage = () => {
     setLastActivityAtMs(Date.now());
   }, []);
 
-  const setPttHeldSafe = (next: boolean) => {
-    pttHeldRef.current = next;
-    setPttHeld(next);
+  const setIsPttHeldSafe = (isHeld: boolean) => {
+    isPttHeldRef.current = isHeld;
+    setIsPttHeld(isHeld);
   };
 
   const releasePtt = () => {
-    if (!pttHeldRef.current) {
+    if (!isPttHeldRef.current) {
       return;
     }
     markActivity();
-    setPttHeldSafe(false);
+    setIsPttHeldSafe(false);
     void sendStaffEvent("STAFF_PTT_UP");
   };
 
@@ -109,7 +109,7 @@ export const StaffPage = () => {
       | "STAFF_PTT_UP"
       | "STAFF_FORCE_ROOM"
       | "STAFF_EMERGENCY_STOP"
-      | "STAFF_RESUME"
+      | "STAFF_RESUME",
   ) => {
     setActionError(null);
     try {
@@ -233,7 +233,7 @@ export const StaffPage = () => {
 
   useEffect(() => {
     if (view !== "logged_in") {
-      setPttHeld(false);
+      setIsPttHeld(false);
       return;
     }
     const client = connectSse("/api/v1/staff/stream", {
@@ -252,7 +252,7 @@ export const StaffPage = () => {
       },
       onError: (error) => {
         setActionError(error.message);
-      }
+      },
     });
     return () => {
       client.close();
@@ -319,11 +319,11 @@ export const StaffPage = () => {
             <div className={styles.staffControlGrid}>
               <button
                 type="button"
-                className={pttHeld ? styles.pttButtonActive : styles.pttButton}
-                aria-pressed={pttHeld}
+                className={isPttHeld ? styles.pttButtonActive : styles.pttButton}
+                aria-pressed={isPttHeld}
                 onPointerDown={() => {
                   markActivity();
-                  setPttHeldSafe(true);
+                  setIsPttHeldSafe(true);
                   void sendStaffEvent("STAFF_PTT_DOWN");
                 }}
                 onPointerUp={() => {

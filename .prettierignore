@@ -2,6 +2,11 @@ coverage/
 dist/
 node_modules/
 var/
+.agent/
+.claude/
+.sisyphus/
+docs/
+skills/
 web/test-results/
 web/playwright-report/
 

@@ -50,20 +50,24 @@ PRD (`docs/prd/`) > Epic (`docs/epics/`) > ADRs (`docs/decisions.md`) > Code. If
 
 ## Agentic-SDD: Development Cycle Protocol
 
-0) Bootstrap
+0. Bootstrap
+
 - Read this file and the minimum necessary rule/command file under `.agent/` for the next action.
 
-1) Entry decision
+1. Entry decision
+
 - No PRD: `/create-prd`
 - PRD exists but no Epic: `/create-epic`
 - Epic exists but no Issues / not split: `/create-issues`
 - Issues exist: ask the user to choose `/impl` vs `/tdd` (do not choose on your own)
 
-2) Implement one Issue
+2. Implement one Issue
+
 - `/estimation` (Full estimate; 11 sections) -> user approval -> `/impl` or `/tdd` -> tests -> gates
 - Use `/sync-docs` whenever you suspect drift, and always before creating a PR
 
-3) PR / merge
+3. PR / merge
+
 - Only create a PR after `/review` passes; do not change anything outside the Issue scope
 
 ### Worktree / Parallel Work

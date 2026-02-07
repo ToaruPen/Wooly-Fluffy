@@ -11,7 +11,7 @@ let store: ReturnType<typeof createStore>;
 const sendRequest = (
   method: string,
   path: string,
-  options?: { headers?: Record<string, string>; body?: string | Buffer }
+  options?: { headers?: Record<string, string>; body?: string | Buffer },
 ) =>
   new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>((resolve, reject) => {
     const req = request({ host: "127.0.0.1", port, method, path }, (res) => {
@@ -50,8 +50,8 @@ const openSse = (path: string, options: { cookie: string; timeoutMs: number }) =
     const req = request({ host: "127.0.0.1", port, method: "GET", path }, (res) => {
       const contentTypeHeader = res.headers["content-type"];
       const contentType = Array.isArray(contentTypeHeader)
-        ? contentTypeHeader[0] ?? ""
-        : contentTypeHeader ?? "";
+        ? (contentTypeHeader[0] ?? "")
+        : (contentTypeHeader ?? "");
       if ((res.statusCode ?? 0) !== 200 || !String(contentType).includes("text/event-stream")) {
         req.destroy();
         reject(new Error(`unexpected_sse_response:${res.statusCode ?? 0}:${String(contentType)}`));
@@ -60,7 +60,7 @@ const openSse = (path: string, options: { cookie: string; timeoutMs: number }) =
 
       res.resume();
 
-      let settled = false;
+      let isSettled = false;
       const close = new Promise<void>((resolveCloseInner, rejectClose) => {
         const timeout = setTimeout(() => {
           req.destroy();
@@ -68,10 +68,10 @@ const openSse = (path: string, options: { cookie: string; timeoutMs: number }) =
         }, options.timeoutMs);
 
         const finish = () => {
-          if (settled) {
+          if (isSettled) {
             return;
           }
-          settled = true;
+          isSettled = true;
           clearTimeout(timeout);
           resolveCloseInner();
         };
@@ -124,7 +124,7 @@ describe("staff access control", () => {
     const response = await sendRequest("GET", "/api/v1/staff/pending");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -151,7 +151,7 @@ describe("staff access control", () => {
     const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -178,7 +178,7 @@ describe("staff access control", () => {
     const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -205,7 +205,7 @@ describe("staff access control", () => {
     const response = await sendRequest("GET", "/api/v1/staff/pending");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -232,7 +232,7 @@ describe("staff access control", () => {
     const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -259,7 +259,7 @@ describe("staff access control", () => {
     const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -286,7 +286,7 @@ describe("staff access control", () => {
     const response = await sendRequest("GET", "/api/v1/staff/stream");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -312,11 +312,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/event", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
+      body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
     });
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -342,11 +342,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" })
+      body: JSON.stringify({ passcode: "test-pass" }),
     });
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -373,7 +373,7 @@ describe("staff access control", () => {
     const response = await sendRequest("GET", "/api/v1/staff/stream");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -399,11 +399,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/event", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "STAFF_PTT_DOWN" })
+      body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
     });
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -430,7 +430,7 @@ describe("staff access control", () => {
     const response = await sendRequest("GET", "/api/v1/staff/auth/login");
     expect(response.status).toBe(405);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" }
+      error: { code: "method_not_allowed", message: "Method Not Allowed" },
     });
   });
 
@@ -456,11 +456,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: "{"
+      body: "{",
     });
     expect(response.status).toBe(400);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_json", message: "Invalid JSON" }
+      error: { code: "invalid_json", message: "Invalid JSON" },
     });
   });
 
@@ -487,11 +487,11 @@ describe("staff access control", () => {
     const big = "a".repeat(128_001);
     const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: big })
+      body: JSON.stringify({ passcode: big }),
     });
     expect(response.status).toBe(413);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "payload_too_large", message: "Payload Too Large" }
+      error: { code: "payload_too_large", message: "Payload Too Large" },
     });
   });
 
@@ -517,11 +517,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: 123 })
+      body: JSON.stringify({ passcode: 123 }),
     });
     expect(response.status).toBe(400);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" }
+      error: { code: "invalid_request", message: "Invalid request" },
     });
   });
 
@@ -547,11 +547,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "wrong" })
+      body: JSON.stringify({ passcode: "wrong" }),
     });
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -576,11 +576,11 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "anything" })
+      body: JSON.stringify({ passcode: "anything" }),
     });
     expect(response.status).toBe(500);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "misconfigured", message: "Server misconfigured" }
+      error: { code: "misconfigured", message: "Server misconfigured" },
     });
   });
 
@@ -607,7 +607,7 @@ describe("staff access control", () => {
     const response = await sendRequest("GET", "/api/v1/staff/auth/keepalive");
     expect(response.status).toBe(405);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" }
+      error: { code: "method_not_allowed", message: "Method Not Allowed" },
     });
   });
 
@@ -634,7 +634,7 @@ describe("staff access control", () => {
     const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "forbidden", message: "Forbidden" }
+      error: { code: "forbidden", message: "Forbidden" },
     });
   });
 
@@ -661,7 +661,7 @@ describe("staff access control", () => {
     const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -686,11 +686,11 @@ describe("staff access control", () => {
     port = address.port;
 
     const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive", {
-      headers: { cookie: "wf_staff_session=nope" }
+      headers: { cookie: "wf_staff_session=nope" },
     });
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -716,7 +716,7 @@ describe("staff access control", () => {
 
     const login = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" })
+      body: JSON.stringify({ passcode: "test-pass" }),
     });
     expect(login.status).toBe(200);
     expect(JSON.parse(login.body)).toEqual({ ok: true });
@@ -727,7 +727,7 @@ describe("staff access control", () => {
     const cookie = cookieFromSetCookie(String(first ?? ""));
 
     const pending = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: { cookie }
+      headers: { cookie },
     });
     expect(pending.status).toBe(200);
   });
@@ -754,7 +754,7 @@ describe("staff access control", () => {
 
     const login = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" })
+      body: JSON.stringify({ passcode: "test-pass" }),
     });
     expect(login.status).toBe(200);
     const setCookie = login.headers["set-cookie"];
@@ -763,7 +763,7 @@ describe("staff access control", () => {
 
     const noisyCookie = ` ; foo; =bar; ${staff}; a=b`;
     const pending = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: { cookie: noisyCookie }
+      headers: { cookie: noisyCookie },
     });
     expect(pending.status).toBe(200);
   });
@@ -789,11 +789,11 @@ describe("staff access control", () => {
     port = address.port;
 
     const pending = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: { cookie: "a=b" }
+      headers: { cookie: "a=b" },
     });
     expect(pending.status).toBe(401);
     expect(JSON.parse(pending.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -804,7 +804,7 @@ describe("staff access control", () => {
     const localServer = createHttpServer({
       store,
       now_ms: () => nowMs,
-      get_remote_address: () => "127.0.0.1"
+      get_remote_address: () => "127.0.0.1",
     });
     closeServer = () =>
       new Promise<void>((resolve, reject) => {
@@ -825,7 +825,7 @@ describe("staff access control", () => {
 
     const login = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" })
+      body: JSON.stringify({ passcode: "test-pass" }),
     });
     const setCookie = login.headers["set-cookie"];
     const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
@@ -833,11 +833,11 @@ describe("staff access control", () => {
 
     nowMs = 181_000;
     const pending = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: { cookie }
+      headers: { cookie },
     });
     expect(pending.status).toBe(401);
     expect(JSON.parse(pending.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" }
+      error: { code: "unauthorized", message: "Unauthorized" },
     });
   });
 
@@ -848,7 +848,7 @@ describe("staff access control", () => {
     const localServer = createHttpServer({
       store,
       now_ms: () => nowMs,
-      get_remote_address: () => "127.0.0.1"
+      get_remote_address: () => "127.0.0.1",
     });
     closeServer = () =>
       new Promise<void>((resolve, reject) => {
@@ -869,7 +869,7 @@ describe("staff access control", () => {
 
     const login = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" })
+      body: JSON.stringify({ passcode: "test-pass" }),
     });
     const setCookie = login.headers["set-cookie"];
     const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
@@ -877,13 +877,13 @@ describe("staff access control", () => {
 
     nowMs = 179_000;
     const keepalive = await sendRequest("POST", "/api/v1/staff/auth/keepalive", {
-      headers: { cookie }
+      headers: { cookie },
     });
     expect(keepalive.status).toBe(200);
 
     nowMs = 358_999;
     const pending = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: { cookie }
+      headers: { cookie },
     });
     expect(pending.status).toBe(200);
   });
@@ -895,7 +895,7 @@ describe("staff access control", () => {
     const localServer = createHttpServer({
       store,
       now_ms: () => nowMs,
-      get_remote_address: () => "127.0.0.1"
+      get_remote_address: () => "127.0.0.1",
     });
     closeServer = () =>
       new Promise<void>((resolve, reject) => {
@@ -916,7 +916,7 @@ describe("staff access control", () => {
 
     const login = await sendRequest("POST", "/api/v1/staff/auth/login", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" })
+      body: JSON.stringify({ passcode: "test-pass" }),
     });
     const setCookie = login.headers["set-cookie"];
     const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;

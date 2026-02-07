@@ -50,6 +50,6 @@ export const connectSse = (url: string, handlers: SseHandlers) => {
   return {
     close: () => {
       source.close();
-    }
+    },
   };
 };

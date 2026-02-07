@@ -14,7 +14,7 @@ type FetchFn = (
     signal?: AbortSignal;
     headers?: Record<string, string>;
     body?: string;
-  }
+  },
 ) => Promise<FetchResponse>;
 
 type VoiceVoxTtsProviderOptions = {
@@ -29,7 +29,7 @@ const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
 
 const withTimeout = async <T>(
   timeoutMs: number,
-  run: (signal: AbortSignal) => Promise<T>
+  run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -66,7 +66,7 @@ const shouldRetry = (err: unknown): boolean => {
 
 const withOneRetry = async <T>(
   run: () => Promise<T>,
-  options: { backoff_ms: number }
+  options: { backoff_ms: number },
 ): Promise<T> => {
   try {
     return await run();
@@ -86,7 +86,7 @@ const healthFromVoiceVox = async (input: {
 }): Promise<ProviderHealth> => {
   try {
     const res = await withTimeout(input.timeoutMs, (signal) =>
-      input.fetch(`${input.baseUrl}/version`, { method: "GET", signal })
+      input.fetch(`${input.baseUrl}/version`, { method: "GET", signal }),
     );
     return res.ok ? { status: "ok" } : { status: "unavailable" };
   } catch {
@@ -104,13 +104,13 @@ const synthesizeFromVoiceVox = async (input: {
     async () => {
       const queryParams = new URLSearchParams({
         text: input.text,
-        speaker: String(SPEAKER_ID)
+        speaker: String(SPEAKER_ID),
       });
       const audioQueryRes = await withTimeout(input.timeoutMs, (signal) =>
         input.fetch(`${input.baseUrl}/audio_query?${queryParams.toString()}`, {
           method: "POST",
-          signal
-        })
+          signal,
+        }),
       );
       if (!audioQueryRes.ok) {
         throw new Error(`VOICEVOX audio_query failed: HTTP ${audioQueryRes.status}`);
@@ -124,8 +124,8 @@ const synthesizeFromVoiceVox = async (input: {
           method: "POST",
           signal,
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(audioQuery)
-        })
+          body: JSON.stringify(audioQuery),
+        }),
       );
       if (!synthesisRes.ok) {
         throw new Error(`VOICEVOX synthesis failed: HTTP ${synthesisRes.status}`);
@@ -133,15 +133,15 @@ const synthesizeFromVoiceVox = async (input: {
       const wavArrayBuffer = await synthesisRes.arrayBuffer();
       return { wav: Buffer.from(wavArrayBuffer) };
     },
-    { backoff_ms: 100 }
+    { backoff_ms: 100 },
   );
 };
 
 export const createVoiceVoxTtsProvider = (
-  options: VoiceVoxTtsProviderOptions = {}
+  options: VoiceVoxTtsProviderOptions = {},
 ): Providers["tts"] => {
   const baseUrl = normalizeBaseUrl(
-    options.engine_url ?? process.env.VOICEVOX_ENGINE_URL ?? "http://127.0.0.1:50021"
+    options.engine_url ?? process.env.VOICEVOX_ENGINE_URL ?? "http://127.0.0.1:50021",
   );
   const timeoutMs = options.timeout_ms ?? 2_000;
 
@@ -152,17 +152,17 @@ export const createVoiceVoxTtsProvider = (
         method: init?.method,
         signal: init?.signal,
         headers: init?.headers,
-        body: init?.body
+        body: init?.body,
       }).then((res) => ({
         ok: res.ok,
         status: res.status,
         json: () => res.json() as Promise<unknown>,
-        arrayBuffer: () => res.arrayBuffer()
+        arrayBuffer: () => res.arrayBuffer(),
       })));
 
   return {
     health: () => healthFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn }),
     synthesize: (input) =>
-      synthesizeFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn, text: input.text })
+      synthesizeFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn, text: input.text }),
   };
 };

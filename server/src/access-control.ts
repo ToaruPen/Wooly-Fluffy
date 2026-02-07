@@ -22,12 +22,7 @@ const parseIpv4 = (ip: string): number[] | null => {
 
 const parseIpv4Trusted = (ip: string): [number, number, number, number] => {
   const parts = ip.split(".");
-  return [
-    Number(parts[0]),
-    Number(parts[1]),
-    Number(parts[2]),
-    Number(parts[3])
-  ];
+  return [Number(parts[0]), Number(parts[1]), Number(parts[2]), Number(parts[3])];
 };
 
 const isLanIpv4Octets = (octets: number[]): boolean => {

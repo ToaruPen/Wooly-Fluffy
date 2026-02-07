@@ -4,7 +4,7 @@ import {
   downmixToMono,
   encodeWavPcm16Mono,
   floatToPcm16,
-  resampleLinear
+  resampleLinear,
 } from "./wav";
 
 const readAscii = (bytes: Uint8Array, offset: number, length: number): string => {
@@ -28,8 +28,8 @@ describe("wav", () => {
         2,
         Number.NaN,
         Number.POSITIVE_INFINITY,
-        -Infinity
-      ])
+        -Infinity,
+      ]),
     );
     expect(Array.from(pcm)).toEqual([-32768, -32768, -16384, 0, 16384, 32767, 32767, 0, 0, 0]);
   });
@@ -50,7 +50,7 @@ describe("wav", () => {
 
   it("downmixToMono throws on mismatched channel lengths", () => {
     expect(() => downmixToMono([new Float32Array([0]), new Float32Array([0, 1])])).toThrow(
-      "Channel length mismatch"
+      "Channel length mismatch",
     );
   });
 
@@ -92,7 +92,7 @@ describe("wav", () => {
     const wav = audioBufferToWav16kMono({
       sampleRate: 16000,
       numberOfChannels: 1,
-      getChannelData: () => new Float32Array([0, 0.5, -0.5])
+      getChannelData: () => new Float32Array([0, 0.5, -0.5]),
     });
     expect(wav.length).toBe(44 + 6);
     expect(readAscii(wav, 0, 4)).toBe("RIFF");

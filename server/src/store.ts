@@ -102,7 +102,7 @@ export const createStore = (options: CreateStoreOptions): Store => {
       @created_at_ms,
       @updated_at_ms,
       @expires_at_ms
-    )`
+    )`,
   );
 
   const listPendingStmt = db.prepare(
@@ -117,7 +117,7 @@ export const createStore = (options: CreateStoreOptions): Store => {
       expires_at_ms
     FROM memory_items
     WHERE status = 'pending' AND expires_at_ms IS NOT NULL
-    ORDER BY created_at_ms DESC`
+    ORDER BY created_at_ms DESC`,
   );
 
   const getByIdStmt = db.prepare(
@@ -132,7 +132,7 @@ export const createStore = (options: CreateStoreOptions): Store => {
       updated_at_ms,
       expires_at_ms
     FROM memory_items
-    WHERE id = @id`
+    WHERE id = @id`,
   );
 
   const confirmByIdStmt = db.prepare(
@@ -142,7 +142,7 @@ export const createStore = (options: CreateStoreOptions): Store => {
       updated_at_ms = @updated_at_ms,
       expires_at_ms = NULL,
       source_quote = NULL
-    WHERE id = @id AND status = 'pending'`
+    WHERE id = @id AND status = 'pending'`,
   );
 
   const denyByIdStmt = db.prepare(
@@ -152,12 +152,12 @@ export const createStore = (options: CreateStoreOptions): Store => {
       updated_at_ms = @updated_at_ms,
       expires_at_ms = @expires_at_ms,
       source_quote = NULL
-    WHERE id = @id AND status = 'pending'`
+    WHERE id = @id AND status = 'pending'`,
   );
 
   const deleteExpiredStmt = db.prepare(
     `DELETE FROM memory_items
-    WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= @now_ms`
+    WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= @now_ms`,
   );
 
   return {

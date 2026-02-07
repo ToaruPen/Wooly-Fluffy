@@ -4,7 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
   {
-    ignores: ["coverage/**", "dist/**", "node_modules/**"]
+    ignores: ["coverage/**", "dist/**", "node_modules/**"],
   },
   {
     files: ["**/*.ts", "**/*.tsx"],
@@ -14,13 +14,13 @@ export default [
         ecmaVersion: "latest",
         sourceType: "module",
         ecmaFeatures: {
-          jsx: true
-        }
-      }
+          jsx: true,
+        },
+      },
     },
     plugins: {
       "@typescript-eslint": tsPlugin,
-      "react-hooks": reactHooks
+      "react-hooks": reactHooks,
     },
     rules: {
       "no-console": ["error", { allow: ["warn", "error"] }],
@@ -32,23 +32,23 @@ export default [
           paths: [
             {
               name: "fs",
-              message: "Do not use fs directly (persistence/logs must not write to disk)."
+              message: "Do not use fs directly (persistence/logs must not write to disk).",
             },
             {
               name: "node:fs",
-              message: "Do not use fs directly (persistence/logs must not write to disk)."
+              message: "Do not use fs directly (persistence/logs must not write to disk).",
             },
             {
               name: "fs/promises",
-              message: "Do not use fs directly (persistence/logs must not write to disk)."
+              message: "Do not use fs directly (persistence/logs must not write to disk).",
             },
             {
               name: "node:fs/promises",
-              message: "Do not use fs directly (persistence/logs must not write to disk)."
-            }
-          ]
-        }
-      ]
-    }
-  }
+              message: "Do not use fs directly (persistence/logs must not write to disk).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];

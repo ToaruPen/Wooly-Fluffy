@@ -77,7 +77,11 @@
 }
 
 .kioskStageHint {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 14px;
   color: #6b4f2a;
   text-align: center;
@@ -102,7 +106,11 @@
 
 .kioskBadge {
   pointer-events: none;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 13px;
   padding: 8px 10px;
   border-radius: 999px;
@@ -114,7 +122,11 @@
 .recordingPill {
   align-self: flex-start;
   margin-top: 12px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 13px;
   padding: 8px 12px;
   border-radius: 999px;
@@ -180,7 +192,11 @@
   min-height: 48px;
   border-radius: 12px;
   border: 1px solid transparent;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 16px;
 }
 
@@ -202,7 +218,11 @@
 
 .errorText {
   margin-top: 10px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 14px;
   color: #b54d4d;
 }
@@ -215,7 +235,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 14px;
   color: #2b241d;
 }
@@ -268,7 +292,11 @@
   min-height: 72px;
   border-radius: 16px;
   border: 1px solid transparent;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 18px;
 }
 
@@ -311,7 +339,11 @@
 }
 
 .pendingTitle {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 14px;
   color: #2b241d;
 }

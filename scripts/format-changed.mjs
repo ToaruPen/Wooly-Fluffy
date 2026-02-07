@@ -7,15 +7,17 @@ import { getChangedFiles } from "./changed-files.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const parseMode = () => {
+const parseArgs = () => {
   const args = process.argv.slice(2);
-  if (args.includes("--check")) return "check";
-  if (args.includes("--write")) return "write";
-  throw new Error("Usage: node scripts/format-changed.mjs (--check|--write)");
+  const all = args.includes("--all");
+  const mode = args.includes("--check") ? "check" : args.includes("--write") ? "write" : null;
+  if (!mode) {
+    throw new Error("Usage: node scripts/format-changed.mjs (--check|--write) [--all]");
+  }
+  return { mode, all };
 };
 
-const isFormattablePath = (p) =>
-  /\.(ts|tsx|js|jsx|json|yml|yaml|css|html|md)$/i.test(p);
+const isFormattablePath = (p) => /\.(ts|tsx|js|jsx|json|yml|yaml|css|html|md)$/i.test(p);
 
 const resolvePrettierBin = () => {
   const bin = path.join(
@@ -30,11 +32,13 @@ const resolvePrettierBin = () => {
   return bin;
 };
 
-const mode = parseMode();
-const changed = getChangedFiles();
-const targets = changed.filter((p) => fs.existsSync(p) && isFormattablePath(p));
+const { mode, all } = parseArgs();
 
-if (targets.length === 0) {
+const targets = all
+  ? ["."]
+  : getChangedFiles().filter((p) => fs.existsSync(p) && isFormattablePath(p));
+
+if (!all && targets.length === 0) {
   process.stdout.write("No changed files to format.\n");
   process.exit(0);
 }

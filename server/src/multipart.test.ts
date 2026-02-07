@@ -12,9 +12,11 @@ const buildMultipartBody = (input: { boundary: string; stt_request_id: string; a
     `Content-Type: audio/wav\r\n\r\n`,
     input.audio,
     `\r\n`,
-    `--${input.boundary}--\r\n`
+    `--${input.boundary}--\r\n`,
   ];
-  return Buffer.concat(lines.map((part) => (typeof part === "string" ? Buffer.from(part, "utf8") : part)));
+  return Buffer.concat(
+    lines.map((part) => (typeof part === "string" ? Buffer.from(part, "utf8") : part)),
+  );
 };
 
 describe("multipart", () => {
@@ -24,8 +26,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: { "content-type": "application/octet-stream" },
         stream,
-        max_file_bytes: 2_500_000
-      })
+        max_file_bytes: 2_500_000,
+      }),
     ).rejects.toThrowError("invalid_multipart");
   });
 
@@ -35,8 +37,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: {},
         stream,
-        max_file_bytes: 2_500_000
-      })
+        max_file_bytes: 2_500_000,
+      }),
     ).rejects.toThrowError("invalid_multipart");
   });
 
@@ -45,8 +47,8 @@ describe("multipart", () => {
     const audio = Buffer.concat([
       Buffer.from("RIFF", "utf8"),
       Buffer.alloc(32, 0x11),
-      Buffer.from("name=\"audio\"", "utf8"),
-      Buffer.alloc(32, 0x22)
+      Buffer.from('name="audio"', "utf8"),
+      Buffer.alloc(32, 0x22),
     ]);
 
     const body = buildMultipartBody({ boundary, stt_request_id: "stt-1", audio });
@@ -55,7 +57,7 @@ describe("multipart", () => {
     const parsed = await parseSttAudioUploadMultipart({
       headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
       stream,
-      max_file_bytes: 2_500_000
+      max_file_bytes: 2_500_000,
     });
 
     expect(parsed.stt_request_id).toBe("stt-1");
@@ -72,8 +74,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         stream,
-        max_file_bytes: 10
-      })
+        max_file_bytes: 10,
+      }),
     ).rejects.toThrowError("body_too_large");
   });
 
@@ -83,7 +85,7 @@ describe("multipart", () => {
       Buffer.from(`--${boundary}\r\n`, "utf8"),
       Buffer.from(`Content-Disposition: form-data; name="nope"\r\n\r\n`, "utf8"),
       Buffer.from("x\r\n", "utf8"),
-      Buffer.from(`--${boundary}--\r\n`, "utf8")
+      Buffer.from(`--${boundary}--\r\n`, "utf8"),
     ]);
     const stream = Readable.from([body]);
 
@@ -91,8 +93,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         stream,
-        max_file_bytes: 2_500_000
-      })
+        max_file_bytes: 2_500_000,
+      }),
     ).rejects.toThrowError("invalid_multipart");
   });
 
@@ -105,7 +107,7 @@ describe("multipart", () => {
       Buffer.from(`--${boundary}\r\n`, "utf8"),
       Buffer.from(`Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`, "utf8"),
       Buffer.from("stt-2\r\n", "utf8"),
-      Buffer.from(`--${boundary}--\r\n`, "utf8")
+      Buffer.from(`--${boundary}--\r\n`, "utf8"),
     ]);
     const stream = Readable.from([body]);
 
@@ -113,8 +115,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         stream,
-        max_file_bytes: 2_500_000
-      })
+        max_file_bytes: 2_500_000,
+      }),
     ).rejects.toThrowError("invalid_multipart");
   });
 
@@ -132,7 +134,7 @@ describe("multipart", () => {
       Buffer.from(`Content-Disposition: form-data; name="audio"; filename="b.wav"\r\n`, "utf8"),
       Buffer.from(`Content-Type: audio/wav\r\n\r\n`, "utf8"),
       Buffer.from("def", "utf8"),
-      Buffer.from(`\r\n--${boundary}--\r\n`, "utf8")
+      Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
     ]);
     const stream = Readable.from([body]);
 
@@ -140,8 +142,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         stream,
-        max_file_bytes: 2_500_000
-      })
+        max_file_bytes: 2_500_000,
+      }),
     ).rejects.toThrowError("invalid_multipart");
   });
 
@@ -155,7 +157,7 @@ describe("multipart", () => {
       Buffer.from(`Content-Disposition: form-data; name="not_audio"; filename="x.bin"\r\n`, "utf8"),
       Buffer.from(`Content-Type: application/octet-stream\r\n\r\n`, "utf8"),
       Buffer.from("abc", "utf8"),
-      Buffer.from(`\r\n--${boundary}--\r\n`, "utf8")
+      Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
     ]);
     const stream = Readable.from([body]);
 
@@ -163,8 +165,8 @@ describe("multipart", () => {
       parseSttAudioUploadMultipart({
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         stream,
-        max_file_bytes: 2_500_000
-      })
+        max_file_bytes: 2_500_000,
+      }),
     ).rejects.toThrowError("invalid_multipart");
   });
 });

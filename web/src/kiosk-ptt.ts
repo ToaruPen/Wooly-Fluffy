@@ -55,7 +55,7 @@ export const startPttSession = async (): Promise<PttSession> => {
         } finally {
           stopTracks();
         }
-      }
+      },
     };
   } catch (err) {
     stopTracks();

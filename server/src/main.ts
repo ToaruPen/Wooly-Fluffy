@@ -51,12 +51,12 @@ const server = createHttpServer({ store });
 trackHttpServerConnections(server);
 server.listen(port, host);
 
-let shuttingDown = false;
+let isShuttingDown = false;
 const shutdown = () => {
-  if (shuttingDown) {
+  if (isShuttingDown) {
     return;
   }
-  shuttingDown = true;
+  isShuttingDown = true;
 
   clearInterval(housekeepingTimer);
   try {

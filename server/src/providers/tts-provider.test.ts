@@ -25,7 +25,7 @@ const createAbortableNeverFetch = () => {
           err.name = "AbortError";
           reject(err);
         },
-        { once: true }
+        { once: true },
       );
     });
 };
@@ -40,9 +40,9 @@ describe("tts-provider (VOICEVOX)", () => {
           ok: true,
           status: 200,
           json: async () => ({}),
-          arrayBuffer: async () => new ArrayBuffer(0)
+          arrayBuffer: async () => new ArrayBuffer(0),
         };
-      }
+      },
     });
 
     await expect(tts.health()).resolves.toEqual({ status: "ok" });
@@ -55,8 +55,8 @@ describe("tts-provider (VOICEVOX)", () => {
         ok: false,
         status: 500,
         json: async () => ({}),
-        arrayBuffer: async () => new ArrayBuffer(0)
-      })
+        arrayBuffer: async () => new ArrayBuffer(0),
+      }),
     });
 
     await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
@@ -67,7 +67,7 @@ describe("tts-provider (VOICEVOX)", () => {
       engine_url: "http://voicevox.local",
       fetch: async () => {
         throw new Error("offline");
-      }
+      },
     });
 
     await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
@@ -77,7 +77,7 @@ describe("tts-provider (VOICEVOX)", () => {
     const tts = createVoiceVoxTtsProvider({
       engine_url: "http://voicevox.local",
       timeout_ms: 1,
-      fetch: createAbortableNeverFetch()
+      fetch: createAbortableNeverFetch(),
     });
 
     await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
@@ -102,7 +102,7 @@ describe("tts-provider (VOICEVOX)", () => {
             ok: true,
             status: 200,
             json: async () => audioQuery,
-            arrayBuffer: async () => new ArrayBuffer(0)
+            arrayBuffer: async () => new ArrayBuffer(0),
           };
         }
 
@@ -115,12 +115,12 @@ describe("tts-provider (VOICEVOX)", () => {
             ok: true,
             status: 200,
             json: async () => ({}),
-            arrayBuffer: async () => wav
+            arrayBuffer: async () => wav,
           };
         }
 
         throw new Error(`unexpected url: ${input}`);
-      }
+      },
     });
 
     const result = await tts.synthesize({ text: "Hello" });
@@ -140,9 +140,9 @@ describe("tts-provider (VOICEVOX)", () => {
           ok: false,
           status: 500,
           json: async () => ({}),
-          arrayBuffer: async () => new ArrayBuffer(0)
+          arrayBuffer: async () => new ArrayBuffer(0),
         };
-      }
+      },
     });
 
     await expect(tts.synthesize({ text: "Hello" })).rejects.toThrow(/audio_query failed/);
@@ -158,7 +158,7 @@ describe("tts-provider (VOICEVOX)", () => {
             ok: true,
             status: 200,
             json: async () => ({ query: true }),
-            arrayBuffer: async () => new ArrayBuffer(0)
+            arrayBuffer: async () => new ArrayBuffer(0),
           };
         }
         if (url.pathname === "/synthesis") {
@@ -166,11 +166,11 @@ describe("tts-provider (VOICEVOX)", () => {
             ok: false,
             status: 500,
             json: async () => ({}),
-            arrayBuffer: async () => new ArrayBuffer(0)
+            arrayBuffer: async () => new ArrayBuffer(0),
           };
         }
         throw new Error("unexpected");
-      }
+      },
     });
 
     await expect(tts.synthesize({ text: "Hello" })).rejects.toThrow(/synthesis failed/);
@@ -193,7 +193,7 @@ describe("tts-provider (VOICEVOX)", () => {
             ok: true,
             status: 200,
             json: async () => ({ query: true }),
-            arrayBuffer: async () => new ArrayBuffer(0)
+            arrayBuffer: async () => new ArrayBuffer(0),
           };
         }
         if (url.pathname === "/synthesis") {
@@ -201,11 +201,11 @@ describe("tts-provider (VOICEVOX)", () => {
             ok: true,
             status: 200,
             json: async () => ({}),
-            arrayBuffer: async () => new Uint8Array([9]).buffer
+            arrayBuffer: async () => new Uint8Array([9]).buffer,
           };
         }
         throw new Error(`unexpected url: ${input}`);
-      }
+      },
     });
 
     const result = await tts.synthesize({ text: "Hello" });
@@ -223,7 +223,7 @@ describe("tts-provider (VOICEVOX)", () => {
         const err = new Error("aborted");
         err.name = "AbortError";
         throw err;
-      }
+      },
     });
 
     await expect(tts.synthesize({ text: "Hello" })).rejects.toThrow();
@@ -238,7 +238,7 @@ describe("tts-provider (VOICEVOX)", () => {
       fetch: async () => {
         calls += 1;
         throw "nope";
-      }
+      },
     });
 
     await expect(tts.synthesize({ text: "Hello" })).rejects.toBeTruthy();

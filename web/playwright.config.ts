@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
   expect: {
-    timeout: 5_000
+    timeout: 5_000,
   },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -15,20 +15,20 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL,
-    trace: "retain-on-failure"
+    trace: "retain-on-failure",
   },
   projects: [
     {
       name: "chromium",
       use: {
-        ...devices["Desktop Chrome"]
-      }
-    }
+        ...devices["Desktop Chrome"],
+      },
+    },
   ],
   webServer: {
     command: "node e2e/webserver.mjs",
     url: `${baseURL}/kiosk`,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000
-  }
+    timeout: 120_000,
+  },
 });
