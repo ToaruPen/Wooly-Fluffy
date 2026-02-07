@@ -1015,11 +1015,27 @@ describe("llm-provider (Gemini native)", () => {
     const llm = createGeminiNativeLlmProvider({
       model: "gemini-2.5-flash-lite",
       api_key: "test-key",
-      fetch: async () => {
-        throw new Error("unexpected fetch");
+      fetch: async (input: string) => {
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
       },
       gemini_models: {
-        generateContent: async () => {
+        generateContent: async (params) => {
           calls += 1;
           if (calls === 1) {
             return {
@@ -1028,9 +1044,42 @@ describe("llm-provider (Gemini native)", () => {
                 { name: "get_weather", args: { location: "Tokyo" } },
                 { name: "do_bad", args: {} },
               ],
-              candidates: [{ content: { role: "model", parts: [] } }],
+              candidates: [
+                {
+                  content: {
+                    role: "model",
+                    parts: [
+                      { text: "keep" },
+                      "raw",
+                      { functionCall: "oops" },
+                      { functionCall: { name: 123, args: {} } },
+                      { functionCall: { name: "get_weather", args: { location: "Tokyo" } } },
+                      { functionCall: { name: "do_bad", args: {} } },
+                    ],
+                  },
+                },
+              ],
             };
           }
+
+          const contents = (params as { contents?: unknown })?.contents as unknown[];
+          const modelParts = (contents?.[1] as { parts?: unknown[] } | undefined)?.parts ?? [];
+          expect(
+            modelParts.some((p) => {
+              const fc = (p as { functionCall?: { name?: unknown } }).functionCall;
+              return typeof fc?.name === "string" && fc.name === "do_bad";
+            }),
+          ).toBe(false);
+          expect(modelParts.length).toBe(5);
+
+          const responseParts = (contents?.[2] as { parts?: unknown[] } | undefined)?.parts ?? [];
+          expect(
+            responseParts.map((p) => {
+              const fr = (p as { functionResponse?: { name?: unknown } }).functionResponse;
+              return typeof fr?.name === "string" ? fr.name : null;
+            }),
+          ).toEqual(["get_weather"]);
+
           return {
             text: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
             functionCalls: [],
@@ -1042,8 +1091,150 @@ describe("llm-provider (Gemini native)", () => {
     });
 
     const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+    expect(calls).toBe(2);
+    expect(result.assistant_text).toBe("OK");
+    expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
+  });
+
+  it("falls back when all tool calls are blocked", async () => {
+    let calls = 0;
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      fetch: async () => {
+        throw new Error("unexpected fetch");
+      },
+      gemini_models: {
+        generateContent: async () => {
+          calls += 1;
+          return {
+            text: "",
+            functionCalls: [{ name: "do_bad", args: {} }],
+            candidates: [{ content: { role: "model", parts: [] } }],
+          };
+        },
+        get: async () => ({}),
+      },
+    });
+
+    const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
     expect(calls).toBe(1);
     expect(result.assistant_text).toBe("ちょっと調べてみるね");
+    expect(result.tool_calls.map((t) => t.function.name)).toEqual(["do_bad"]);
+  });
+
+  it("handles non-object model content when blocked tool calls are present", async () => {
+    let calls = 0;
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      fetch: async (input: string) => {
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
+      gemini_models: {
+        generateContent: async (params) => {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              text: "",
+              functionCalls: [
+                { name: "get_weather", args: { location: "Tokyo" } },
+                { name: "do_bad", args: {} },
+              ],
+              candidates: [{ content: "model" }],
+            };
+          }
+
+          const contents = (params as { contents?: unknown })?.contents as unknown[];
+          expect(contents?.[1]).toBe("model");
+
+          return {
+            text: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
+            functionCalls: [],
+            candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+          };
+        },
+        get: async () => ({}),
+      },
+    });
+
+    const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+    expect(calls).toBe(2);
+    expect(result.assistant_text).toBe("OK");
+    expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
+  });
+
+  it("handles model content with non-array parts when blocked tool calls are present", async () => {
+    let calls = 0;
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      fetch: async (input: string) => {
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
+      gemini_models: {
+        generateContent: async (params) => {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              text: "",
+              functionCalls: [
+                { name: "get_weather", args: { location: "Tokyo" } },
+                { name: "do_bad", args: {} },
+              ],
+              candidates: [{ content: { role: "model", parts: null } }],
+            };
+          }
+
+          const contents = (params as { contents?: unknown })?.contents as unknown[];
+          const modelContent = contents?.[1] as { parts?: unknown } | undefined;
+          expect(modelContent?.parts).toBe(null);
+
+          return {
+            text: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
+            functionCalls: [],
+            candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+          };
+        },
+        get: async () => ({}),
+      },
+    });
+
+    const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+    expect(calls).toBe(2);
+    expect(result.assistant_text).toBe("OK");
     expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
   });
 

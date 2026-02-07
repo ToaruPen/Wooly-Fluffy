@@ -294,6 +294,35 @@ const coerceGeminiToolCalls = (value: unknown): LlmToolCall[] => {
   return out;
 };
 
+const sanitizeGeminiModelContentForAllowlist = (
+  content: unknown,
+  allowlist: ReadonlySet<string>,
+): unknown => {
+  const obj = content as { role?: unknown; parts?: unknown } | null;
+  const parts = Array.isArray(obj?.parts) ? (obj?.parts as unknown[]) : null;
+  if (!obj || typeof obj !== "object" || !parts) {
+    return content;
+  }
+
+  const filteredParts = parts.filter((p) => {
+    const partObj = p as { functionCall?: unknown } | null;
+    const fc = partObj && typeof partObj === "object" ? partObj.functionCall : null;
+    if (!fc || typeof fc !== "object") {
+      return true;
+    }
+    const name = (fc as { name?: unknown }).name;
+    if (typeof name !== "string") {
+      return true;
+    }
+    return allowlist.has(name);
+  });
+
+  return {
+    ...obj,
+    parts: filteredParts,
+  };
+};
+
 const CHAT_TOOLS = [
   {
     type: "function",
@@ -601,10 +630,8 @@ export const createGeminiNativeLlmProvider = (
       (c) => !GEMINI_TOOL_NAME_ALLOWLIST.has(c.function.name),
     );
 
-    // Never send function responses for undeclared tools.
-    // Gemini may validate that `functionResponse.name` matches a declared tool.
-    // If blocked tool calls are present, fall back immediately.
-    if (blocked_tool_calls.length > 0) {
+    // If all tool calls are blocked, fall back immediately.
+    if (allowed_tool_calls.length === 0) {
       return {
         assistant_text: TOOL_CALLS_FALLBACK_TEXT,
         expression: "neutral",
@@ -638,7 +665,11 @@ export const createGeminiNativeLlmProvider = (
       };
     });
 
-    const modelContent = res1.candidates?.[0]?.content;
+    const modelContentRaw = res1.candidates?.[0]?.content;
+    const modelContent =
+      blocked_tool_calls.length > 0
+        ? sanitizeGeminiModelContentForAllowlist(modelContentRaw, GEMINI_TOOL_NAME_ALLOWLIST)
+        : modelContentRaw;
     if (!modelContent) {
       // Tool-call flow should never hard-fail the conversation.
       // Fall back to a safe assistant response and keep the session alive.
