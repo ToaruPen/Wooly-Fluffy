@@ -247,13 +247,13 @@ describe("app dev gating", () => {
   it("evaluates app module with DEV=false without enabling /debug", async () => {
     vi.resetModules();
 
-    const originalDev = import.meta.env.DEV;
+    const isDevOriginal = import.meta.env.DEV;
     import.meta.env.DEV = false;
     try {
       const { getPage } = await import("./app");
       expect(getPage("/debug", import.meta.env.DEV)).toBe("kiosk");
     } finally {
-      import.meta.env.DEV = originalDev;
+      import.meta.env.DEV = isDevOriginal;
     }
   });
 });
@@ -2223,7 +2223,9 @@ describe("app", () => {
 
     // Tab on dialog with no focusable children is a no-op (guard for empty list)
     const dialogButtons = dialog!.querySelectorAll("button");
-    dialogButtons.forEach((b) => b.remove());
+    dialogButtons.forEach((b) => {
+      b.remove();
+    });
     await act(async () => {
       const tabOnEmpty = new KeyboardEvent("keydown", { key: "Tab", bubbles: true });
       dialog!.dispatchEvent(tabOnEmpty);
