@@ -1,9 +1,31 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { getChangedFiles } from "./changed-files.mjs";
 
+const parseAll = () => process.argv.slice(2).includes("--all");
+
+const listAllFiles = () => {
+  const res = spawnSync("git", ["ls-files"], {
+    stdio: ["ignore", "pipe", "inherit"],
+    encoding: "utf8",
+  });
+  if (res.status !== 0) {
+    throw new Error("git ls-files failed");
+  }
+  return String(res.stdout)
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
 const isIgnoredPath = (p) =>
+  p.startsWith(".agent/") ||
+  p.startsWith(".claude/") ||
+  p.startsWith(".sisyphus/") ||
+  p.startsWith("docs/") ||
+  p.startsWith("skills/") ||
   p.startsWith("node_modules/") ||
   p.startsWith("dist/") ||
   p.startsWith("coverage/") ||
@@ -18,6 +40,9 @@ const shouldCheckExtension = (p) => /\.(ts|tsx|js|jsx|css|md|yml|yaml|json|html)
 const isKebabSegment = (s) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s);
 
 const isAllowedSpecialCase = (p) =>
+  p === "AGENTS.md" ||
+  p === "CLAUDE.md" ||
+  p.endsWith("/AGENTS.md") ||
   p === ".github/pull_request_template.md" ||
   p === "README.md" ||
   (p.startsWith("docs/") && path.posix.basename(p).startsWith("_"));
@@ -42,7 +67,8 @@ const validateFileName = (p) => {
   return true;
 };
 
-const changed = getChangedFiles();
+const all = parseAll();
+const changed = all ? listAllFiles() : getChangedFiles();
 const targets = changed
   .filter((p) => fs.existsSync(p))
   .filter((p) => !isIgnoredPath(p))
@@ -59,4 +85,4 @@ if (violations.length) {
   process.exit(1);
 }
 
-process.stdout.write("Filename check passed (changed files).\n");
+process.stdout.write(`Filename check passed (${all ? "all files" : "changed files"}).\n`);

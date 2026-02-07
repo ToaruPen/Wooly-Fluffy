@@ -9,22 +9,34 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const isLintable = (p) => /\.(ts|tsx|js|jsx)$/i.test(p);
 
+const parseAll = () => process.argv.slice(2).includes("--all");
+
 const runEslint = ({ workspace, configFile }) => {
   const wsDir = path.join(repoRoot, workspace);
 
-  const changed = getChangedFiles();
-  const files = changed
-    .filter((p) => p.startsWith(`${workspace}/`))
-    .filter((p) => fs.existsSync(p))
-    .filter((p) => isLintable(p))
-    .map((p) => p.slice(`${workspace}/`.length));
+  const all = parseAll();
+  const changed = all ? [] : getChangedFiles();
+
+  const files = all
+    ? workspace === "web"
+      ? ["src/**/*.ts", "src/**/*.tsx"]
+      : ["src/**/*.ts"]
+    : changed
+        .filter((p) => p.startsWith(`${workspace}/`))
+        .filter((p) => fs.existsSync(p))
+        .filter((p) => isLintable(p))
+        .map((p) => p.slice(`${workspace}/`.length));
 
   if (files.length === 0) {
-    process.stdout.write(`No changed files for naming check in ${workspace}/.\n`);
+    process.stdout.write(
+      `No ${all ? "files" : "changed files"} for naming check in ${workspace}/.\n`,
+    );
     return 0;
   }
 
-  process.stdout.write(`ESLint naming check (${workspace}/): ${files.length} file(s)\n`);
+  process.stdout.write(
+    `ESLint naming check (${workspace}/, ${all ? "all" : "changed"}): ${files.length} file(s)\n`,
+  );
 
   const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
   const res = spawnSync(
