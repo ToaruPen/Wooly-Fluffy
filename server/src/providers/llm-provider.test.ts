@@ -1015,24 +1015,8 @@ describe("llm-provider (Gemini native)", () => {
     const llm = createGeminiNativeLlmProvider({
       model: "gemini-2.5-flash-lite",
       api_key: "test-key",
-      fetch: async (input: string) => {
-        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
-            }),
-          };
-        }
-        if (input.startsWith("https://api.open-meteo.com/")) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
-          };
-        }
-        throw new Error(`unexpected url: ${input}`);
+      fetch: async () => {
+        throw new Error("unexpected fetch");
       },
       gemini_models: {
         generateContent: async () => {
@@ -1058,8 +1042,8 @@ describe("llm-provider (Gemini native)", () => {
     });
 
     const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
-    expect(calls).toBe(2);
-    expect(result.assistant_text).toBe("OK");
+    expect(calls).toBe(1);
+    expect(result.assistant_text).toBe("ちょっと調べてみるね");
     expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
   });
 
@@ -1067,10 +1051,29 @@ describe("llm-provider (Gemini native)", () => {
     const llm = createGeminiNativeLlmProvider({
       model: "gemini-2.5-flash-lite",
       api_key: "test-key",
+      fetch: async (input: string) => {
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
       gemini_models: {
         generateContent: async () => ({
           text: "",
-          functionCalls: [{ name: "do_bad", args: {} }],
+          functionCalls: [{ name: "get_weather", args: { location: "Tokyo" } }],
           candidates: [],
         }),
         get: async () => ({}),
@@ -1085,7 +1088,7 @@ describe("llm-provider (Gemini native)", () => {
           {
             id: "call_1",
             type: "function",
-            function: { name: "do_bad", arguments: "{}" },
+            function: { name: "get_weather", arguments: '{"location":"Tokyo"}' },
           },
         ],
       },

@@ -601,6 +601,17 @@ export const createGeminiNativeLlmProvider = (
       (c) => !GEMINI_TOOL_NAME_ALLOWLIST.has(c.function.name),
     );
 
+    // Never send function responses for undeclared tools.
+    // Gemini may validate that `functionResponse.name` matches a declared tool.
+    // If blocked tool calls are present, fall back immediately.
+    if (blocked_tool_calls.length > 0) {
+      return {
+        assistant_text: TOOL_CALLS_FALLBACK_TEXT,
+        expression: "neutral",
+        tool_calls,
+      };
+    }
+
     const toolResult = await executeToolCalls({
       tool_calls: allowed_tool_calls,
       fetch: fetchFn,
@@ -610,14 +621,8 @@ export const createGeminiNativeLlmProvider = (
     const toolMessageById = new Map(
       toolResult.tool_messages.map((m) => [m.tool_call_id, m.content] as const),
     );
-    for (const toolCall of blocked_tool_calls) {
-      toolMessageById.set(
-        toolCall.id,
-        JSON.stringify({ ok: false, error: { code: "tool_not_allowed" } }),
-      );
-    }
 
-    const functionResponseParts = tool_calls.map((call) => {
+    const functionResponseParts = allowed_tool_calls.map((call) => {
       const content = toolMessageById.get(call.id) ?? JSON.stringify({ ok: false });
       let response: unknown = { ok: false };
       try {
