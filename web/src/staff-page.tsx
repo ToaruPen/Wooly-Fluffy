@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getJson, postEmpty, postJson, readJson } from "./api";
 import { connectSse, type ServerMessage } from "./sse-client";
 import styles from "./styles.module.css";
+import { DevDebugLink } from "./dev-debug-link";
 
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
@@ -274,8 +275,7 @@ export const StaffPage = () => {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1>{title}</h1>
-        <div className={styles.label}>Stream: /api/v1/staff/stream</div>
-        <div className={styles.label}>TTS: VOICEVOX / 四国めたん</div>
+        <DevDebugLink isDev={import.meta.env.DEV as boolean} />
       </header>
 
       {view !== "logged_in" ? (

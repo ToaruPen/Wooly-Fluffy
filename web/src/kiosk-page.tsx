@@ -13,6 +13,7 @@ import {
 } from "./kiosk-play-motion";
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
+import { DevDebugLink } from "./dev-debug-link";
 
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
@@ -337,8 +338,7 @@ export const KioskPage = () => {
     <div className={styles.page} data-wf-tool-calls-count={toolCallsCount}>
       <header className={styles.header}>
         <h1>KIOSK</h1>
-        <div className={styles.label}>Stream: /api/v1/kiosk/stream</div>
-        <div className={styles.label}>TTS: VOICEVOX / 四国めたん</div>
+        <DevDebugLink isDev={import.meta.env.DEV as boolean} />
       </header>
 
       <main className={styles.kioskLayout}>
