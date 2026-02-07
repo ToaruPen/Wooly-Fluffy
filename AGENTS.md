@@ -11,6 +11,7 @@ It includes a minimal HTTP healthcheck server and a test harness.
 ## Source of Truth (SoT)
 
 Priority order:
+
 - PRD (requirements): `docs/prd/`
 - Epic (implementation plan): `docs/epics/`
 - Decisions (ADRs): `docs/decisions.md`
@@ -19,6 +20,7 @@ Priority order:
 Rule: If you detect a contradiction between higher-level docs and lower-level artifacts, STOP and ask a human with explicit references (PRD/Epic/code:line). Do not invent requirements.
 
 Legacy:
+
 - The former legacy specs folder has been removed. Do not rely on it.
 
 ## Repository Map
@@ -63,6 +65,7 @@ Static checks and unit tests often miss liveness/lifecycle regressions.
 If your change affects runtime behavior, add a dynamic verification (integration test or smoke test run via `/review-cycle`'s `TEST_COMMAND`).
 
 Examples (non-exhaustive):
+
 - long-lived connections (SSE/WebSocket)
 - graceful shutdown / SIGINT / SIGTERM
 - timers/intervals
@@ -70,30 +73,36 @@ Examples (non-exhaustive):
 - external provider calls (timeout/cancel/retry) and streaming
 
 Requirements:
+
 - deterministic and time-bounded (explicit timeout) so hangs become test failures
 - covers the regression risk introduced by the diff (do not chase pre-existing issues)
 
 Directory-scoped guidance:
+
 - cross-cutting rule is here (repo root)
 - server-specific examples: `server/AGENTS.md` (SSE/shutdown/connection draining)
 - when an LLM/provider layer directory is added, add a scoped `AGENTS.md` there describing dynamic tests for timeout/cancel/retry/stream behavior
 
 ## Agentic-SDD: Development Cycle Protocol
 
-0) Bootstrap
+0. Bootstrap
+
 - Read this file and the minimum necessary rule/command file under `.agent/` for the next action.
 
-1) Entry decision
+1. Entry decision
+
 - No PRD: `/create-prd`
 - PRD exists but no Epic: `/create-epic`
 - Epic exists but no Issues / not split: `/create-issues`
 - Issues exist: ask the user to choose `/impl` vs `/tdd` (do not choose on your own)
 
-2) Implement one Issue
+2. Implement one Issue
+
 - `/estimation` (Full estimate; 11 sections) -> user approval -> `/impl` or `/tdd` -> tests -> gates
 - Use `/sync-docs` whenever you suspect drift, and always before creating a PR
 
-3) PR / merge
+3. PR / merge
+
 - Only create a PR after `/review` passes; do not change anything outside the Issue scope
 
 ## Worktree / Parallel Work

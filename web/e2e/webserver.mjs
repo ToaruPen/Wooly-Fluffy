@@ -36,7 +36,7 @@ const spawnLogged = (command, args, env) => {
     cwd: repoRoot,
     env: { ...process.env, ...env },
     stdio: "inherit",
-    shell: false
+    shell: false,
   });
   processes.push(child);
   return child;
@@ -68,7 +68,7 @@ const main = async () => {
   // Start server (builds first via prestart)
   const server = spawnLogged("npm", ["run", "-w", "server", "start"], {
     HOST: host,
-    PORT: String(serverPort)
+    PORT: String(serverPort),
   });
   server.on("exit", (code, signal) => {
     console.error(`server exited early: code=${code} signal=${signal}`);
@@ -77,9 +77,13 @@ const main = async () => {
   await waitForHttpOk(serverHealthUrl, 60_000);
 
   // Start web dev server
-  const web = spawnLogged("npm", ["run", "-w", "web", "dev", "--", "--host", host, "--port", String(webPort)], {
-    WF_SERVER_PORT: String(serverPort)
-  });
+  const web = spawnLogged(
+    "npm",
+    ["run", "-w", "web", "dev", "--", "--host", host, "--port", String(webPort)],
+    {
+      WF_SERVER_PORT: String(serverPort),
+    },
+  );
   web.on("exit", (code, signal) => {
     console.error(`web exited early: code=${code} signal=${signal}`);
     void killAll("SIGTERM").finally(() => process.exit(1));

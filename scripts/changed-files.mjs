@@ -19,12 +19,7 @@ const gitHasRef = (ref) => {
 const resolveDiffBaseRef = () => {
   const baseRefName = (process.env.GITHUB_BASE_REF || "").trim() || "main";
 
-  const candidates = [
-    `origin/${baseRefName}`,
-    baseRefName,
-    "origin/main",
-    "main",
-  ];
+  const candidates = [`origin/${baseRefName}`, baseRefName, "origin/main", "main"];
 
   const found = candidates.find((ref) => gitHasRef(ref));
   if (!found) {
@@ -48,15 +43,7 @@ export const getChangedFiles = ({ baseRef } = {}) => {
   const files = new Set();
 
   // 1) Changes introduced on this branch (commit-level diff)
-  collect(
-    execGit([
-      "diff",
-      "--name-only",
-      "--diff-filter=ACMRT",
-      `${mergeBase}...HEAD`,
-    ]),
-    files,
-  );
+  collect(execGit(["diff", "--name-only", "--diff-filter=ACMRT", `${mergeBase}...HEAD`]), files);
 
   // 2) Unstaged/staged/untracked changes (local dev)
   collect(execGit(["diff", "--name-only", "--diff-filter=ACMRT"]), files);

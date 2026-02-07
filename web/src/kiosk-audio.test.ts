@@ -15,7 +15,7 @@ describe("kiosk-audio", () => {
         return {
           sampleRate: 16000,
           numberOfChannels: 1,
-          getChannelData: () => new Float32Array([0, 0.5, -0.5])
+          getChannelData: () => new Float32Array([0, 0.5, -0.5]),
         };
       }
 
@@ -29,7 +29,7 @@ describe("kiosk-audio", () => {
     const blob1 = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" });
     const file = await convertRecordingBlobToWavFile({
       blob: blob1,
-      fileName: "stt-1.wav"
+      fileName: "stt-1.wav",
     });
 
     expect(file.name).toBe("stt-1.wav");
@@ -60,15 +60,15 @@ describe("kiosk-audio", () => {
     }
 
     const ctx = new FakeAudioContext();
-    vi.stubGlobal("AudioContext", (function AudioContextCtor() {
+    vi.stubGlobal("AudioContext", function AudioContextCtor() {
       return ctx;
-    }) as unknown as typeof AudioContext);
+    } as unknown as typeof AudioContext);
 
     await expect(
       convertRecordingBlobToWavFile({
         blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }),
-        fileName: "stt-x.wav"
-      })
+        fileName: "stt-x.wav",
+      }),
     ).rejects.toThrow("decode failed");
 
     expect(ctx.closed).toBe(true);
@@ -80,7 +80,7 @@ describe("kiosk-audio", () => {
         return {
           sampleRate: 16000,
           numberOfChannels: 1,
-          getChannelData: () => new Float32Array([0])
+          getChannelData: () => new Float32Array([0]),
         };
       }
 
@@ -90,13 +90,13 @@ describe("kiosk-audio", () => {
     }
 
     const ctx = new FakeAudioContext();
-    vi.stubGlobal("AudioContext", (function AudioContextCtor() {
+    vi.stubGlobal("AudioContext", function AudioContextCtor() {
       return ctx;
-    }) as unknown as typeof AudioContext);
+    } as unknown as typeof AudioContext);
 
     const file = await convertRecordingBlobToWavFile({
       blob: new Blob([new Uint8Array([1, 2, 3])], { type: "audio/webm" }),
-      fileName: "stt-ok.wav"
+      fileName: "stt-ok.wav",
     });
 
     expect(file.name).toBe("stt-ok.wav");

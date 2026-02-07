@@ -15,7 +15,7 @@ describe("kiosk-ptt", () => {
   it("throws when MediaRecorder is not available", async () => {
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
-      configurable: true
+      configurable: true,
     });
     vi.stubGlobal("MediaRecorder", undefined as unknown as typeof MediaRecorder);
     await expect(startPttSession()).rejects.toThrow("MediaRecorder is not available");
@@ -24,10 +24,13 @@ describe("kiosk-ptt", () => {
   it("records chunks and stops tracks", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     const getUserMedia = vi.fn(async () => stream);
-    Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia }, configurable: true });
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia },
+      configurable: true,
+    });
 
     class FakeMediaRecorder {
       mimeType = "audio/webm";
@@ -62,11 +65,11 @@ describe("kiosk-ptt", () => {
   it("defaults to audio/webm when MediaRecorder mimeType is empty", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -97,11 +100,11 @@ describe("kiosk-ptt", () => {
   it("ignores empty data chunks", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -132,11 +135,11 @@ describe("kiosk-ptt", () => {
   it("rejects with the original error if Blob creation throws an Error", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -171,11 +174,11 @@ describe("kiosk-ptt", () => {
   it("rejects with a generic error if Blob creation throws a non-Error", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -210,11 +213,11 @@ describe("kiosk-ptt", () => {
   it("rejects when MediaRecorder emits an error", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -242,11 +245,11 @@ describe("kiosk-ptt", () => {
   it("stops tracks if MediaRecorder start throws", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -273,11 +276,11 @@ describe("kiosk-ptt", () => {
   it("stops tracks if MediaRecorder constructor throws", async () => {
     const stopTrack = vi.fn();
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {
@@ -297,11 +300,11 @@ describe("kiosk-ptt", () => {
       throw new Error("stop failed");
     });
     const stream = {
-      getTracks: () => [{ stop: stopTrack }]
+      getTracks: () => [{ stop: stopTrack }],
     };
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: vi.fn(async () => stream) },
-      configurable: true
+      configurable: true,
     });
 
     class FakeMediaRecorder {

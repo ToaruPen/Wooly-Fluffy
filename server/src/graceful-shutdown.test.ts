@@ -35,7 +35,7 @@ describe("graceful-shutdown", () => {
     const res = await new Promise<IncomingMessage>((resolve, reject) => {
       const req = request(
         { host: "127.0.0.1", port, method: "GET", path: "/api/v1/kiosk/stream" },
-        resolve
+        resolve,
       );
       req.on("error", reject);
       req.end();
@@ -63,10 +63,10 @@ describe("graceful-shutdown", () => {
 
   it("rejects when server.close returns an unexpected error", async () => {
     const originalClose = server.close.bind(server);
-    server.close = (((cb: (err?: Error) => void) => {
+    server.close = ((cb: (err?: Error) => void) => {
       cb(new Error("boom"));
       return server;
-    }) as unknown) as Server["close"];
+    }) as unknown as Server["close"];
 
     await expect(shutdownHttpServer(server)).rejects.toThrow("boom");
 
