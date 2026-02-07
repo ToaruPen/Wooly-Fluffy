@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: review-cycle.sh <scope-id> [run-id] [--dry-run]
+Usage: review-cycle.sh <scope-id> [run-id] [options]
 
 Generate a review JSON (schema v3) via `codex exec --output-schema`.
 
@@ -14,6 +14,8 @@ Positional arguments:
 
 Options:
   --dry-run  Print the plan and exit without calling codex
+  --model MODEL         Codex model override (takes precedence over env MODEL)
+  --claude-model MODEL  Claude model override (takes precedence over env CLAUDE_MODEL)
   -h, --help Show help
 
 Required environment:
@@ -38,7 +40,7 @@ Required environment:
   TEST_STDERR_POLICY   warn|fail|ignore (default: warn). When TEST_COMMAND is set,
                      detect stderr output (and Vitest-style "stderr |" reports).
                      Writes tests.stderr alongside tests.txt.
-  DIFF_MODE        pr|staged|worktree|auto (default: pr)
+  DIFF_MODE        staged|worktree|auto (default: auto)
   DIFF_FILE        Optional path to a diff file (overrides DIFF_MODE)
   OUTPUT_ROOT      Output root (default: <repo_root>/.agentic-sdd/reviews)
   SCHEMA_PATH      JSON schema path (default: <repo_root>/.agent/schemas/review.json)
@@ -47,11 +49,10 @@ Required environment:
   Engine selection:
   REVIEW_ENGINE    codex|claude (default: codex)
 
-	  Codex options (when REVIEW_ENGINE=codex):
-	  CODEX_BIN        codex binary (default: codex)
-	  MODEL            codex model (default: gpt-5.3-codex)
-	  REASONING_EFFORT minimal|low|medium|high|xhigh (default: high)
-	                  Note: none is accepted as an alias for minimal (backward compatibility).
+  Codex options (when REVIEW_ENGINE=codex):
+  CODEX_BIN        codex binary (default: codex)
+  MODEL            codex model (default: gpt-5.3-codex)
+  REASONING_EFFORT high|medium|low (default: high)
 
   Claude options (when REVIEW_ENGINE=claude):
   CLAUDE_BIN       claude binary (default: claude)
@@ -63,27 +64,73 @@ Required environment:
   EXEC_TIMEOUT_SEC Optional timeout (uses timeout/gtimeout if available)
   FORMAT_JSON      1 to pretty-format output JSON (default: 1)
 
-  Notes:
-    - This script writes outputs under .agentic-sdd/ (recommended to gitignore).
-    - In DIFF_MODE=auto, if both staged and worktree diffs are non-empty, this script
-      fails and asks you to choose.
-    - Untracked files are not included in `git diff`. If you added new files, `git add` them so they appear in the diff.
+Notes:
+  - This script writes outputs under .agentic-sdd/ (recommended to gitignore).
+  - In DIFF_MODE=auto, if both staged and worktree diffs are non-empty, this script
+    fails and asks you to choose.
 EOF
 }
 
 eprint() { printf '%s\n' "$*" >&2; }
 
 DRY_RUN=0
+model_cli_set=0
+model_cli=""
+claude_model_cli_set=0
+claude_model_cli=""
 args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --)
+      # End of options marker. Treat the remaining args as positional.
+      shift
+      while [[ $# -gt 0 ]]; do
+        args+=("$1")
+        shift
+      done
+      ;;
     --dry-run)
       DRY_RUN=1
+      shift
+      ;;
+    --model)
+      if [[ $# -lt 2 ]]; then
+        eprint "Missing value for --model"
+        usage
+        exit 2
+      fi
+      model_cli_set=1
+      model_cli="$2"
+      shift 2
+      ;;
+    --model=*)
+      model_cli_set=1
+      model_cli="${1#*=}"
+      shift
+      ;;
+    --claude-model)
+      if [[ $# -lt 2 ]]; then
+        eprint "Missing value for --claude-model"
+        usage
+        exit 2
+      fi
+      claude_model_cli_set=1
+      claude_model_cli="$2"
+      shift 2
+      ;;
+    --claude-model=*)
+      claude_model_cli_set=1
+      claude_model_cli="${1#*=}"
       shift
       ;;
     -h|--help)
       usage
       exit 0
+      ;;
+    -*)
+      eprint "Unknown option: $1"
+      usage
+      exit 2
       ;;
     *)
       args+=("$1")
@@ -114,7 +161,7 @@ fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 constraints="${CONSTRAINTS:-none}"
-diff_mode="${DIFF_MODE:-pr}"
+diff_mode="${DIFF_MODE:-auto}"
 diff_file="${DIFF_FILE:-}"
 output_root="${OUTPUT_ROOT:-${repo_root}/.agentic-sdd/reviews}"
 schema_path="${SCHEMA_PATH:-${repo_root}/.agent/schemas/review.json}"
@@ -131,24 +178,22 @@ case "$review_engine" in
     ;;
 esac
 
-		# Codex options
-		codex_bin="${CODEX_BIN:-codex}"
-		model="${MODEL:-gpt-5.3-codex}"
-		effort="${REASONING_EFFORT:-high}"
-		case "$effort" in
-		  minimal|low|medium|high|xhigh) ;;
-	  none)
-	    effort="minimal"
-	    ;;
-	  *)
-	    eprint "Invalid REASONING_EFFORT: $effort (use minimal|low|medium|high|xhigh)"
-	    exit 2
-	    ;;
-	esac
+# Codex options
+codex_bin="${CODEX_BIN:-codex}"
+if [[ "$model_cli_set" -eq 1 && -z "$model_cli" ]]; then
+  eprint "Invalid --model: empty"
+  exit 2
+fi
+model="${model_cli:-${MODEL:-gpt-5.3-codex}}"
+effort="${REASONING_EFFORT:-high}"
 
 # Claude options
 claude_bin="${CLAUDE_BIN:-claude}"
-claude_model="${CLAUDE_MODEL:-claude-opus-4-5-20250929}"
+if [[ "$claude_model_cli_set" -eq 1 && -z "$claude_model_cli" ]]; then
+  eprint "Invalid --claude-model: empty"
+  exit 2
+fi
+claude_model="${claude_model_cli:-${CLAUDE_MODEL:-claude-opus-4-5-20250929}}"
 
 # Common options
 exec_timeout_sec="${EXEC_TIMEOUT_SEC:-}"
@@ -217,7 +262,6 @@ out_issue_json="${run_dir}/issue.json"
 out_issue_body="${run_dir}/issue.txt"
 
 diff_source=""
-changed_files=""
 
 timeout_bin=""
 if [[ -n "$exec_timeout_sec" ]]; then
@@ -234,63 +278,66 @@ ensure_run_dir() {
   mkdir -p "$run_dir"
 }
 
-write_tests() {
-  local exit_code=0
-  local reported_stderr=0
-  local tmp_tests_stdout=""
+	write_tests() {
+	  local exit_code=0
+	  local reported_stderr=0
+	  local tmp_tests_stdout=""
 
-  if [[ -n "$test_command" ]]; then
-    case "$test_stderr_policy" in
-      warn|fail|ignore) ;;
-      *)
-        eprint "Invalid TEST_STDERR_POLICY: $test_stderr_policy (use warn|fail|ignore)"
-        exit 2
-        ;;
-    esac
+	  if [[ -n "$test_command" ]]; then
+	    case "$test_stderr_policy" in
+	      warn|fail|ignore) ;;
+	      *)
+	        eprint "Invalid TEST_STDERR_POLICY: $test_stderr_policy (use warn|fail|ignore)"
+	        exit 2
+	        ;;
+	    esac
 
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      if [[ -z "$tests_summary" ]]; then
-        tests_summary="command: ${test_command} (not run: --dry-run)"
+	    if [[ "$DRY_RUN" -eq 1 ]]; then
+	      if [[ -z "$tests_summary" ]]; then
+	        tests_summary="command: ${test_command} (not run: --dry-run)"
       fi
       tests_stderr_summary="not checked (dry-run)"
       return 0
-    fi
+	    fi
 
-    ensure_run_dir
-    tmp_tests_stdout="${run_dir}/tests.stdout.tmp.$$"
-    : > "$out_tests_stderr"
-    : > "$tmp_tests_stdout"
-    {
-      printf 'Command: %s\n' "$test_command"
-      printf 'Started: %s\n' "$(date +"%Y-%m-%dT%H:%M:%S%z")"
-      printf '\n'
-    } > "$out_tests"
+	    ensure_run_dir
+	    tmp_tests_stdout="${run_dir}/tests.stdout.tmp.$$"
+	    : > "$out_tests_stderr"
+	    : > "$tmp_tests_stdout"
+	    {
+	      printf 'Command: %s\n' "$test_command"
+	      printf 'Started: %s\n' "$(date +"%Y-%m-%dT%H:%M:%S%z")"
+	      printf '\n'
+	    } > "$out_tests"
 
-    set +e
-    bash -lc "$test_command" >"$tmp_tests_stdout" 2>"$out_tests_stderr"
-    exit_code=$?
-    set -e
+	    set +e
+	    bash -lc "$test_command" >"$tmp_tests_stdout" 2>"$out_tests_stderr"
+	    exit_code=$?
+	    set -e
 
-    if grep -qE '^[[:space:]]*stderr [|]' "$tmp_tests_stdout"; then
-      reported_stderr=1
-      tests_stderr_present=1
-    fi
+	    if grep -qE '^[[:space:]]*stderr [|]' "$tmp_tests_stdout"; then
+	      reported_stderr=1
+	      tests_stderr_present=1
+	    fi
 
-    cat "$tmp_tests_stdout" >>"$out_tests"
-    if [[ -s "$out_tests_stderr" ]]; then
-      {
-        printf '\n'
-        printf '\n'
-        printf '[stderr]\n'
-      } >>"$out_tests"
-      cat "$out_tests_stderr" >>"$out_tests"
-      tests_stderr_present=1
-    fi
-    rm -f "$tmp_tests_stdout" 2>/dev/null || true
+	    cat "$tmp_tests_stdout" >>"$out_tests"
+	    if [[ -s "$out_tests_stderr" ]]; then
+	      {
+	        printf '\n'
+	        printf '\n'
+	        printf '[stderr]\n'
+	      } >>"$out_tests"
+	      cat "$out_tests_stderr" >>"$out_tests"
+	    fi
+	    rm -f "$tmp_tests_stdout" 2>/dev/null || true
 
-    if [[ "$tests_stderr_present" -eq 1 ]]; then
-      if [[ "$reported_stderr" -eq 1 && -s "$out_tests_stderr" ]]; then
-        tests_stderr_summary="present (process-stderr + reported)"
+	    if [[ -s "$out_tests_stderr" ]]; then
+	      tests_stderr_present=1
+	    fi
+
+	    if [[ "$tests_stderr_present" -eq 1 ]]; then
+	      if [[ "$reported_stderr" -eq 1 && -s "$out_tests_stderr" ]]; then
+	        tests_stderr_summary="present (process-stderr + reported)"
       elif [[ "$reported_stderr" -eq 1 ]]; then
         tests_stderr_summary="present (reported)"
       else
@@ -347,8 +394,6 @@ write_tests() {
       exit 2
     fi
 
-    tests_stderr_summary="not checked (no TEST_COMMAND)"
-
     if [[ "$DRY_RUN" -eq 1 ]]; then
       return 0
     fi
@@ -359,6 +404,7 @@ write_tests() {
       printf 'Summary: %s\n' "$tests_summary"
       printf 'Recorded: %s\n' "$(date +"%Y-%m-%dT%H:%M:%S%z")"
     } > "$out_tests"
+    tests_stderr_summary="not checked (no TEST_COMMAND)"
   fi
 }
 
@@ -390,44 +436,6 @@ write_diff() {
   fi
 
   case "$diff_mode" in
-    pr)
-      local base_ref=""
-      if git -C "$repo_root" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
-        base_ref="origin/main"
-      elif git -C "$repo_root" rev-parse --verify --quiet origin/master >/dev/null 2>&1; then
-        base_ref="origin/master"
-      elif git -C "$repo_root" rev-parse --verify --quiet main >/dev/null 2>&1; then
-        base_ref="main"
-      elif git -C "$repo_root" rev-parse --verify --quiet master >/dev/null 2>&1; then
-        base_ref="master"
-      else
-        eprint "Failed to resolve base ref for PR diff (tried: origin/main, origin/master, main, master)."
-        eprint "Fetch remotes, or set DIFF_MODE=staged/worktree, or set DIFF_FILE."
-        exit 2
-      fi
-
-      local merge_base=""
-      merge_base="$(git -C "$repo_root" merge-base "$base_ref" HEAD 2>/dev/null || true)"
-      if [[ -z "$merge_base" ]]; then
-        eprint "Failed to resolve merge-base for PR diff: $base_ref...HEAD"
-        exit 2
-      fi
-
-      if git -C "$repo_root" diff --quiet "$merge_base"; then
-        eprint "Diff is empty (pr: $base_ref...HEAD)."
-        exit 2
-      fi
-
-      diff_source="pr:${base_ref}...HEAD"
-      if [[ "$has_staged" -eq 1 || "$has_worktree" -eq 1 ]]; then
-        diff_source="pr+worktree:${base_ref}...HEAD"
-      fi
-
-      if [[ "$DRY_RUN" -eq 0 ]]; then
-        ensure_run_dir
-        git -C "$repo_root" diff --no-color "$merge_base" > "$out_diff"
-      fi
-      ;;
     staged)
       if [[ "$has_staged" -eq 0 ]]; then
         eprint "Diff is empty (staged)."
@@ -474,7 +482,7 @@ write_diff() {
       fi
       ;;
     *)
-      eprint "Invalid DIFF_MODE: $diff_mode (use pr|staged|worktree|auto)"
+      eprint "Invalid DIFF_MODE: $diff_mode (use staged|worktree|auto)"
       exit 2
       ;;
   esac
@@ -485,32 +493,6 @@ write_diff() {
       exit 2
     fi
   fi
-}
-
-collect_changed_files() {
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    return 0
-  fi
-
-  if [[ ! -f "$out_diff" || ! -s "$out_diff" ]]; then
-    eprint "Diff file not found or empty (cannot collect changed files): $out_diff"
-    exit 1
-  fi
-
-  # Note: This intentionally supports the common `diff --git a/... b/...` form.
-  # It does not attempt to fully parse quoted paths with spaces.
-  changed_files="$(
-    awk '
-      $1 == "diff" && $2 == "--git" {
-        a = $3
-        b = $4
-        sub(/^a\//, "", a)
-        sub(/^b\//, "", b)
-        if (b == "/dev/null") print a
-        else print b
-      }
-    ' "$out_diff" | sort -u
-  )"
 }
 
 print_plan() {
@@ -636,7 +618,6 @@ write_sot() {
 write_diff
 write_tests
 write_sot
-collect_changed_files
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   print_plan
@@ -682,14 +663,6 @@ fi
 
 tmp_json="${out_json}.tmp.$$"
 tmp_prompt="${run_dir}/prompt.txt"
-diff_path_for_prompt="$out_diff"
-if [[ "$out_diff" == "$repo_root/"* ]]; then
-  diff_path_for_prompt="${out_diff#"$repo_root"/}"
-fi
-extra_tool_dir=""
-if [[ "$out_diff" != "$repo_root/"* ]]; then
-  extra_tool_dir="$(dirname "$out_diff")"
-fi
 
 # Build prompt
 {
@@ -698,15 +671,11 @@ You are a code reviewer.
 
 Output JSON only. Your output MUST validate against the provided JSON schema.
 
-	Review rules:
-	- Only flag issues introduced by this diff (do not flag pre-existing issues).
-	- Only flag issues the author would likely fix if aware (meaningful impact).
-	- Be concrete; avoid speculation; explain impact.
-	- Ignore trivial style unless it obscures meaning or violates documented standards.
-	- You MAY inspect other repo files for context when needed, but your findings must still be based on this diff.
-	- Diff is provided via a local file path below (repo-relative). You MUST open it.
-	- If you cannot open Diff-File, return status=Question and add a question explaining the access failure.
-	- For context, you SHOULD inspect files listed under Changed-Files as needed.
+Review rules:
+- Only flag issues introduced by this diff (do not flag pre-existing issues).
+- Only flag issues the author would likely fix if aware (meaningful impact).
+- Be concrete; avoid speculation; explain impact.
+- Ignore trivial style unless it obscures meaning or violates documented standards.
 
 Priority:
 - P0: must-fix (correctness/security/data-loss)
@@ -748,41 +717,26 @@ PROMPT
   printf 'Tests-Stderr: %s\n' "$tests_stderr_summary"
   printf 'Tests-Stderr-Policy: %s\n' "$test_stderr_policy"
   printf 'Constraints: %s\n' "$constraints"
-  printf 'Diff-Source: %s\n' "$diff_source"
-  printf 'Diff-File: %s\n' "$diff_path_for_prompt"
-  printf 'Changed-Files:\n'
-  if [[ -n "$changed_files" ]]; then
-    printf '%s\n' "$changed_files"
-  else
-    printf '(none)\n'
-  fi
-
-	} > "$tmp_prompt"
+  printf 'Diff:\n'
+  cat "$out_diff"
+} > "$tmp_prompt"
 
 # Execute review engine
-		case "$review_engine" in
-		  codex)
-			    cmd=(
-			      "$codex_bin" exec
-			      --sandbox read-only
-			      -C "$repo_root"
-			    )
+case "$review_engine" in
+  codex)
+    cmd=(
+      "$codex_bin" exec
+      --sandbox read-only
+      -m "$model"
+      -c "reasoning.effort=\"${effort}\""
+      --output-last-message "$tmp_json"
+      --output-schema "$schema_path"
+      -
+    )
 
-			    if [[ -n "$extra_tool_dir" ]]; then
-			      cmd+=(--add-dir "$extra_tool_dir")
-			    fi
-
-			    cmd+=(
-			      -m "$model"
-			      -c "model_reasoning_effort=\"${effort}\""
-			      --output-last-message "$tmp_json"
-			      --output-schema "$schema_path"
-			      -
-			    )
-
-	    if [[ -n "$exec_timeout_sec" && -n "$timeout_bin" ]]; then
-	      cmd=("$timeout_bin" "$exec_timeout_sec" "${cmd[@]}")
-	    fi
+    if [[ -n "$exec_timeout_sec" && -n "$timeout_bin" ]]; then
+      cmd=("$timeout_bin" "$exec_timeout_sec" "${cmd[@]}")
+    fi
 
     "${cmd[@]}" < "$tmp_prompt"
     ;;
@@ -800,29 +754,22 @@ schema.pop('\$schema', None)
 print(json.dumps(schema, ensure_ascii=False))
 ")"
 
-	    cmd=(
-	      "$claude_bin" -p
-	      --model "$claude_model"
-	      --json-schema "$schema_content"
-	      --output-format json
-	      --betas interleaved-thinking
-	      --tools Read
-	      --allowedTools Read
-	      --add-dir "$repo_root"
-	    )
+    cmd=(
+      "$claude_bin" -p
+      --model "$claude_model"
+      --json-schema "$schema_content"
+      --output-format json
+      --betas interleaved-thinking
+    )
 
-	    if [[ -n "$extra_tool_dir" ]]; then
-	      cmd+=(--add-dir "$extra_tool_dir")
-	    fi
+    if [[ -n "$exec_timeout_sec" && -n "$timeout_bin" ]]; then
+      cmd=("$timeout_bin" "$exec_timeout_sec" "${cmd[@]}")
+    fi
 
-	    if [[ -n "$exec_timeout_sec" && -n "$timeout_bin" ]]; then
-	      cmd=("$timeout_bin" "$exec_timeout_sec" "${cmd[@]}")
-	    fi
-
-	    # Claude CLI outputs wrapped JSON with structured_output field.
-	    # Extract the structured_output and check for errors.
-	    tmp_claude_out="${tmp_json}.claude.$$"
-	    (cd "$repo_root" && "${cmd[@]}" < "$tmp_prompt" > "$tmp_claude_out")
+    # Claude CLI outputs wrapped JSON with structured_output field.
+    # Extract the structured_output and check for errors.
+    tmp_claude_out="${tmp_json}.claude.$$"
+    "${cmd[@]}" < "$tmp_prompt" > "$tmp_claude_out"
 
     # Extract structured_output from Claude's wrapped response.
     # Claude CLI with --output-format json wraps the schema output in:

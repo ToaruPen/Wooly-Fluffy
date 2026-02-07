@@ -20,19 +20,18 @@ Review taxonomy (status/priority) and output rules are defined in:
 - `scope-id`: identifier like `issue-123` (`[A-Za-z0-9._-]+`)
 - `run-id`: optional; defaults to reusing `.agentic-sdd/reviews/<scope-id>/.current_run` or a timestamp
 
+Underlying script:
+
+```bash
+./scripts/review-cycle.sh <scope-id> [run-id] [--dry-run] [--model MODEL] [--claude-model MODEL]
+```
+
 ## Flow
 
-1. Collect the diff (default: `DIFF_MODE=pr`)
+1. Collect the diff (default: `DIFF_MODE=auto`)
 2. Run tests (optional) and record results
 3. Generate `review.json` via selected engine (`codex exec` or `claude -p`)
 4. Validate JSON and save under `.agentic-sdd/`
-
-Note: The review prompt provides:
-
-- `diff.patch` as a local file path (repo-relative)
-- a changed-file list
-
-Both engines may open repo files for context, but findings must still be grounded in the diff.
 
 ## Iteration protocol (how far/how to loop)
 
@@ -73,10 +72,8 @@ Both engines may open repo files for context, but findings must still be grounde
 - `GH_INCLUDE_COMMENTS`: `1` to include Issue comments in fetched JSON (default: `0`)
 - `SOT_MAX_CHARS`: max chars for the assembled SoT bundle (0 = no limit). If exceeded, keep the head and the last ~2KB and insert `[TRUNCATED]`.
 
-- `DIFF_MODE`: `pr` | `auto` | `staged` | `worktree` (default: `pr`)
-  - `pr`: review the whole PR/branch diff (`origin/main...HEAD`, fallback `origin/master`, `main`, `master`), including working-tree changes (merge-base → worktree).
-    - Note: `git diff` does not include untracked files. If you added new files, `git add` them so they appear in the diff.
-  - `auto`: local diffs only. If both staged and worktree diffs exist, fail-fast and ask you to choose.
+- `DIFF_MODE`: `auto` | `staged` | `worktree` (default: `auto`)
+  - If both staged and worktree diffs exist in `auto`, fail-fast and ask you to choose.
 - `CONSTRAINTS`: additional constraints (default: `none`)
 
 ### Engine selection
@@ -87,9 +84,7 @@ Both engines may open repo files for context, but findings must still be grounde
 
 - `CODEX_BIN`: codex binary (default: `codex`)
 - `MODEL`: Codex model (default: `gpt-5.3-codex`)
-- `REASONING_EFFORT`: `minimal` | `low` | `medium` | `high` | `xhigh` (default: `high`)
-  - Note: `REASONING_EFFORT=none` is accepted as an alias for `minimal` (backward compatibility).
-  - Note: This script passes the value via `codex exec -c model_reasoning_effort=...`, so it overrides global Codex config for the run.
+- `REASONING_EFFORT`: `high` | `medium` | `low` (default: `high`)
 
 ### Claude options (when `REVIEW_ENGINE=claude`)
 
@@ -119,10 +114,9 @@ Using Codex (default):
 ```bash
 SOT="docs/prd/example.md docs/epics/example.md" \
 TEST_COMMAND="npm test" \
-DIFF_MODE=pr \
-MODEL=gpt-5.3-codex \
+DIFF_MODE=auto \
 REASONING_EFFORT=high \
-./scripts/review-cycle.sh issue-123
+./scripts/review-cycle.sh issue-123 --model gpt-5.3-codex
 ```
 
 Auto-build SoT from a GitHub Issue:
