@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let loadAsyncImpl: ((url: string) => Promise<unknown>) | null = null;
 let registerImpl: ((cb: unknown) => void) | null = null;
 
-let removeEventListenerShouldThrow = false;
+let shouldRemoveEventListenerThrow = false;
 
 const sceneAdds: unknown[] = [];
 const rendererRenders: unknown[] = [];
@@ -124,7 +124,7 @@ vi.mock("three", () => {
       if (!list) {
         return;
       }
-      if (removeEventListenerShouldThrow) {
+      if (shouldRemoveEventListenerThrow) {
         actionCalls.push(`removeEventListenerThrow:${type}`);
         throw new Error("removeEventListener boom");
       }
@@ -265,7 +265,7 @@ describe("VrmAvatar (coverage)", () => {
     clipActionCalls = 0;
     createdMixers.length = 0;
     createdActions.length = 0;
-    removeEventListenerShouldThrow = false;
+    shouldRemoveEventListenerThrow = false;
     loadAsyncImpl = null;
     registerImpl = null;
     rafCalls = 0;
@@ -826,7 +826,7 @@ describe("VrmAvatar (coverage)", () => {
 
     // Force the attempt to remove the previous finished handler to throw, so the old
     // handler stays registered while the pointer is replaced.
-    removeEventListenerShouldThrow = true;
+    shouldRemoveEventListenerThrow = true;
 
     await act(async () => {
       root.render(
@@ -840,7 +840,7 @@ describe("VrmAvatar (coverage)", () => {
       await Promise.resolve();
     });
     await waitFor(() => countAction("play") >= 3);
-    removeEventListenerShouldThrow = false;
+    shouldRemoveEventListenerThrow = false;
 
     const mixer = createdMixers[0] as unknown as {
       __wfDispatchFinished: (action: unknown) => void;
@@ -862,9 +862,9 @@ describe("VrmAvatar (coverage)", () => {
     mixer.__wfDispatchFinished(greetingAction);
 
     // Current finished event for cheer -> should auto-return to idle.
-    removeEventListenerShouldThrow = true;
+    shouldRemoveEventListenerThrow = true;
     mixer.__wfDispatchFinished(cheerAction);
-    removeEventListenerShouldThrow = false;
+    shouldRemoveEventListenerThrow = false;
 
     await waitFor(() => countAction("play") >= 4);
 
@@ -932,7 +932,7 @@ describe("VrmAvatar (coverage)", () => {
     await waitFor(() => actionCalls.some((v) => v === "addEventListener:finished"));
 
     // Make the unmount cleanup try to remove and throw, so the handler stays registered.
-    removeEventListenerShouldThrow = true;
+    shouldRemoveEventListenerThrow = true;
 
     act(() => root.unmount());
     document.body.removeChild(container);
@@ -940,7 +940,7 @@ describe("VrmAvatar (coverage)", () => {
     expect(actionCalls.some((v) => v === "removeEventListenerThrow:finished")).toBe(true);
 
     // Dispatch after unmount -> handler should run but early-return due to disposed.
-    removeEventListenerShouldThrow = false;
+    shouldRemoveEventListenerThrow = false;
     const mixer = createdMixers[0] as unknown as {
       __wfDispatchFinished: (action: unknown) => void;
     };
