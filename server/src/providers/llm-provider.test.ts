@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createLlmProviderFromEnv, createOpenAiCompatibleLlmProvider } from "./llm-provider.js";
+import {
+  createGeminiNativeLlmProvider,
+  createLlmProviderFromEnv,
+  createOpenAiCompatibleLlmProvider,
+} from "./llm-provider.js";
 import type { ToolCall } from "../orchestrator.js";
 
 const createAbortableNeverFetch = () => {
@@ -714,6 +718,164 @@ describe("llm-provider (OpenAI-compatible)", () => {
   });
 });
 
+describe("llm-provider (Gemini native)", () => {
+  it("parses assistant_text + expression from JSON text", async () => {
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      gemini_models: {
+        generateContent: async () => ({
+          text: JSON.stringify({ assistant_text: "Hello", expression: "happy" }),
+          functionCalls: [],
+          candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+        }),
+        get: async () => ({}),
+      },
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      { assistant_text: "Hello", expression: "happy", tool_calls: [] },
+    );
+  });
+
+  it("executes allowlisted tool calls and follows up", async () => {
+    let calls = 0;
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      fetch: async (input: string) => {
+        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+            }),
+          };
+        }
+        if (input.startsWith("https://api.open-meteo.com/")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          };
+        }
+        throw new Error(`unexpected url: ${input}`);
+      },
+      gemini_models: {
+        generateContent: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              text: "",
+              functionCalls: [{ name: "get_weather", args: { location: "Tokyo" } }],
+              candidates: [
+                {
+                  content: {
+                    role: "model",
+                    parts: [
+                      {
+                        functionCall: { name: "get_weather", args: { location: "Tokyo" } },
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          }
+          return {
+            text: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
+            functionCalls: [],
+            candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+          };
+        },
+        get: async () => ({}),
+      },
+    });
+
+    const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+    expect(calls).toBe(2);
+    expect(result.assistant_text).toBe("OK");
+    expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather"]);
+  });
+
+  it("falls back when follow-up returns tool calls again", async () => {
+    let calls = 0;
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      gemini_models: {
+        generateContent: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              text: "",
+              functionCalls: [{ name: "get_weather", args: { location: "Tokyo" } }],
+              candidates: [
+                {
+                  content: {
+                    role: "model",
+                    parts: [{ functionCall: { name: "get_weather", args: { location: "Tokyo" } } }],
+                  },
+                },
+              ],
+            };
+          }
+          return {
+            text: "",
+            functionCalls: [{ name: "get_weather", args: { location: "Tokyo" } }],
+            candidates: [{ content: { role: "model", parts: [{ text: "nope" }] } }],
+          };
+        },
+        get: async () => ({}),
+      },
+      fetch: async (_input: string) => ({ ok: true, status: 200, json: async () => ({}) }),
+    });
+
+    await expect(
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+    ).resolves.toMatchObject({ assistant_text: "ちょっと調べてみるね" });
+  });
+
+  it("times out chat when generateContent does not resolve", async () => {
+    const llm = createGeminiNativeLlmProvider({
+      model: "gemini-2.5-flash-lite",
+      api_key: "test-key",
+      timeout_ms_chat: 1,
+      gemini_models: {
+        generateContent: async (params: { config?: Record<string, unknown> }) =>
+          new Promise((_, reject) => {
+            const signal = params.config?.abortSignal as AbortSignal | undefined;
+            if (!signal) {
+              reject(new Error("missing_abortSignal"));
+              return;
+            }
+            if (signal.aborted) {
+              const err = new Error("aborted");
+              err.name = "AbortError";
+              reject(err);
+              return;
+            }
+            signal.addEventListener(
+              "abort",
+              () => {
+                const err = new Error("aborted");
+                err.name = "AbortError";
+                reject(err);
+              },
+              { once: true },
+            );
+          }),
+        get: async () => ({}),
+      },
+    });
+
+    await expect(
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("llm-provider (env)", () => {
   it("defaults to stub when LLM_PROVIDER_KIND is unset", () => {
     const saved = {
@@ -770,6 +932,36 @@ describe("llm-provider (env)", () => {
       process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
       process.env.LLM_MODEL = saved.LLM_MODEL;
       process.env.LLM_API_KEY = saved.LLM_API_KEY;
+    }
+  });
+
+  it("returns unavailable provider when gemini_native is missing model/api key", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+    };
+    try {
+      process.env.LLM_PROVIDER_KIND = "gemini_native";
+      delete process.env.LLM_MODEL;
+      delete process.env.LLM_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      delete process.env.GOOGLE_API_KEY;
+
+      const llm = createLlmProviderFromEnv();
+      expect(llm.kind).toBe("gemini_native");
+      await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+      ).rejects.toThrow(/not configured/);
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.GEMINI_API_KEY = saved.GEMINI_API_KEY;
+      process.env.GOOGLE_API_KEY = saved.GOOGLE_API_KEY;
     }
   });
 

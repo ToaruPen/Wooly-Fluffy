@@ -119,9 +119,12 @@ curl -s http://localhost:50021/version
 
 **Note**: VOICEVOX requires attribution ("VOICEVOX を利用したことがわかるクレジット表記") per [利用規約](https://voicevox.hiroshiba.jp/term/).
 
-#### 3) LLM (LM Studio local OR external provider)
+#### 3) LLM (OpenAI-compatible OR Gemini native)
 
-This server expects an **OpenAI-compatible** HTTP API.
+This server can use either:
+
+- an **OpenAI-compatible** HTTP API (LM Studio local or external providers), or
+- the **Gemini Developer API** (native; via `@google/genai`)
 
 Option A: LM Studio (local)
 
@@ -136,6 +139,25 @@ curl -s http://127.0.0.1:1234/v1/models
 Option B: external provider (OpenAI-compatible)
 
 - Prepare a provider API key and a base URL (example: `https://api.openai.com/v1`)
+
+Option C: Gemini 2.5 Flash-Lite (OpenAI-compatible)
+
+Gemini provides an official OpenAI-compatibility endpoint.
+
+- Base URL: `https://generativelanguage.googleapis.com/v1beta/openai`
+- Model id: `gemini-2.5-flash-lite`
+- API key: create one in [Google AI Studio](https://aistudio.google.com/app/apikey) (Paid tier recommended)
+
+Verification:
+
+```bash
+curl -s https://generativelanguage.googleapis.com/v1beta/openai/models \
+  -H "Authorization: Bearer $LLM_API_KEY"
+```
+
+Option D: Gemini 2.5 Flash-Lite (native SDK)
+
+This repo also supports calling Gemini natively with structured outputs and function calling via the official Google GenAI SDK.
 
 #### 4) VRM Model (3D Avatar)
 
@@ -188,6 +210,7 @@ If the VRMA files are present and valid, the avatar should start playing the req
 - whisper.cpp: [MIT License](https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE)
 - VOICEVOX: [利用規約](https://voicevox.hiroshiba.jp/term/)
 - VRM: [CC0 License](https://vroid.pixiv.help/hc/en-us/articles/4402614652569)
+- Google GenAI SDK (`@google/genai`): [Apache-2.0](https://github.com/googleapis/js-genai/blob/main/LICENSE)
 
 See `docs/decisions.md` (ADR-9) for full license documentation.
 
@@ -198,10 +221,11 @@ Server (required unless noted):
 - `STAFF_PASSCODE` (required): passcode for `/staff` login (STAFF APIs are LAN-only)
 - `DB_PATH` (optional): defaults to `var/wooly-fluffy.sqlite3`
 - `VOICEVOX_ENGINE_URL` (optional): defaults to `http://127.0.0.1:50021`
-- `LLM_PROVIDER_KIND` (required for non-stub): `local` or `external` (default: `stub`)
+- `LLM_PROVIDER_KIND` (required for non-stub): `local` / `external` / `gemini_native` (default: `stub`)
 - `LLM_BASE_URL` (required for `local`/`external`): OpenAI-compatible base URL (include `/v1`)
-- `LLM_MODEL` (required for `local`/`external`): model id string
-- `LLM_API_KEY` (external only): API key string (keep secret)
+- `LLM_MODEL` (required for `local`/`external`/`gemini_native`): model id string
+- `LLM_API_KEY` (required for `external`/`gemini_native`): API key string (keep secret)
+  - For Gemini native, `GEMINI_API_KEY` / `GOOGLE_API_KEY` are also accepted.
 - `WHISPER_CPP_CLI_PATH` (required for STT): path to `whisper-cli`
 - `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file
 
@@ -219,6 +243,11 @@ export WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-base.bin"
 export LLM_PROVIDER_KIND="local"
 export LLM_BASE_URL="http://127.0.0.1:1234/v1"
 export LLM_MODEL="<lm-studio-model-id>"
+
+# Gemini (native SDK)
+# export LLM_PROVIDER_KIND="gemini_native"
+# export LLM_MODEL="gemini-2.5-flash-lite"
+# export LLM_API_KEY="<ai-studio-api-key>"
 
 # Optional overrides
 # export VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
