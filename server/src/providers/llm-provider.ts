@@ -145,8 +145,8 @@ const withRetry = async <T>(input: {
         throw err;
       }
       const status = coerceHttpStatusFromError(err);
-      const retryable = status !== null && isRetryableHttpStatus(status);
-      if (!retryable || attempt >= input.max_attempts) {
+      const isRetryable = status !== null && isRetryableHttpStatus(status);
+      if (!isRetryable || attempt >= input.max_attempts) {
         throw err;
       }
       // Small, deterministic delay (no jitter) to keep tests stable.
