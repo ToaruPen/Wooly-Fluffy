@@ -17,6 +17,7 @@ const resetDom = () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  vi.resetModules();
   vi.useRealTimers();
   resetDom();
 });
@@ -330,7 +331,7 @@ describe("app", () => {
       handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 5, data: {} });
       await Promise.resolve();
     });
-    expect(document.body.textContent ?? "").toContain("Recording");
+    expect(document.body.textContent ?? "").toContain("きいてるよ");
 
     await act(async () => {
       handlers.onMessage?.({
@@ -340,7 +341,7 @@ describe("app", () => {
       });
       await Promise.resolve();
     });
-    expect(document.body.textContent ?? "").not.toContain("Recording");
+    expect(document.body.textContent ?? "").not.toContain("きいてるよ");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/kiosk/stt-audio",
       expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
@@ -358,7 +359,7 @@ describe("app", () => {
     });
 
     expect(document.body.textContent ?? "").toContain("Mode: PERSONAL");
-    expect(document.body.textContent ?? "").toContain("Recording");
+    expect(document.body.textContent ?? "").toContain("きいてるよ");
     expect(document.body.textContent ?? "").toContain("覚えていい？");
 
     await act(async () => {
@@ -374,7 +375,7 @@ describe("app", () => {
     expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");
 
     const yesButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").trim() === "はい",
+      (b) => (b.textContent ?? "").includes("おぼえて！"),
     );
     expect(yesButton).toBeTruthy();
     await act(async () => {
@@ -386,7 +387,7 @@ describe("app", () => {
     );
 
     const noButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").trim() === "いいえ",
+      (b) => (b.textContent ?? "").includes("やめておく"),
     );
     expect(noButton).toBeTruthy();
     await act(async () => {
@@ -404,7 +405,7 @@ describe("app", () => {
       handlers.onError?.(new Error("boom"));
     });
 
-    expect(document.body.textContent ?? "").toContain("SSE error");
+    expect(document.body.textContent ?? "").toContain("つながらないよ");
 
     await act(async () => {
       appRoot.unmount();
@@ -590,7 +591,7 @@ describe("app", () => {
         await Promise.resolve();
       });
 
-      expect(document.body.textContent ?? "").toContain("Audio error: Network error");
+      expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
     } finally {
       if (originalCreateObjectURL === undefined) {
         delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
@@ -680,7 +681,7 @@ describe("app", () => {
         await Promise.resolve();
       });
 
-      expect(document.body.textContent ?? "").toContain("Audio error: Failed to play audio");
+      expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
 
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 2, data: {} });
@@ -759,7 +760,7 @@ describe("app", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: HTTP 500");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("ignores stale TTS responses after stop_output", async () => {
@@ -1046,7 +1047,7 @@ describe("app", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent ?? "").not.toContain("Audio error:");
+    expect(document.body.textContent ?? "").not.toContain("おとがでないみたい");
 
     await act(async () => {
       appRoot.unmount();
@@ -1140,7 +1141,7 @@ describe("app", () => {
         await Promise.resolve();
       });
 
-      expect(document.body.textContent ?? "").not.toContain("Audio error:");
+      expect(document.body.textContent ?? "").not.toContain("おとがでないみたい");
 
       await act(async () => {
         appRoot.unmount();
@@ -1223,7 +1224,7 @@ describe("app", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent ?? "").not.toContain("Audio error:");
+    expect(document.body.textContent ?? "").not.toContain("おとがでないみたい");
 
     await act(async () => {
       appRoot.unmount();
@@ -1256,7 +1257,7 @@ describe("app", () => {
       handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 1, data: {} });
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: Invalid record_stop message");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("shows audio error when record_stop data is not an object", async () => {
@@ -1285,7 +1286,7 @@ describe("app", () => {
       handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 1, data: null });
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: Invalid record_stop message");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("ignores stale start errors after record_stop cancels a start", async () => {
@@ -1331,7 +1332,7 @@ describe("app", () => {
     });
 
     expect(startPttSession).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent ?? "").toContain("Audio error: start failed");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("stops recording on invalid record_stop and allows restart", async () => {
@@ -1373,7 +1374,7 @@ describe("app", () => {
     });
 
     expect(stopSpy).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent ?? "").toContain("Audio error: Invalid record_stop message");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
 
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 3, data: {} });
@@ -1562,7 +1563,7 @@ describe("app", () => {
       });
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: Not recording");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("does not start PTT twice for duplicate record_start", async () => {
@@ -1654,14 +1655,14 @@ describe("app", () => {
       });
       await Promise.resolve();
     });
-    expect(document.body.textContent ?? "").toContain("Audio error: HTTP 500");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
 
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 3, data: {} });
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(document.body.textContent ?? "").toContain("Audio error: no mic");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("shows audio error when stopping recording fails", async () => {
@@ -1710,7 +1711,7 @@ describe("app", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: stop failed");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("uses fallback message when startPttSession rejects with a non-Error", async () => {
@@ -1751,7 +1752,7 @@ describe("app", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: Failed to start recording");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
   });
 
   it("uses fallback message when upload chain rejects with a non-Error", async () => {
@@ -1800,7 +1801,112 @@ describe("app", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent ?? "").toContain("Audio error: Failed to upload audio");
+    expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
+  });
+
+  it("consent modal traps focus with Tab and Shift+Tab", async () => {
+    vi.resetModules();
+
+    const closeSpy = vi.fn();
+    const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      close: closeSpy,
+    }));
+    vi.doMock("./sse-client", async () => {
+      const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+      return { ...actual, connectSse: connectSseMock };
+    });
+
+    vi.doMock("./components/vrm-avatar", () => ({ VrmAvatar: () => null }));
+    vi.doMock("./components/audio-player", () => ({ AudioPlayer: () => null }));
+
+    const fetchMock = vi.fn(async () => jsonResponse(200, {}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    window.history.pushState({}, "", "/kiosk");
+
+    const { createRoot: createRootFn } = await import("react-dom/client");
+    const { App: AppComponent } = await import("./app");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let appRoot: Root;
+    await act(async () => {
+      appRoot = createRootFn(container);
+      appRoot.render(<AppComponent />);
+    });
+
+    const handlers = connectSseMock.mock.calls[0][1];
+
+    await act(async () => {
+      handlers.onSnapshot({
+        state: {
+          mode: "ROOM",
+          personal_name: null,
+          phase: "idle",
+          consent_ui_visible: true,
+        },
+      });
+    });
+
+    const yesBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").includes("おぼえて！"),
+    );
+    const noBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => (b.textContent ?? "").includes("やめておく"),
+    );
+    expect(yesBtn).toBeTruthy();
+    expect(noBtn).toBeTruthy();
+
+    // First button should be auto-focused
+    expect(document.activeElement).toBe(yesBtn);
+
+    // Tab on last button should wrap to first
+    noBtn!.focus();
+    expect(document.activeElement).toBe(noBtn);
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+    await act(async () => {
+      const tabEvent = new KeyboardEvent("keydown", { key: "Tab", bubbles: true });
+      const preventSpy = vi.spyOn(tabEvent, "preventDefault");
+      dialog!.dispatchEvent(tabEvent);
+      expect(preventSpy).toHaveBeenCalled();
+    });
+    expect(document.activeElement).toBe(yesBtn);
+
+    // Shift+Tab on first button should wrap to last
+    yesBtn!.focus();
+    await act(async () => {
+      const shiftTabEvent = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+      });
+      const preventSpy = vi.spyOn(shiftTabEvent, "preventDefault");
+      dialog!.dispatchEvent(shiftTabEvent);
+      expect(preventSpy).toHaveBeenCalled();
+    });
+    expect(document.activeElement).toBe(noBtn);
+
+    // Non-Tab key should not change focus
+    noBtn!.focus();
+    await act(async () => {
+      const enterEvent = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+      dialog!.dispatchEvent(enterEvent);
+    });
+    expect(document.activeElement).toBe(noBtn);
+
+    // Tab on dialog with no focusable children is a no-op (guard for empty list)
+    const dialogButtons = dialog!.querySelectorAll("button");
+    dialogButtons.forEach((b) => b.remove());
+    await act(async () => {
+      const tabOnEmpty = new KeyboardEvent("keydown", { key: "Tab", bubbles: true });
+      dialog!.dispatchEvent(tabOnEmpty);
+    });
+
+    await act(async () => {
+      appRoot!.unmount();
+    });
+    container.remove();
   });
 
   it("renders staff login, then control UI, then locks on inactivity", async () => {
@@ -1939,6 +2045,201 @@ describe("app", () => {
       (c) => String(c[0]) === "/api/v1/staff/event",
     );
     expect(staffEventCalls.length).toBeGreaterThanOrEqual(2);
+
+    const staffEvCount = () =>
+      fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/v1/staff/event").length;
+
+    /* Space key PTT: fires when no interactive element focused */
+    const beforeSpace = staffEvCount();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+    });
+    expect(staffEvCount()).toBeGreaterThan(beforeSpace);
+
+    /* Space key PTT: ignored when button focused */
+    const beforeBtn = staffEvCount();
+    await act(async () => {
+      ptt?.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      (document.body as HTMLElement).focus();
+    });
+    expect(staffEvCount()).toBe(beforeBtn);
+
+    /* Space key PTT: ignored when role="button" focused */
+    const roleBtn = document.createElement("div");
+    roleBtn.setAttribute("role", "button");
+    roleBtn.tabIndex = 0;
+    document.body.appendChild(roleBtn);
+    const beforeRole = staffEvCount();
+    await act(async () => {
+      roleBtn.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      (document.body as HTMLElement).focus();
+    });
+    expect(staffEvCount()).toBe(beforeRole);
+    document.body.removeChild(roleBtn);
+
+    /* Space key PTT: ignored when contenteditable focused */
+    const editDiv = document.createElement("div");
+    editDiv.setAttribute("contenteditable", "true");
+    document.body.appendChild(editDiv);
+    const beforeEdit = staffEvCount();
+    await act(async () => {
+      editDiv.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      (document.body as HTMLElement).focus();
+    });
+    expect(staffEvCount()).toBe(beforeEdit);
+    document.body.removeChild(editDiv);
+
+    /* Space key PTT: allowed when contenteditable="false" focused */
+    const nonEditDiv = document.createElement("div");
+    nonEditDiv.setAttribute("contenteditable", "false");
+    nonEditDiv.tabIndex = 0;
+    document.body.appendChild(nonEditDiv);
+    const beforeNonEdit = staffEvCount();
+    await act(async () => {
+      nonEditDiv.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      (document.body as HTMLElement).focus();
+    });
+    expect(staffEvCount()).toBeGreaterThan(beforeNonEdit);
+    document.body.removeChild(nonEditDiv);
+
+    /* Space key PTT: ignored when textarea focused */
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    const beforeTa = staffEvCount();
+    await act(async () => {
+      textarea.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      (document.body as HTMLElement).focus();
+    });
+    expect(staffEvCount()).toBe(beforeTa);
+    document.body.removeChild(textarea);
+
+    /* Space key PTT: ignored when select focused */
+    const selectEl = document.createElement("select");
+    document.body.appendChild(selectEl);
+    const beforeSel = staffEvCount();
+    await act(async () => {
+      selectEl.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      (document.body as HTMLElement).focus();
+    });
+    expect(staffEvCount()).toBe(beforeSel);
+    document.body.removeChild(selectEl);
+
+    /* Space key PTT: works when activeElement is null (e.g., no focused element) */
+    Object.defineProperty(document, "activeElement", { value: null, configurable: true });
+    const beforeNull = staffEvCount();
+    try {
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+      });
+      expect(staffEvCount()).toBeGreaterThan(beforeNull);
+    } finally {
+      delete (document as unknown as Record<string, unknown>).activeElement;
+    }
+
+    /* Space key PTT: repeat while held suppresses scroll but does not fire new event */
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    });
+    const beforeHeldRepeat = staffEvCount();
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
+      );
+    });
+    expect(staffEvCount()).toBe(beforeHeldRepeat);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+    });
+
+    /* Space key PTT: ignored on key repeat (not held) */
+    const beforeRepeat = staffEvCount();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }));
+    });
+    expect(staffEvCount()).toBe(beforeRepeat);
+
+    /* Space key PTT: ignored for non-Space keys */
+    const beforeNonSpace = staffEvCount();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true }));
+    });
+    expect(staffEvCount()).toBe(beforeNonSpace);
+
+    /* blur / visibility release */
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    /* Phase: active (listening) → phaseDotActive */
+    await act(async () => {
+      handlers.onSnapshot({
+        state: { mode: "ROOM", personal_name: null, phase: "listening" },
+        pending: { count: 0 },
+      });
+    });
+    expect(document.body.textContent ?? "").toContain("Phase: Listening");
+
+    /* Phase: waiting (waiting_stt) → phaseDotWaiting */
+    await act(async () => {
+      handlers.onSnapshot({
+        state: { mode: "ROOM", personal_name: null, phase: "waiting_stt" },
+        pending: { count: 0 },
+      });
+    });
+    expect(document.body.textContent ?? "").toContain("Phase: Waiting (STT)");
+
+    /* Phase: waiting_chat → phaseDotWaiting */
+    await act(async () => {
+      handlers.onSnapshot({
+        state: { mode: "ROOM", personal_name: null, phase: "waiting_chat" },
+        pending: { count: 0 },
+      });
+    });
+    expect(document.body.textContent ?? "").toContain("Phase: Waiting (Chat)");
+
+    /* Phase: asking_consent → phaseDotWaiting */
+    await act(async () => {
+      handlers.onSnapshot({
+        state: { mode: "ROOM", personal_name: null, phase: "asking_consent" },
+        pending: { count: 0 },
+      });
+    });
+    expect(document.body.textContent ?? "").toContain("Phase: Asking Consent");
+
+    /* Phase: waiting_inner_task → phaseDotWaiting */
+    await act(async () => {
+      handlers.onSnapshot({
+        state: { mode: "ROOM", personal_name: null, phase: "waiting_inner_task" },
+        pending: { count: 0 },
+      });
+    });
+    expect(document.body.textContent ?? "").toContain("Phase: Waiting (Task)");
+
+    /* Phase: back to idle */
+    await act(async () => {
+      handlers.onSnapshot({
+        state: { mode: "ROOM", personal_name: null, phase: "idle" },
+        pending: { count: 0 },
+      });
+    });
 
     await act(async () => {
       ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));

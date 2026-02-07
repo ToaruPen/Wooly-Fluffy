@@ -47,6 +47,41 @@ const isPendingListData = (data: unknown): data is { items: PendingItem[] } => {
   return Array.isArray(record.items);
 };
 
+const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
+
+const isInteractiveElement = (el: Element | null): boolean => {
+  if (!el) return false;
+  const tag = el.tagName.toLowerCase();
+  if (INTERACTIVE_TAGS.has(tag)) return true;
+  if (el.getAttribute("role") === "button") return true;
+  const ce = el.getAttribute("contenteditable");
+  if (ce !== null && ce !== "false") return true;
+  return false;
+};
+
+const getPhaseCategory = (phase: Phase): "idle" | "active" | "waiting" => {
+  if (phase === "idle") return "idle";
+  if (phase === "listening") return "active";
+  return "waiting";
+};
+
+const getPhaseLabel = (phase: Phase): string => {
+  switch (phase) {
+    case "idle":
+      return "Idle";
+    case "listening":
+      return "Listening";
+    case "waiting_stt":
+      return "Waiting (STT)";
+    case "waiting_chat":
+      return "Waiting (Chat)";
+    case "asking_consent":
+      return "Asking Consent";
+    case "waiting_inner_task":
+      return "Waiting (Task)";
+  }
+};
+
 export const StaffPage = () => {
   const [view, setView] = useState<StaffView>("logged_out");
   const [passcode, setPasscode] = useState("");
@@ -70,19 +105,45 @@ export const StaffPage = () => {
     setLastActivityAtMs(Date.now());
   }, []);
 
-  const setIsPttHeldSafe = (isHeld: boolean) => {
+  const setIsPttHeldSafe = useCallback((isHeld: boolean) => {
     isPttHeldRef.current = isHeld;
     setIsPttHeld(isHeld);
-  };
+  }, []);
 
-  const releasePtt = () => {
+  const sendStaffEvent = useCallback(
+    async (
+      type:
+        | "STAFF_PTT_DOWN"
+        | "STAFF_PTT_UP"
+        | "STAFF_FORCE_ROOM"
+        | "STAFF_EMERGENCY_STOP"
+        | "STAFF_RESUME",
+    ) => {
+      setActionError(null);
+      try {
+        const res = await postJson("/api/v1/staff/event", { type });
+        if (res.status === 401) {
+          setView("locked");
+          return;
+        }
+        if (!res.ok) {
+          setActionError(`HTTP ${res.status}`);
+        }
+      } catch {
+        setActionError("Network error");
+      }
+    },
+    [],
+  );
+
+  const releasePtt = useCallback(() => {
     if (!isPttHeldRef.current) {
       return;
     }
     markActivity();
     setIsPttHeldSafe(false);
     void sendStaffEvent("STAFF_PTT_UP");
-  };
+  }, [markActivity, setIsPttHeldSafe, sendStaffEvent]);
 
   const refreshPending = async () => {
     setPendingError(null);
@@ -100,29 +161,6 @@ export const StaffPage = () => {
       setPendingItems(body.items);
     } catch {
       setPendingError("Network error");
-    }
-  };
-
-  const sendStaffEvent = async (
-    type:
-      | "STAFF_PTT_DOWN"
-      | "STAFF_PTT_UP"
-      | "STAFF_FORCE_ROOM"
-      | "STAFF_EMERGENCY_STOP"
-      | "STAFF_RESUME",
-  ) => {
-    setActionError(null);
-    try {
-      const res = await postJson("/api/v1/staff/event", { type });
-      if (res.status === 401) {
-        setView("locked");
-        return;
-      }
-      if (!res.ok) {
-        setActionError(`HTTP ${res.status}`);
-      }
-    } catch {
-      setActionError("Network error");
     }
   };
 
@@ -259,6 +297,57 @@ export const StaffPage = () => {
     };
   }, [view]);
 
+  /* Space key PTT: keyrepeat guard, input focus guard, blur/visibility release */
+  useEffect(() => {
+    if (view !== "logged_in") {
+      return;
+    }
+
+    const isSpaceKey = (e: KeyboardEvent) => e.code === "Space" || e.key === " ";
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isSpaceKey(e)) return;
+
+      const el = document.activeElement as HTMLElement | null;
+      if (isInteractiveElement(el)) return;
+
+      if (e.repeat) {
+        if (isPttHeldRef.current) e.preventDefault();
+        return;
+      }
+
+      if (!isPttHeldRef.current) {
+        e.preventDefault();
+        markActivity();
+        setIsPttHeldSafe(true);
+        void sendStaffEvent("STAFF_PTT_DOWN");
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!isSpaceKey(e)) return;
+      if (!isPttHeldRef.current) return;
+      e.preventDefault();
+      releasePtt();
+    };
+
+    const handleBlurOrVisibility = () => {
+      releasePtt();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlurOrVisibility);
+    document.addEventListener("visibilitychange", handleBlurOrVisibility);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlurOrVisibility);
+      document.removeEventListener("visibilitychange", handleBlurOrVisibility);
+    };
+  }, [view, markActivity, setIsPttHeldSafe, sendStaffEvent, releasePtt]);
+
   const title = view === "logged_in" ? "STAFF" : view === "locked" ? "STAFF (Locked)" : "STAFF";
 
   const modeText = snapshot
@@ -267,51 +356,78 @@ export const StaffPage = () => {
       : "ROOM"
     : "-";
 
-  const phaseText = snapshot ? snapshot.state.phase : "-";
+  const phase = snapshot?.state.phase ?? null;
+  const phaseText = phase ? getPhaseLabel(phase) : "-";
+  const phaseCategory = phase ? getPhaseCategory(phase) : "idle";
   const pendingCountText = snapshot ? String(snapshot.pending.count) : "-";
 
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <h1>{title}</h1>
-        <div className={styles.label}>Stream: /api/v1/staff/stream</div>
-        <div className={styles.label}>TTS: VOICEVOX / 四国めたん</div>
+    <div className={styles.staffPage}>
+      <header className={styles.staffHeader}>
+        <h1 className={styles.staffHeaderTitle}>{title}</h1>
+        <div className={styles.staffHeaderLabel}>Stream: /api/v1/staff/stream</div>
+        <div className={styles.staffHeaderLabel}>TTS: VOICEVOX / 四国めたん</div>
       </header>
 
       {view !== "logged_in" ? (
-        <main className={styles.content}>
-          <h2>Login</h2>
-          <div className={styles.formRow}>
-            <label className={styles.formLabel}>
-              Passcode
-              <input
-                className={styles.textInput}
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                type="password"
-                autoComplete="current-password"
-              />
-            </label>
+        <main>
+          <div className={styles.loginCard}>
+            <h2>Login</h2>
+            <div className={styles.staffFormRow}>
+              <label className={styles.staffFormLabel}>
+                Passcode
+                <input
+                  className={styles.staffTextInput}
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  type="password"
+                  autoComplete="current-password"
+                />
+              </label>
+            </div>
+            <div className={styles.staffFormRow}>
+              <button
+                type="button"
+                className={styles.staffPrimaryButton}
+                onClick={() => void submitLogin()}
+                disabled={passcode.length === 0}
+              >
+                Sign in
+              </button>
+            </div>
+            {authError ? <div className={styles.staffErrorText}>{authError}</div> : null}
           </div>
-          <div className={styles.formRow}>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={() => void submitLogin()}
-              disabled={passcode.length === 0}
-            >
-              Sign in
-            </button>
-          </div>
-          {authError ? <div className={styles.errorText}>{authError}</div> : null}
         </main>
       ) : (
         <main className={styles.staffLayout}>
-          <section className={styles.staffStatus}>
-            <div className={styles.staffStatusRow}>
-              <div className={styles.kioskBadge}>Mode: {modeText}</div>
-              <div className={styles.kioskBadge}>Phase: {phaseText}</div>
-              <div className={styles.kioskBadge}>Pending: {pendingCountText}</div>
+          <section>
+            <div className={styles.staffStatusGrid}>
+              <div className={styles.statusCard}>
+                <div className={styles.statusCardLabel}>Mode</div>
+                <div className={styles.statusCardValue}>Mode: {modeText}</div>
+              </div>
+              <div className={styles.statusCard}>
+                <div className={styles.statusCardLabel}>Phase</div>
+                <div className={styles.statusCardValue}>
+                  {phase ? (
+                    <span
+                      className={`${styles.phaseDot} ${
+                        phaseCategory === "idle"
+                          ? styles.phaseDotIdle
+                          : phaseCategory === "active"
+                            ? styles.phaseDotActive
+                            : styles.phaseDotWaiting
+                      }`}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  Phase: {phaseText}
+                </div>
+              </div>
+              <div className={styles.statusCard}>
+                <div className={styles.statusCardLabel}>Pending</div>
+                <div className={styles.statusCardValue}>Pending: {pendingCountText}</div>
+              </div>
             </div>
           </section>
 
@@ -336,12 +452,19 @@ export const StaffPage = () => {
                   releasePtt();
                 }}
               >
-                Push to talk
+                {isPttHeld ? (
+                  <>
+                    <span aria-hidden="true">🎙️ </span>
+                    話しています...
+                  </>
+                ) : (
+                  "Push to talk"
+                )}
               </button>
 
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={styles.staffSecondaryButton}
                 onClick={() => {
                   markActivity();
                   void sendStaffEvent("STAFF_FORCE_ROOM");
@@ -351,17 +474,7 @@ export const StaffPage = () => {
               </button>
               <button
                 type="button"
-                className={styles.dangerButton}
-                onClick={() => {
-                  markActivity();
-                  void sendStaffEvent("STAFF_EMERGENCY_STOP");
-                }}
-              >
-                Emergency stop
-              </button>
-              <button
-                type="button"
-                className={styles.secondaryButton}
+                className={styles.staffSecondaryButton}
                 onClick={() => {
                   markActivity();
                   void sendStaffEvent("STAFF_RESUME");
@@ -371,7 +484,21 @@ export const StaffPage = () => {
               </button>
             </div>
 
-            {actionError ? <div className={styles.errorText}>{actionError}</div> : null}
+            <hr className={styles.controlSeparator} />
+
+            <button
+              type="button"
+              className={styles.staffDangerButton}
+              onClick={() => {
+                markActivity();
+                void sendStaffEvent("STAFF_EMERGENCY_STOP");
+              }}
+            >
+              <span aria-hidden="true">⚠️ </span>
+              Emergency stop
+            </button>
+
+            {actionError ? <div className={styles.staffErrorText}>{actionError}</div> : null}
           </section>
 
           <section className={styles.staffPending}>
@@ -379,7 +506,7 @@ export const StaffPage = () => {
               <h2>Pending</h2>
               <button
                 type="button"
-                className={styles.secondaryButton}
+                className={styles.staffSecondaryButton}
                 onClick={() => {
                   markActivity();
                   void refreshPending();
@@ -389,10 +516,10 @@ export const StaffPage = () => {
               </button>
             </div>
 
-            {pendingError ? <div className={styles.errorText}>{pendingError}</div> : null}
+            {pendingError ? <div className={styles.staffErrorText}>{pendingError}</div> : null}
 
             {pendingItems.length === 0 ? (
-              <div className={styles.label}>No pending items.</div>
+              <div className={styles.staffLabel}>No pending items.</div>
             ) : (
               <div className={styles.pendingList}>
                 {pendingItems.map((item) => (
@@ -406,7 +533,7 @@ export const StaffPage = () => {
                     <div className={styles.pendingActions}>
                       <button
                         type="button"
-                        className={styles.primaryButton}
+                        className={styles.staffConfirmButton}
                         onClick={() => {
                           markActivity();
                           void mutatePending(item.id, "confirm");
@@ -416,7 +543,7 @@ export const StaffPage = () => {
                       </button>
                       <button
                         type="button"
-                        className={styles.dangerButton}
+                        className={styles.denyButton}
                         onClick={() => {
                           markActivity();
                           void mutatePending(item.id, "deny");

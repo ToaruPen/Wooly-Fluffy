@@ -104,7 +104,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
     setError(null);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#efe7d8");
+    scene.background = new THREE.Color("#eef2ff");
 
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
     camera.position.set(0, 1.35, 2.4);
