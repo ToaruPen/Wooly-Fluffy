@@ -78,7 +78,10 @@ export const KioskPage = () => {
   const [ttsPlayId, setTtsPlayId] = useState(0);
   const ttsPlayIdRef = useRef(0);
   const [mouthOpen, setMouthOpen] = useState(0);
-  const [motion, setMotion] = useState<PlayMotionCommand | null>(null);
+  const [motion, setMotion] = useState<PlayMotionCommand | null>(() => ({
+    motionId: "idle",
+    motionInstanceId: "boot-1",
+  }));
   const lastPlayedMotionInstanceIdRef = useRef<string | null>(null);
   const devMotionSeqRef = useRef(0);
   const pttSessionRef = useRef<PttSession | null>(null);

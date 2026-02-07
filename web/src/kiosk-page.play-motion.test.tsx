@@ -34,6 +34,8 @@ vi.mock("./sse-client", async () => {
 describe("KioskPage play_motion", () => {
   it("passes allowlisted play_motion to VrmAvatar and de-dupes by motion_instance_id", async () => {
     vi.resetModules();
+    latestSseHandlers = null;
+    latestMotionProps = null;
 
     const { KioskPage } = await import("./kiosk-page");
 
@@ -47,6 +49,7 @@ describe("KioskPage play_motion", () => {
     });
 
     expect(latestSseHandlers).toBeTruthy();
+    expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "boot-1" });
 
     await act(async () => {
       latestSseHandlers?.onMessage?.({

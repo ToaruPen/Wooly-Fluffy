@@ -113,6 +113,11 @@ ADR-11
 ステータス: 承認
 日付: 2026-02-05
 
+ADR-12
+タイトル: Geminiネイティブ structured outputs / function calling のために Google GenAI SDK（@google/genai）を採用
+ステータス: 承認
+日付: 2026-02-07
+
 ---
 
 ## ADR-1: データ最小化（保存/ログ）方針
@@ -584,3 +589,61 @@ KIOSKのリアリティ（待機モーション/しぐさ）を早期に検証�
 - Epic: `docs/epics/provider-layer-epic.md`（芸事/許可リスト）
 - Issue: #38（Mixamo motion playback PoC）
 - Mixamo FAQ: https://community.adobe.com/t5/mixamo-discussions/mixamo-faq-licensing-royalties-ownership-eula-and-tos/td-p/13234775
+
+---
+
+## ADR-12: Geminiネイティブ structured outputs / function calling のために Google GenAI SDK（@google/genai）を採用
+
+### ステータス
+
+承認
+
+### 日付
+
+2026-02-07
+
+### コンテキスト
+
+外部LLMとして Gemini 2.5 Flash-Lite を利用し、出力の安定性とコスト最適化を行いたい。
+合わせて、PRD/Epicで求められる「構造化出力（JSON）」「ツール呼び出し（許可リスト）」を、API仕様変更に強い形で実装・保守したい。
+
+### 選択肢
+
+#### 案A: REST を自前実装（`fetch` 直叩き）
+
+- 説明: Gemini Developer API の REST を `fetch` で直接呼ぶ。structured outputs / function calling のループも自前で構築する。
+- メリット: 依存追加が不要、挙動の完全制御が可能
+- デメリット: リクエスト/レスポンス構造の追従が必要、メンテ負荷が高くなりやすい
+
+#### 案B: 公式SDK（Google GenAI SDK: `@google/genai`）を採用
+
+- 説明: Gemini Developer API を公式SDKで呼び出す。structured outputs / function calling の表現・型を公式に寄せる。
+- メリット: 公式ドキュメント/サンプルと一致し、API更新追従のコストが下がる。Abort（キャンセル）などの実装も一貫しやすい
+- デメリット: 追加依存が増える（脆弱性/監査対応が必要）
+
+### 決定
+
+案Bを採用する。
+
+### 理由
+
+- structured outputs / function calling を「仕様どおり」「将来の変更に強く」実装する必要がある
+- 公式ドキュメントで Google GenAI SDK が推奨（GA）されている
+- Provider層は境界であり、依存追加の必然性が説明できる
+
+### 影響
+
+- server に `@google/genai` を追加し、`LLM_PROVIDER_KIND=gemini_native` をサポートする
+- `@google/genai` は optional peer dependencies（MCP）等の型参照があるため、`@modelcontextprotocol/sdk` を dev dependency として追加する
+- 依存側の ESM/CJS 混在を TypeScript が正しく解決できるよう、`server/tsconfig.json` は `module/moduleResolution: NodeNext` を採用する（自前コードは strict のまま型チェックする）
+- `LLM_API_KEY`（または `GEMINI_API_KEY` / `GOOGLE_API_KEY`）をサーバ側に安全に配置する（ログ/コミット禁止）
+- 既存の OpenAI互換 provider（LM Studio / 外部OpenAI互換）も継続サポートする
+
+### 参照
+
+- PRD: `docs/prd/wooly-fluffy.md`
+- Epic: `docs/epics/provider-layer-epic.md`（LLM Provider / 構造化出力 / ツール呼び出し）
+- Gemini API Libraries: https://ai.google.dev/gemini-api/docs/libraries
+- Gemini API Structured outputs: https://ai.google.dev/gemini-api/docs/structured-output
+- Gemini API Function calling: https://ai.google.dev/gemini-api/docs/function-calling
+- Gemini API OpenAI compatibility: https://ai.google.dev/gemini-api/docs/openai

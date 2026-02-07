@@ -25,7 +25,7 @@ PRDの主要フロー（PTT→録音→STT→会話→TTS）を、Provider層の
 
 - STT（ローカル）: `whisper.cpp` + Core ML による音声→テキスト
 - TTS（ローカル）: VOICEVOX Engine によるテキスト→音声（四国めたん speaker_id:2）
-- LLM（ローカル/外部）: ローカルはLM Studio（OpenAI互換API）をデフォルトとし、外部LLM APIは任意で切り替え可能（切り替えはサーバ再起動で行う）
+- LLM（ローカル/外部）: ローカルはLM Studio（OpenAI互換API）をデフォルトとし、外部LLM APIは任意で切り替え可能（切り替えはサーバ再起動で行う）。外部の候補として Gemini Developer API（AI Studio API key）を想定する。
 - Effect Executor: OrchestratorのEffectを実行し、結果をEventとして戻す橋渡し
 - KIOSK: ブラウザ録音（PTT）と、16kHz mono WAV への変換
 - KIOSK: VRM表示（既製VRM）+ 表情（4種）+ 音量ベースの口パク
@@ -125,10 +125,11 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 導入理由: KIOSK上でマスコット表示（VRM）を最小の実装で実現できる
 
 新規技術-4
-名称: LM Studio（OpenAI互換API）
-カテゴリ: LLM（ローカル）
+名称: LLM接続（LM Studio / Gemini Developer API）
+カテゴリ: LLM（ローカル/外部）
 既存との差: 新規導入
-導入理由: ローカルLLMをアプリからHTTPで利用でき、モデル差し替えが容易
+導入理由: OpenAI互換API（LM Studio）に加え、品質/安定性/コストの観点で外部LLM（Gemini Developer API）へ切替できる。
+補足: Geminiネイティブ（structured outputs / function calling）は公式SDK `@google/genai` を使用する。
 
 新規技術-5
 名称: Tool/Function Calling（OpenAI互換形式）
@@ -293,7 +294,7 @@ Issue名: TTS Provider（VOICEVOX）
 Issue-10
 番号: 10
 Issue名: LLM Provider（local/external + expression）
-概要: LLM Providerの切り替え（ローカル/外部）と、表情ラベル（4種）を返す構造化出力/ツール呼び出しを実装する
+概要: LLM Providerの切り替え（ローカル/外部）と、表情ラベル（4種）を返す構造化出力/ツール呼び出しを実装する。外部LLMとして Gemini（OpenAI互換 / ネイティブSDK）も選択肢に含める。
 推定行数: 200-300行
 依存: #6
 
