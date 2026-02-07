@@ -64,7 +64,7 @@ These assets/services are **not** included in the repository and must be set up 
 ### Prerequisites
 
 - **Platform**: macOS Apple Silicon (M1/M2/M3)
-- **Tools**: Homebrew, Docker Desktop
+- **Tools**: Homebrew, a Docker-compatible runtime (Docker Desktop recommended)
 - **Optional**: pixiv account (for VRoid Hub access)
 
 ### External dependencies (local-only)
@@ -102,7 +102,7 @@ ls -lah models/ggml-base.bin  # Should be ~141MB
 
 #### 2) VOICEVOX (Text-to-Speech)
 
-Run VOICEVOX engine via Docker:
+Run VOICEVOX engine via Docker (requires a Docker-compatible runtime):
 
 ```bash
 # Pull VOICEVOX Docker image
