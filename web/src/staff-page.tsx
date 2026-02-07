@@ -448,7 +448,7 @@ export const StaffPage = () => {
                 onPointerCancel={() => {
                   releasePtt();
                 }}
-                onPointerOut={() => {
+                onPointerLeave={() => {
                   releasePtt();
                 }}
               >

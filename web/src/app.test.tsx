@@ -2037,7 +2037,7 @@ describe("app", () => {
     expect(ptt).toBeTruthy();
     await act(async () => {
       ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
-      ptt?.dispatchEvent(new Event("pointerout", { bubbles: true }));
+      ptt?.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
       ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       ptt?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
     });
