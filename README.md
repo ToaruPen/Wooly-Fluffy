@@ -13,6 +13,11 @@ M0 bootstrap with a minimal HTTP server, SSE endpoints, and a web skeleton.
 npm install
 ```
 
+Note:
+
+- This repo expects you to install **devDependencies** (default `npm install` behavior).
+- When using Gemini native via `@google/genai`, TypeScript may require `@modelcontextprotocol/sdk` for type resolution.
+
 ## Checks
 
 ```
@@ -159,6 +164,11 @@ Option D: Gemini 2.5 Flash-Lite (native SDK)
 
 This repo also supports calling Gemini natively with structured outputs and function calling via the official Google GenAI SDK.
 
+TypeScript note:
+
+- `@google/genai` type definitions reference the Model Context Protocol (MCP) TypeScript SDK.
+- This repo includes `@modelcontextprotocol/sdk` as a devDependency so `npm run -w server build` / `npm run -w server typecheck` work reliably.
+
 #### 4) VRM Model (3D Avatar)
 
 Download a CC0-licensed VRM model from VRoid Hub:
@@ -211,8 +221,9 @@ If the VRMA files are present and valid, the avatar should start playing the req
 - VOICEVOX: [利用規約](https://voicevox.hiroshiba.jp/term/)
 - VRM: [CC0 License](https://vroid.pixiv.help/hc/en-us/articles/4402614652569)
 - Google GenAI SDK (`@google/genai`): [Apache-2.0](https://github.com/googleapis/js-genai/blob/main/LICENSE)
+- Model Context Protocol TypeScript SDK (`@modelcontextprotocol/sdk`): [MIT](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE)
 
-See `docs/decisions.md` (ADR-9) for full license documentation.
+See `docs/decisions.md` (ADR-8, ADR-9) for license primary-source URLs.
 
 ### Required environment variables
 

@@ -51,7 +51,7 @@ describe("KioskPage audio callback guards", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent ?? "").not.toContain("Audio error");
+    expect(container.textContent ?? "").not.toContain("おとがでないみたい");
 
     act(() => root.unmount());
     document.body.removeChild(container);

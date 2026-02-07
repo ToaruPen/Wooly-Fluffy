@@ -15,6 +15,13 @@ import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 import { DevDebugLink } from "./dev-debug-link";
 
+const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string => {
+  if (prefix === "stream") {
+    return "つながらないよ… もういちどためしてね";
+  }
+  return "おとがでないみたい… すこしまってね";
+};
+
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
   | "idle"
@@ -334,6 +341,38 @@ export const KioskPage = () => {
   const vrmExpression: ExpressionLabel = speech?.expression ?? "neutral";
   const vrmUrl = import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm";
 
+  const consentDialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isConsentVisible) {
+      return;
+    }
+    consentDialogRef.current?.querySelector("button")?.focus();
+  }, [isConsentVisible]);
+
+  const handleConsentKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Tab") {
+      return;
+    }
+    const focusable = e.currentTarget.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+
   return (
     <div className={styles.page} data-wf-tool-calls-count={toolCallsCount}>
       <header className={styles.header}>
@@ -357,7 +396,12 @@ export const KioskPage = () => {
             <div className={styles.kioskBadge}>Phase: {phase ?? "-"}</div>
           </div>
 
-          {shouldShowRecording ? <div className={styles.recordingPill}>Recording</div> : null}
+          {shouldShowRecording ? (
+            <div className={styles.recordingPill} aria-live="polite">
+              <span className={styles.recordingDot} aria-hidden="true" />
+              きいてるよ
+            </div>
+          ) : null}
 
           {speech ? (
             <div className={styles.speechBubble}>
@@ -365,28 +409,44 @@ export const KioskPage = () => {
             </div>
           ) : null}
 
-          {streamError ? <div className={styles.errorText}>SSE error: {streamError}</div> : null}
-          {audioError ? <div className={styles.errorText}>Audio error: {audioError}</div> : null}
+          {streamError ? (
+            <div className={styles.errorText} role="alert">
+              {toKidFriendlyError("stream", streamError)}
+            </div>
+          ) : null}
+          {audioError ? (
+            <div className={styles.errorText} role="alert">
+              {toKidFriendlyError("audio", audioError)}
+            </div>
+          ) : null}
         </section>
 
         {isConsentVisible ? (
           <div className={styles.modalBackdrop}>
-            <div className={styles.modal} role="dialog" aria-label="Consent">
+            <div
+              ref={consentDialogRef}
+              className={styles.modal}
+              role="dialog"
+              aria-label="Consent"
+              onKeyDown={handleConsentKeyDown}
+            >
               <div className={styles.modalTitle}>覚えていい？</div>
               <div className={styles.modalActions}>
                 <button
                   type="button"
-                  className={styles.primaryButton}
+                  className={styles.kioskConsentYes}
                   onClick={() => void sendConsent("yes")}
                 >
-                  はい
+                  <span aria-hidden="true">⭕ </span>
+                  おぼえて！
                 </button>
                 <button
                   type="button"
-                  className={styles.secondaryButton}
+                  className={styles.kioskConsentNo}
                   onClick={() => void sendConsent("no")}
                 >
-                  いいえ
+                  <span aria-hidden="true">❌ </span>
+                  やめておく
                 </button>
               </div>
               {consentError ? (
