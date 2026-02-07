@@ -6,11 +6,13 @@ export type ProviderHealth = {
 
 type MaybePromise<T> = T | Promise<T>;
 
-export type LlmProviderKind = "stub" | "local" | "external";
+export type LlmProviderKind = "stub" | "local" | "external" | "gemini_native";
 
 export type LlmExpression = Expression;
 
 export type LlmToolCall = ToolCall;
+
+export type LlmMotionId = "idle" | "greeting" | "cheer";
 
 export type Providers = {
   stt: {
@@ -27,6 +29,7 @@ export type Providers = {
       call: (input: ChatInput) => MaybePromise<{
         assistant_text: string;
         expression: LlmExpression;
+        motion_id: LlmMotionId | null;
         tool_calls: LlmToolCall[];
       }>;
     };

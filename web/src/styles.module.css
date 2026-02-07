@@ -1,9 +1,48 @@
+:root {
+  /* Color tokens – solid */
+  --color-text-primary: #2b241d;
+  --color-text-secondary: #6b4f2a;
+  --color-primary: #c26a3a;
+  --color-primary-active: #a85530;
+  --color-danger: #b54d4d;
+  --color-surface-cream: #f8edd7;
+  --color-border: #d8c39a;
+  --color-white: #fff;
+
+  /* Color tokens – alpha */
+  --color-surface-70: rgba(255, 255, 255, 0.7);
+  --color-surface-75: rgba(255, 255, 255, 0.75);
+  --color-surface-85: rgba(255, 255, 255, 0.85);
+  --color-surface-95: rgba(255, 255, 255, 0.95);
+  --color-border-80: rgba(216, 195, 154, 0.8);
+  --color-border-90: rgba(216, 195, 154, 0.9);
+  --color-border-solid: rgba(216, 195, 154, 1);
+  --color-backdrop: rgba(43, 36, 29, 0.55);
+  --color-shadow-light: rgba(43, 36, 29, 0.08);
+  --color-shadow-medium: rgba(43, 36, 29, 0.12);
+  --color-shadow-heavy: rgba(43, 36, 29, 0.2);
+  --color-recording: rgba(181, 77, 77, 0.9);
+  --color-quote-bg: rgba(43, 36, 29, 0.06);
+
+  /* Font stacks */
+  --font-serif: "Georgia", "Times New Roman", serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Radii */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-full: 999px;
+
+  /* Shadows */
+  --shadow-card: 0 10px 30px var(--color-shadow-light);
+}
+
 .page {
   min-height: 100vh;
   padding: 32px;
   background: radial-gradient(circle at top left, #fff7e2 0%, #f4e3bf 45%, #e9d2a7 100%);
-  color: #2b241d;
-  font-family: "Georgia", "Times New Roman", serif;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
 }
 
 .header {
@@ -17,23 +56,23 @@
   font-size: 14px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #6b4f2a;
+  color: var(--color-text-secondary);
 }
 
 .content {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid #d8c39a;
-  border-radius: 16px;
+  background: var(--color-surface-70);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 20px;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .snapshot {
   margin-top: 12px;
   padding: 16px;
-  background: #2b241d;
-  color: #f8edd7;
-  border-radius: 12px;
+  background: var(--color-text-primary);
+  color: var(--color-surface-cream);
+  border-radius: var(--radius-sm);
   font-size: 14px;
   overflow: auto;
 }
@@ -46,10 +85,10 @@
 
 .kioskStage {
   position: relative;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  border: 1px solid #d8c39a;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
   background: radial-gradient(
     circle at 30% 20%,
     rgba(255, 255, 255, 0.8) 0%,
@@ -71,19 +110,15 @@
 }
 
 .kioskStageTitle {
-  font-family: "Georgia", "Times New Roman", serif;
+  font-family: var(--font-serif);
   font-size: 22px;
-  color: #2b241d;
+  color: var(--color-text-primary);
 }
 
 .kioskStageHint {
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: #6b4f2a;
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -106,32 +141,24 @@
 
 .kioskBadge {
   pointer-events: none;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   padding: 8px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(216, 195, 154, 0.8);
-  color: #2b241d;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-75);
+  border: 1px solid var(--color-border-80);
+  color: var(--color-text-primary);
 }
 
 .recordingPill {
   align-self: flex-start;
   margin-top: 12px;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(181, 77, 77, 0.9);
-  color: #fff;
+  border-radius: var(--radius-full);
+  background: var(--color-recording);
+  color: var(--color-white);
 }
 
 .speechBubble {
@@ -140,18 +167,18 @@
   max-width: 680px;
   width: 100%;
   pointer-events: none;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(216, 195, 154, 0.9);
-  border-radius: 16px;
+  background: var(--color-surface-85);
+  border: 1px solid var(--color-border-90);
+  border-radius: var(--radius-md);
   padding: 14px 16px;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.12);
+  box-shadow: 0 10px 30px var(--color-shadow-medium);
 }
 
 .speechText {
-  font-family: "Georgia", "Times New Roman", serif;
+  font-family: var(--font-serif);
   font-size: 18px;
   line-height: 1.4;
-  color: #2b241d;
+  color: var(--color-text-primary);
 }
 
 .modalBackdrop {
@@ -161,22 +188,22 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(43, 36, 29, 0.55);
+  background: var(--color-backdrop);
 }
 
 .modal {
   width: min(560px, 100%);
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(216, 195, 154, 0.9);
-  border-radius: 16px;
+  background: var(--color-surface-95);
+  border: 1px solid var(--color-border-90);
+  border-radius: var(--radius-md);
   padding: 18px;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.2);
+  box-shadow: 0 10px 30px var(--color-shadow-heavy);
 }
 
 .modalTitle {
-  font-family: "Georgia", "Times New Roman", serif;
+  font-family: var(--font-serif);
   font-size: 22px;
-  color: #2b241d;
+  color: var(--color-text-primary);
 }
 
 .modalActions {
@@ -190,41 +217,40 @@
 .secondaryButton,
 .dangerButton {
   min-height: 48px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
 }
 
 .primaryButton {
-  background: #c26a3a;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-white);
 }
 
 .secondaryButton {
-  background: rgba(255, 255, 255, 0.85);
-  border-color: rgba(216, 195, 154, 1);
-  color: #2b241d;
+  background: var(--color-surface-85);
+  border-color: var(--color-border-solid);
+  color: var(--color-text-primary);
 }
 
 .dangerButton {
-  background: #b54d4d;
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-white);
+}
+
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible,
+.dangerButton:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .errorText {
   margin-top: 10px;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: #b54d4d;
+  color: var(--color-danger);
 }
 
 .formRow {
@@ -235,23 +261,24 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: #2b241d;
+  color: var(--color-text-primary);
 }
 
 .textInput {
   min-height: 48px;
-  border-radius: 12px;
-  border: 1px solid rgba(216, 195, 154, 1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-solid);
   padding: 10px 12px;
   font-size: 16px;
-  background: rgba(255, 255, 255, 0.85);
-  color: #2b241d;
+  background: var(--color-surface-85);
+  color: var(--color-text-primary);
+}
+
+.textInput:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .staffLayout {
@@ -260,11 +287,11 @@
 }
 
 .staffStatus {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid #d8c39a;
-  border-radius: 16px;
+  background: var(--color-surface-70);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 14px;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .staffStatusRow {
@@ -274,11 +301,11 @@
 }
 
 .staffControls {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid #d8c39a;
-  border-radius: 16px;
+  background: var(--color-surface-70);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 14px;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .staffControlGrid {
@@ -290,32 +317,34 @@
 .pttButton,
 .pttButtonActive {
   min-height: 72px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 18px;
 }
 
 .pttButton {
-  background: #c26a3a;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-white);
 }
 
 .pttButtonActive {
-  background: #a85530;
-  color: #fff;
+  background: var(--color-primary-active);
+  color: var(--color-white);
+}
+
+.pttButton:focus-visible,
+.pttButtonActive:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .staffPending {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid #d8c39a;
-  border-radius: 16px;
+  background: var(--color-surface-70);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 14px;
-  box-shadow: 0 10px 30px rgba(43, 36, 29, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .pendingHeader {
@@ -332,30 +361,26 @@
 }
 
 .pendingCard {
-  border: 1px solid rgba(216, 195, 154, 1);
-  border-radius: 16px;
+  border: 1px solid var(--color-border-solid);
+  border-radius: var(--radius-md);
   padding: 12px;
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--color-surface-75);
 }
 
 .pendingTitle {
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: #2b241d;
+  color: var(--color-text-primary);
 }
 
 .pendingQuote {
   margin-top: 8px;
   padding: 10px;
-  border-radius: 12px;
-  background: rgba(43, 36, 29, 0.06);
-  font-family: "Georgia", "Times New Roman", serif;
+  border-radius: var(--radius-sm);
+  background: var(--color-quote-bg);
+  font-family: var(--font-serif);
   font-size: 14px;
-  color: #2b241d;
+  color: var(--color-text-primary);
 }
 
 .pendingActions {
@@ -377,5 +402,18 @@
   .pttButton,
   .pttButtonActive {
     grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
 }

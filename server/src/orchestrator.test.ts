@@ -109,6 +109,63 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("emits PLAY_MOTION effect from CHAT_RESULT when motion_id is allowlisted", () => {
+    const base = createInitialState(0);
+    const waitingChat: OrchestratorState = {
+      ...base,
+      phase: "waiting_chat",
+      request_seq: 1,
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingChat,
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "やったー",
+        request_id: "chat-1",
+        expression: "happy",
+        motion_id: "cheer",
+        tool_calls: [],
+      },
+      1000,
+    );
+
+    expect(result.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "happy" },
+      { type: "PLAY_MOTION", motion_id: "cheer", motion_instance_id: "motion-chat-1" },
+      { type: "SAY", text: "やったー" },
+    ]);
+  });
+
+  it("ignores invalid motion_id in CHAT_RESULT (including prototype keys)", () => {
+    const base = createInitialState(0);
+    const waitingChat: OrchestratorState = {
+      ...base,
+      phase: "waiting_chat",
+      request_seq: 1,
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingChat,
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "ok",
+        request_id: "chat-1",
+        expression: "neutral",
+        motion_id: "toString",
+        tool_calls: [],
+      },
+      1000,
+    );
+
+    expect(result.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "SAY", text: "ok" },
+    ]);
+  });
+
   it("switches to personal mode with command", () => {
     const base = createInitialState(0);
     const state: OrchestratorState = {
