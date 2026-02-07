@@ -2,7 +2,7 @@ export type Mode = "ROOM" | "PERSONAL";
 
 export type Expression = "neutral" | "happy" | "sad" | "surprised";
 
-export type MotionId = "idle" | "greeting" | "cheer";
+type MotionId = "idle" | "greeting" | "cheer";
 
 const motionIdAllowlist: Record<MotionId, true> = {
   idle: true,
