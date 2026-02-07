@@ -4,115 +4,95 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Wooly-Fluffy is a "mascot LLM" application for an after-school program. A 3D VRM avatar (KIOSK page) interacts with users via speech, powered by STT (whisper.cpp), LLM (OpenAI-compatible API), and TTS (VOICEVOX). A separate STAFF page provides a control panel. The server uses Node.js native HTTP (no Express) with SQLite persistence.
+"Mascot LLM" for an after-school program. VRM avatar (KIOSK) talks to users via STT→LLM→TTS pipeline. STAFF page is the control panel. Node.js native HTTP server (no Express) + React 18 + Vite frontend. npm workspaces: `server/` and `web/`.
 
-## Monorepo Structure
-
-npm workspaces with two packages:
-
-- `server/` — Node.js HTTP server (ESM, `"type": "module"`). Providers (STT/TTS/LLM), orchestrator, effect executor, tools, SQLite store, SSE streaming, graceful shutdown.
-- `web/` — React 18 + Vite frontend. Three.js + @pixiv/three-vrm for 3D avatar. Two pages: `/kiosk` (avatar + PTT) and `/staff` (control panel).
-
-Tests live alongside source files (`*.test.ts` / `*.test.tsx`). E2E tests are in `web/e2e/`.
-
-## Commands
+## Non-obvious Commands
 
 ```bash
-# Install
-npm install
-
-# All checks (what CI runs)
-npm run typecheck          # tsc --noEmit for both workspaces
-npm run lint               # ESLint for both workspaces
-npm run test               # Vitest for both workspaces
-npm run coverage           # Vitest with 100% coverage gate
-npm run deadcode           # Knip dead code detection
-npm run format:check       # Prettier (changed files only)
-
-# Single workspace
-npm run -w server test     # Server tests only
-npm run -w web test        # Web tests only
-npm run -w server coverage
-npm run -w web coverage
-
-# Single test file (vitest run with filter)
+# Single test file (workspace flag + vitest filter)
 npx -w server vitest run src/store.test.ts
 npx -w web vitest run src/lib/wav.test.ts
 
-# Build
-npm run -w server build    # tsc → dist/
-npm run -w web build       # vite build
+# E2E (Playwright, first time needs install)
+npm run -w web e2e:install
+npm run -w web e2e
 
-# Run
-npm run -w server start    # Builds then runs (HOST=127.0.0.1, PORT=3000)
-npm run -w web dev         # Vite dev server (port 5173, proxies /api → :3000)
-
-# E2E (Playwright, Chromium)
-npm run -w web e2e:install # First time
-npm run -w web e2e         # Requires server + web running
-
-# Formatting
-npm run format             # Auto-fix changed files
+# Formatting applies only to changed files
+npm run format
 ```
 
-## Architecture
+## Architecture (Big Picture)
 
-### Server (`server/src/`)
+Server request flow: `http-server.ts` → route matching → `orchestrator.ts` → providers (STT/TTS/LLM) → `effect-executor.ts` → SSE response
 
-Request flow: `http-server.ts` → route matching → `orchestrator.ts` → providers → `effect-executor.ts` → SSE response
+Web routing: `app.tsx` → `/kiosk` (VRM avatar + PTT) or `/staff` (control panel). Three.js + @pixiv/three-vrm for 3D rendering.
 
-- **`http-server.ts`** — Native HTTP server. Routes: `/health`, `/api/v1/*`. Exports `createHttpServer()`.
-- **`orchestrator.ts`** — Coordinates STT→LLM→TTS pipeline for a conversation turn.
-- **`effect-executor.ts`** — Executes side effects (TTS synthesis, tool calls) from orchestrator output.
-- **`providers/`** — Abstraction layer for external services:
-  - `stt-provider.ts` — whisper.cpp CLI wrapper
-  - `tts-provider.ts` — VOICEVOX HTTP API
-  - `llm-provider.ts` — OpenAI-compatible chat completion (streaming)
-  - `types.ts` — Shared provider type definitions
-- **`tools/`** — LLM function-calling tools (`tool-executor.ts`, `get-weather.ts`)
-- **`store.ts`** — SQLite via better-sqlite3 (session state, housekeeping)
-- **`access-control.ts`** — LAN-only restriction for STAFF endpoints
-- **`graceful-shutdown.ts`** — Connection tracking, SIGINT/SIGTERM handling
-- **`multipart.ts`** — Audio upload parsing via busboy
-- **`main.ts`** — Entry point (excluded from coverage)
+Tests live alongside source (`*.test.ts`). E2E tests in `web/e2e/`.
 
-### Web (`web/src/`)
+## Constraints
 
-- **`app.tsx`** — Router: `/kiosk` → `kiosk-page.tsx`, `/staff` → `staff-page.tsx`
-- **`kiosk-page.tsx`** — Avatar display, PTT recording, SSE event handling
-- **`staff-page.tsx`** — Login, PTT control, pending interaction list
-- **`components/vrm-avatar.tsx`** — Three.js scene with VRM model loading
-- **`components/audio-player.tsx`** — TTS audio playback
-- **`kiosk-*.ts`** — Kiosk-specific logic (PTT, audio capture, expressions, motion, tool calls)
-- **`sse-client.ts`** — Server-Sent Events client
-- **`api.ts`** — HTTP API client
-- **`lib/wav.ts`** — WAV encoding utilities
+- **Coverage: 100%** — Both workspaces. `server/src/main.ts` is the only exclusion.
+- **No `console.log`** — ESLint error. Use `console.warn` or `console.error`.
+- **No direct `fs` imports** — ESLint forbids `node:fs` / `fs` (data minimization).
+- **Data minimization** — Never persist conversation text, audio, or full STT transcripts.
+- **Dynamic verification** — Runtime behavior changes (SSE, shutdown, timers, I/O, provider calls) require tests with explicit timeouts.
 
-## Key Constraints
+## Source of Truth Hierarchy
 
-- **Coverage: 100%** — Both workspaces enforce 100% statement/branch/function/line coverage. `server/src/main.ts` is the only exclusion.
-- **No `console.log`** — ESLint forbids it. Use `console.warn` or `console.error` only.
-- **No direct `fs` imports** — ESLint restricts `node:fs` / `fs` imports (data minimization policy).
-- **Data minimization** — Do not persist conversation text, audio, or full STT transcripts.
-- **Dynamic verification** — Changes to runtime behavior (SSE, shutdown, timers, I/O, provider calls) require integration or smoke tests with explicit timeouts.
-- **SoT hierarchy** — PRD (`docs/prd/`) > Epic (`docs/epics/`) > ADRs (`docs/decisions.md`) > Code. Stop and ask if contradictions are found.
+PRD (`docs/prd/`) > Epic (`docs/epics/`) > ADRs (`docs/decisions.md`) > Code. If contradiction found → STOP, cite references, ask human.
 
-## Environment Variables (Server)
+## Non-negotiables
 
-Required: `STAFF_PASSCODE`. For full functionality: `WHISPER_CPP_CLI_PATH`, `WHISPER_CPP_MODEL_PATH`, `LLM_PROVIDER_KIND` (`local`/`external`/`stub`), `LLM_BASE_URL`, `LLM_MODEL`. External LLM also needs `LLM_API_KEY`. Optional: `DB_PATH`, `VOICEVOX_ENGINE_URL`, `HOST`, `PORT`.
+- Do not implement features not in PRD/Epic.
+- Do not mix unrelated changes in one branch.
+- Bug fixes require a test that fails before and passes after.
+- Dependency additions require explicit agreement + rationale in Epic/ADR.
 
-## External Dependencies (Not in Repo)
+## Agentic-SDD: Development Cycle Protocol
 
-- **whisper.cpp** — STT, built with optional Core ML (macOS Apple Silicon)
-- **VOICEVOX** — TTS, Docker container on port 50021
-- **LLM** — OpenAI-compatible API (LM Studio local or external provider)
-- **VRM model** — 3D avatar at `web/public/assets/vrm/mascot.vrm` (CC0 licensed)
-- **VRMA motions** — `web/public/assets/motions/{idle,greeting,cheer}.vrma`
+0) Bootstrap
+- Read this file and the minimum necessary rule/command file under `.agent/` for the next action.
 
-## CI
+1) Entry decision
+- No PRD: `/create-prd`
+- PRD exists but no Epic: `/create-epic`
+- Epic exists but no Issues / not split: `/create-issues`
+- Issues exist: ask the user to choose `/impl` vs `/tdd` (do not choose on your own)
 
-GitHub Actions (`.github/workflows/ci.yml`): format check → filename check → naming check → npm audit → typecheck → lint → build server → build web → Playwright E2E → coverage → deadcode. 10-minute timeout.
+2) Implement one Issue
+- `/estimation` (Full estimate; 11 sections) -> user approval -> `/impl` or `/tdd` -> tests -> gates
+- Use `/sync-docs` whenever you suspect drift, and always before creating a PR
 
-## Agentic-SDD Workflow
+3) PR / merge
+- Only create a PR after `/review` passes; do not change anything outside the Issue scope
 
-Development follows the Agentic-SDD cycle: PRD → Epic → Issues → Estimation → Implementation → Review → PR. Scripts in `scripts/` automate this. See root `AGENTS.md` for the full protocol and command index.
+### Worktree / Parallel Work
+
+- One Issue = one branch = one worktree (never mix changes)
+- Do not edit PRD/Epic across parallel branches; serialize SoT changes
+- Use `./scripts/worktree.sh check` before applying `parallel-ok`
+
+### Command Index
+
+- `/create-prd`: create a PRD (7 questions)
+- `/create-epic`: create an Epic (requires 3 lists)
+- `/generate-project-config`: generate project-specific skills/rules from an Epic
+- `/create-issues`: split an Epic into Issues
+- `/estimation`: write a Full estimate (11 sections) and get approval
+- `/impl`: implement an Issue (estimate required)
+- `/tdd`: implement via TDD (red -> green -> refactor)
+- `/review-cycle`: local review loop
+- `/review`: definition-of-done check
+- `/create-pr`: create a PR (gh)
+- `/sync-docs`: check consistency across PRD/Epic/code
+- `/worktree`: manage git worktrees
+
+### Note on slash commands
+
+- Built-in skills/commands do not execute this repo's Agentic-SDD commands under `.agent/commands/`.
+- To run Agentic-SDD commands, use the corresponding scripts under `./scripts/` (e.g. `./scripts/review-cycle.sh`, `./scripts/review.sh`, `./scripts/create-pr.sh`).
+
+### References
+
+- Glossary: `docs/glossary.md`
+- Decisions (ADR): `docs/decisions.md`
