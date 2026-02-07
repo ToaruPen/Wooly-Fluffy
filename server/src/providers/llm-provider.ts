@@ -146,8 +146,11 @@ const withRetry = async <T>(input: {
       }
       const status = coerceHttpStatusFromError(err);
       const isRetryable = status !== null && isRetryableHttpStatus(status);
-      if (!isRetryable || attempt >= input.max_attempts) {
+      if (!isRetryable) {
         throw err;
+      }
+      if (attempt >= input.max_attempts) {
+        break;
       }
       // Small, deterministic delay (no jitter) to keep tests stable.
       await sleepMs({ ms: 150 * attempt, signal: input.signal });
@@ -252,10 +255,7 @@ const CHAT_JSON_SCHEMA = {
 
 const createGeminiModelsClient = (apiKey: string): GeminiNativeModelsClient => {
   const ai = new GoogleGenAI({ apiKey });
-  return {
-    generateContent: (params) => ai.models.generateContent(params as any) as any,
-    get: (params) => ai.models.get(params as any) as any,
-  };
+  return ai.models as unknown as GeminiNativeModelsClient;
 };
 
 const extractGeminiText = (response: { text?: unknown }): string => {
