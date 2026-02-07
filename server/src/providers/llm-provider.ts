@@ -1,6 +1,7 @@
 import type { ChatInput, InnerTaskInput } from "../orchestrator.js";
 import type {
   LlmExpression,
+  LlmMotionId,
   LlmProviderKind,
   LlmToolCall,
   ProviderHealth,
@@ -162,22 +163,33 @@ const withRetry = async <T>(input: {
 const isExpression = (value: unknown): value is LlmExpression =>
   value === "neutral" || value === "happy" || value === "sad" || value === "surprised";
 
+const motionIdAllowlist: Record<LlmMotionId, true> = {
+  idle: true,
+  greeting: true,
+  cheer: true,
+};
+
+const isMotionId = (value: unknown): value is LlmMotionId =>
+  typeof value === "string" && Object.hasOwn(motionIdAllowlist, value);
+
 const parseChatContent = (
   content: unknown,
-): { assistant_text: string; expression: LlmExpression } => {
+): { assistant_text: string; expression: LlmExpression; motion_id: LlmMotionId | null } => {
   if (typeof content !== "string") {
     throw new Error("invalid_llm_content");
   }
   const parsed = JSON.parse(content) as {
     assistant_text?: unknown;
     expression?: unknown;
+    motion_id?: unknown;
   };
   if (typeof parsed.assistant_text !== "string") {
     throw new Error("invalid_llm_assistant_text");
   }
   const assistant_text = parsed.assistant_text;
   const expression = isExpression(parsed.expression) ? parsed.expression : "neutral";
-  return { assistant_text, expression };
+  const motion_id = isMotionId(parsed.motion_id) ? parsed.motion_id : null;
+  return { assistant_text, expression, motion_id };
 };
 
 const coerceToolCalls = (value: unknown): LlmToolCall[] => {
@@ -248,6 +260,10 @@ const CHAT_JSON_SCHEMA = {
   properties: {
     assistant_text: { type: "string" },
     expression: { type: "string", enum: ["neutral", "happy", "sad", "surprised"] },
+    motion_id: {
+      type: ["string", "null"],
+      enum: ["idle", "greeting", "cheer", null],
+    },
   },
   required: ["assistant_text", "expression"],
   additionalProperties: false,
@@ -395,7 +411,7 @@ export const createOpenAiCompatibleLlmProvider = (
         {
           role: "system",
           content:
-            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised"}.',
+            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; otherwise null. Never output any other motion ids.',
         },
         userMessage,
       ],
@@ -440,7 +456,7 @@ export const createOpenAiCompatibleLlmProvider = (
           {
             role: "system",
             content:
-              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised"}.',
+              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; otherwise null. Never output any other motion ids.',
           },
           userMessage,
           {
@@ -482,6 +498,7 @@ export const createOpenAiCompatibleLlmProvider = (
         return {
           assistant_text: TOOL_CALLS_FALLBACK_TEXT,
           expression: "neutral",
+          motion_id: null,
           tool_calls,
         };
       }
@@ -608,7 +625,7 @@ export const createGeminiNativeLlmProvider = (
             config: {
               abortSignal: signal,
               systemInstruction:
-                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised"}.',
+                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"}.',
               responseMimeType: "application/json",
               responseJsonSchema: CHAT_JSON_SCHEMA,
               tools: GEMINI_CHAT_TOOLS,
@@ -635,6 +652,7 @@ export const createGeminiNativeLlmProvider = (
       return {
         assistant_text: TOOL_CALLS_FALLBACK_TEXT,
         expression: "neutral",
+        motion_id: null,
         tool_calls,
       };
     }
@@ -676,6 +694,7 @@ export const createGeminiNativeLlmProvider = (
       return {
         assistant_text: TOOL_CALLS_FALLBACK_TEXT,
         expression: "neutral",
+        motion_id: null,
         tool_calls,
       };
     }
@@ -698,7 +717,7 @@ export const createGeminiNativeLlmProvider = (
             config: {
               abortSignal: signal,
               systemInstruction:
-                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised"}.',
+                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"}.',
               responseMimeType: "application/json",
               responseJsonSchema: CHAT_JSON_SCHEMA,
               tools: GEMINI_CHAT_TOOLS,
@@ -712,6 +731,7 @@ export const createGeminiNativeLlmProvider = (
       return {
         assistant_text: TOOL_CALLS_FALLBACK_TEXT,
         expression: "neutral",
+        motion_id: null,
         tool_calls,
       };
     }
@@ -847,6 +867,7 @@ export const createLlmProviderFromEnv = (options?: {
         call: () => ({
           assistant_text: "うんうん",
           expression: "neutral",
+          motion_id: null,
           tool_calls: [],
         }),
       },
