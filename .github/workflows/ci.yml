@@ -39,14 +39,14 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Format (changed files)
+      - name: Format
         run: npm run format:check
 
-      - name: Filenames (changed files)
+      - name: Filenames
         run: npm run check:filenames
 
-      - name: Naming (changed files)
-        run: npm run lint:naming:changed
+      - name: Naming
+        run: npm run lint:naming
 
       - name: Audit (prod deps, high+)
         run: npm audit --audit-level=high --omit=dev
