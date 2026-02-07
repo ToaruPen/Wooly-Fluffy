@@ -271,12 +271,13 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
           vrm.scene.add(lookAtProxy);
         }
 
-        const traverse = (vrm.scene as unknown as { traverse?: unknown }).traverse;
-        if (typeof traverse === "function") {
-          (traverse as (cb: (obj: THREE.Object3D) => void) => void)((obj: THREE.Object3D) => {
-            obj.frustumCulled = false;
-          });
-        }
+        // Call traverse as a method to preserve `this` binding (Three.js uses `this` internally).
+        const vrmScene = vrm.scene as unknown as {
+          traverse?: (cb: (obj: THREE.Object3D) => void) => void;
+        };
+        vrmScene.traverse?.((obj: THREE.Object3D) => {
+          obj.frustumCulled = false;
+        });
 
         VRMUtils.removeUnnecessaryVertices(vrm.scene);
         VRMUtils.removeUnnecessaryJoints(vrm.scene);
