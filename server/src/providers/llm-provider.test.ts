@@ -1121,7 +1121,7 @@ describe("llm-provider (Gemini native)", () => {
     });
 
     await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
-      { assistant_text: "Hello", expression: "neutral", tool_calls: [] },
+      { assistant_text: "Hello", expression: "neutral", motion_id: null, tool_calls: [] },
     );
     expect(calls).toBe(2);
   });
@@ -1391,6 +1391,7 @@ describe("llm-provider (Gemini native)", () => {
       {
         assistant_text: "ちょっと調べてみるね",
         expression: "neutral",
+        motion_id: null,
         tool_calls: [
           {
             id: "call_1",
@@ -1474,6 +1475,7 @@ describe("llm-provider (Gemini native)", () => {
       {
         assistant_text: "Hello",
         expression: "neutral",
+        motion_id: null,
         tool_calls: [],
       },
     );
@@ -1497,6 +1499,7 @@ describe("llm-provider (Gemini native)", () => {
       {
         assistant_text: "Hello",
         expression: "neutral",
+        motion_id: null,
         tool_calls: [],
       },
     );
