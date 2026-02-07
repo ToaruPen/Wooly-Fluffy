@@ -1170,6 +1170,47 @@
   }
 }
 
+.debugLayout {
+  display: grid;
+  gap: 14px;
+}
+
+.debugSection {
+  background: var(--color-surface-70);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+.debugSectionTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  margin: 0 0 10px;
+}
+
+.debugDl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.debugDl dt {
+  font-weight: 600;
+}
+
+.debugDl dd {
+  margin: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pttButton,
   .pttButtonActive,
