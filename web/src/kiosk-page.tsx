@@ -14,10 +14,7 @@ import {
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 
-const toKidFriendlyError = (
-  prefix: "stream" | "audio",
-  _raw: string,
-): string => {
+const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string => {
   if (prefix === "stream") {
     return "つながらないよ… もういちどためしてね";
   }

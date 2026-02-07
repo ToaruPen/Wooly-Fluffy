@@ -6,9 +6,9 @@
   font-display: swap;
   font-weight: 400;
   src: url("/fonts/m-plus-rounded-1c-latin-400-normal.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
-    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
-    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
@@ -25,9 +25,9 @@
   font-display: swap;
   font-weight: 500;
   src: url("/fonts/m-plus-rounded-1c-latin-500-normal.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
-    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
-    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
@@ -44,9 +44,9 @@
   font-display: swap;
   font-weight: 700;
   src: url("/fonts/m-plus-rounded-1c-latin-700-normal.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
-    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
-    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
@@ -113,10 +113,11 @@
   --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.35);
 
   /* Font */
-  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN",
-    "BIZ UDPGothic", system-ui, sans-serif;
-  --font-body: "M PLUS Rounded 1c", system-ui, -apple-system,
-    "Hiragino Kaku Gothic ProN", "BIZ UDGothic", sans-serif;
+  --font-display:
+    "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", system-ui, sans-serif;
+  --font-body:
+    "M PLUS Rounded 1c", system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "BIZ UDGothic",
+    sans-serif;
 
   /* Font sizes */
   --text-xs: 0.75rem;
@@ -250,8 +251,10 @@
   :global(*::before),
   :global(*::after) {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
     scroll-behavior: auto !important;
   }
 }
@@ -270,7 +273,6 @@
   color: var(--color-text-primary);
   font-family: var(--font-body);
 }
-
 
 .header {
   display: flex;
@@ -538,14 +540,12 @@
   font-size: var(--text-xl);
   font-weight: var(--font-weight-bold);
   cursor: pointer;
-  background: linear-gradient(
-    135deg,
-    var(--color-primary),
-    var(--color-primary-hover)
-  );
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
   color: var(--color-text-on-primary);
   box-shadow: var(--shadow-primary);
-  transition: filter var(--transition-fast), transform var(--transition-fast);
+  transition:
+    filter var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .kioskConsentYes:hover {
@@ -568,7 +568,9 @@
   cursor: pointer;
   background: var(--color-secondary);
   color: var(--color-secondary-text);
-  transition: background var(--transition-fast), transform var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .kioskConsentNo:hover {
@@ -646,7 +648,8 @@
   font-size: var(--text-base);
   background: var(--color-surface-solid);
   color: var(--color-text-primary);
-  transition: border-color var(--transition-fast),
+  transition:
+    border-color var(--transition-fast),
     box-shadow var(--transition-fast);
 }
 
@@ -724,7 +727,11 @@
   border: 1px solid var(--color-border-subtle, #e2e8f0);
   border-radius: var(--radius-2xl, 24px);
   padding: var(--space-8, 32px);
-  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1));
+  box-shadow: var(
+    --shadow-md,
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -2px rgba(0, 0, 0, 0.1)
+  );
 }
 
 .loginCard h2 {
@@ -816,11 +823,17 @@
   cursor: pointer;
   user-select: none;
   touch-action: manipulation;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
 }
 
 .pttButton {
-  background: linear-gradient(135deg, var(--color-staff-primary, #3b82f6), var(--color-staff-primary-hover, #2563eb));
+  background: linear-gradient(
+    135deg,
+    var(--color-staff-primary, #3b82f6),
+    var(--color-staff-primary-hover, #2563eb)
+  );
   border: 3px solid rgba(59, 130, 246, 0.2);
   color: #fff;
   box-shadow: var(--shadow-primary, 0 4px 14px rgba(59, 130, 246, 0.35));
@@ -841,11 +854,17 @@
 }
 
 .pttButtonActive {
-  background: linear-gradient(135deg, var(--color-staff-primary-hover, #2563eb), var(--color-staff-primary-active, #1d4ed8));
+  background: linear-gradient(
+    135deg,
+    var(--color-staff-primary-hover, #2563eb),
+    var(--color-staff-primary-active, #1d4ed8)
+  );
   border: 3px solid rgba(59, 130, 246, 0.5);
   color: #fff;
   transform: scale(0.97);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4), inset 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 2px 8px rgba(59, 130, 246, 0.4),
+    inset 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .pttButtonActive:focus-visible {
@@ -872,7 +891,9 @@
   font-size: var(--text-base, 16px);
   box-shadow: var(--shadow-danger, 0 4px 14px rgba(239, 68, 68, 0.3));
   cursor: pointer;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
 }
 
 .staffDangerButton:hover {
@@ -898,7 +919,9 @@
   min-height: 48px;
   font-size: var(--text-base, 16px);
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
 }
 
 .staffSecondaryButton:hover {
@@ -923,7 +946,9 @@
   font-size: var(--text-base, 16px);
   font-weight: 600;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.1s ease;
+  transition:
+    filter 0.15s ease,
+    transform 0.1s ease;
 }
 
 .staffPrimaryButton:hover {
@@ -948,7 +973,9 @@
   font-size: var(--text-base, 16px);
   font-weight: 600;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.1s ease;
+  transition:
+    filter 0.15s ease,
+    transform 0.1s ease;
 }
 
 .staffConfirmButton:hover {
@@ -973,7 +1000,9 @@
   font-size: var(--text-base, 16px);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
 }
 
 .denyButton:hover {
@@ -1025,7 +1054,9 @@
   border-left: 4px solid var(--color-staff-primary, #3b82f6);
   border-radius: var(--radius-md, 12px);
   padding: var(--space-3, 12px);
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .pendingCard:hover {
@@ -1092,7 +1123,9 @@
   background: var(--color-surface-solid, #ffffff);
   color: var(--color-text, #1e293b);
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .staffTextInput:focus {

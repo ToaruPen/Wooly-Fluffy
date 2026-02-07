@@ -374,8 +374,8 @@ describe("app", () => {
     });
     expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");
 
-    const yesButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("おぼえて！"),
+    const yesButton = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("おぼえて！"),
     );
     expect(yesButton).toBeTruthy();
     await act(async () => {
@@ -386,8 +386,8 @@ describe("app", () => {
       expect.objectContaining({ method: "POST" }),
     );
 
-    const noButton = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("やめておく"),
+    const noButton = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("やめておく"),
     );
     expect(noButton).toBeTruthy();
     await act(async () => {
@@ -1848,11 +1848,11 @@ describe("app", () => {
       });
     });
 
-    const yesBtn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("おぼえて！"),
+    const yesBtn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("おぼえて！"),
     );
-    const noBtn = Array.from(document.querySelectorAll("button")).find(
-      (b) => (b.textContent ?? "").includes("やめておく"),
+    const noBtn = Array.from(document.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("やめておく"),
     );
     expect(yesBtn).toBeTruthy();
     expect(noBtn).toBeTruthy();
@@ -2156,9 +2156,7 @@ describe("app", () => {
     });
     const beforeHeldRepeat = staffEvCount();
     await act(async () => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
-      );
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }));
     });
     expect(staffEvCount()).toBe(beforeHeldRepeat);
     await act(async () => {
