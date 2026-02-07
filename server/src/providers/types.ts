@@ -6,7 +6,7 @@ export type ProviderHealth = {
 
 type MaybePromise<T> = T | Promise<T>;
 
-export type LlmProviderKind = "stub" | "local" | "external";
+export type LlmProviderKind = "stub" | "local" | "external" | "gemini_native";
 
 export type LlmExpression = Expression;
 
