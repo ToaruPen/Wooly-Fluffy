@@ -1,6 +1,7 @@
 import type { ChatInput, InnerTaskInput } from "../orchestrator.js";
 import type {
   LlmExpression,
+  LlmMotionId,
   LlmProviderKind,
   LlmToolCall,
   ProviderHealth,
@@ -52,22 +53,33 @@ const withTimeout = async <T>(
 const isExpression = (value: unknown): value is LlmExpression =>
   value === "neutral" || value === "happy" || value === "sad" || value === "surprised";
 
+const motionIdAllowlist: Record<LlmMotionId, true> = {
+  idle: true,
+  greeting: true,
+  cheer: true,
+};
+
+const isMotionId = (value: unknown): value is LlmMotionId =>
+  typeof value === "string" && Object.hasOwn(motionIdAllowlist, value);
+
 const parseChatContent = (
   content: unknown,
-): { assistant_text: string; expression: LlmExpression } => {
+): { assistant_text: string; expression: LlmExpression; motion_id: LlmMotionId | null } => {
   if (typeof content !== "string") {
     throw new Error("invalid_llm_content");
   }
   const parsed = JSON.parse(content) as {
     assistant_text?: unknown;
     expression?: unknown;
+    motion_id?: unknown;
   };
   if (typeof parsed.assistant_text !== "string") {
     throw new Error("invalid_llm_assistant_text");
   }
   const assistant_text = parsed.assistant_text;
   const expression = isExpression(parsed.expression) ? parsed.expression : "neutral";
-  return { assistant_text, expression };
+  const motion_id = isMotionId(parsed.motion_id) ? parsed.motion_id : null;
+  return { assistant_text, expression, motion_id };
 };
 
 const coerceToolCalls = (value: unknown): LlmToolCall[] => {
@@ -180,7 +192,7 @@ export const createOpenAiCompatibleLlmProvider = (
         {
           role: "system",
           content:
-            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised" }.',
+            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; otherwise null. Never output any other motion ids.',
         },
         userMessage,
       ],
@@ -225,7 +237,7 @@ export const createOpenAiCompatibleLlmProvider = (
           {
             role: "system",
             content:
-              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised" }.',
+              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; otherwise null. Never output any other motion ids.',
           },
           userMessage,
           {
@@ -264,7 +276,12 @@ export const createOpenAiCompatibleLlmProvider = (
       }
       const tool_calls_2 = coerceToolCalls(followUpMessage.tool_calls);
       if (tool_calls_2.length > 0) {
-        return { assistant_text: TOOL_CALLS_FALLBACK_TEXT, expression: "neutral", tool_calls };
+        return {
+          assistant_text: TOOL_CALLS_FALLBACK_TEXT,
+          expression: "neutral",
+          motion_id: null,
+          tool_calls,
+        };
       }
       const parsed2 = parseChatContent(followUpMessage.content);
       return { ...parsed2, tool_calls };
@@ -346,7 +363,12 @@ export const createLlmProviderFromEnv = (options?: { fetch?: FetchFn }): Provide
     return {
       kind: "stub",
       chat: {
-        call: () => ({ assistant_text: "うんうん", expression: "neutral", tool_calls: [] }),
+        call: () => ({
+          assistant_text: "うんうん",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
       },
       inner_task: {
         call: (input) => {

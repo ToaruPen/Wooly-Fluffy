@@ -2,6 +2,16 @@ export type Mode = "ROOM" | "PERSONAL";
 
 export type Expression = "neutral" | "happy" | "sad" | "surprised";
 
+export type MotionId = "idle" | "greeting" | "cheer";
+
+const motionIdAllowlist: Record<MotionId, true> = {
+  idle: true,
+  greeting: true,
+  cheer: true,
+};
+
+const isMotionId = (value: string): value is MotionId => Object.hasOwn(motionIdAllowlist, value);
+
 export type ToolCall = {
   id: string;
   type: "function";
@@ -67,6 +77,7 @@ export type OrchestratorEvent =
       assistant_text: string;
       request_id: string;
       expression: Expression;
+      motion_id?: string | null;
       tool_calls: ToolCall[];
     }
   | { type: "CHAT_FAILED"; request_id: string }
@@ -461,6 +472,15 @@ export const reduceOrchestrator = (
           expression: event.expression,
         },
       ];
+
+      const motionIdRaw = event.motion_id;
+      if (typeof motionIdRaw === "string" && isMotionId(motionIdRaw)) {
+        effects.push({
+          type: "PLAY_MOTION",
+          motion_id: motionIdRaw,
+          motion_instance_id: `motion-${event.request_id}`,
+        });
+      }
       if (event.tool_calls.length > 0) {
         effects.push({
           type: "KIOSK_TOOL_CALLS",

@@ -26,7 +26,12 @@ const createStubProviders = (overrides?: {
     chat: {
       call:
         overrides?.chatCall ??
-        (async () => ({ assistant_text: "ok", expression: "neutral", tool_calls: [] })),
+        (async () => ({
+          assistant_text: "ok",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        })),
     },
     inner_task: {
       call: overrides?.innerTaskCall ?? (async () => ({ json_text: "{}" })),
@@ -317,7 +322,12 @@ describe("effect-executor", () => {
 
   it("enqueues CHAT_RESULT for CALL_CHAT", async () => {
     const providers = createStubProviders({
-      chatCall: async () => ({ assistant_text: "ok", expression: "neutral", tool_calls: [] }),
+      chatCall: async () => ({
+        assistant_text: "ok",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      }),
     });
 
     const queued: OrchestratorEvent[] = [];
@@ -357,6 +367,7 @@ describe("effect-executor", () => {
         request_id: "chat-1",
         assistant_text: "ok",
         expression: "neutral",
+        motion_id: null,
         tool_calls: [],
       },
     ]);
@@ -398,7 +409,12 @@ describe("effect-executor", () => {
 
   it("returns CHAT_RESULT synchronously when CALL_CHAT provider is sync", () => {
     const providers = createStubProviders({
-      chatCall: () => ({ assistant_text: "ok", expression: "neutral", tool_calls: [] }),
+      chatCall: () => ({
+        assistant_text: "ok",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      }),
     });
 
     const executor = createEffectExecutor({
@@ -423,6 +439,7 @@ describe("effect-executor", () => {
         request_id: "chat-1",
         assistant_text: "ok",
         expression: "neutral",
+        motion_id: null,
         tool_calls: [],
       },
     ]);

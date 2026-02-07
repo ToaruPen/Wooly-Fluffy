@@ -12,6 +12,8 @@ export type LlmExpression = Expression;
 
 export type LlmToolCall = ToolCall;
 
+export type LlmMotionId = "idle" | "greeting" | "cheer";
+
 export type Providers = {
   stt: {
     transcribe: (input: { mode: Mode; wav: Buffer }) => MaybePromise<{ text: string }>;
@@ -27,6 +29,7 @@ export type Providers = {
       call: (input: ChatInput) => MaybePromise<{
         assistant_text: string;
         expression: LlmExpression;
+        motion_id: LlmMotionId | null;
         tool_calls: LlmToolCall[];
       }>;
     };

@@ -85,6 +85,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
                   content: JSON.stringify({
                     assistant_text: "Hello",
                     expression: "happy",
+                    motion_id: null,
                   }),
                 },
               },
@@ -98,6 +99,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
       {
         assistant_text: "Hello",
         expression: "happy",
+        motion_id: null,
         tool_calls: [],
       },
     );
@@ -118,6 +120,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
                 content: JSON.stringify({
                   assistant_text: "Hello",
                   expression: "angry",
+                  motion_id: "dance",
                 }),
               },
             },
@@ -130,6 +133,109 @@ describe("llm-provider (OpenAI-compatible)", () => {
       {
         assistant_text: "Hello",
         expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      },
+    );
+  });
+
+  it("does not accept prototype keys as motion_id", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assistant_text: "Hello",
+                  expression: "neutral",
+                  motion_id: "toString",
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      {
+        assistant_text: "Hello",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      },
+    );
+  });
+
+  it("parses allowlisted motion_id", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assistant_text: "Hello",
+                  expression: "neutral",
+                  motion_id: "greeting",
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      {
+        assistant_text: "Hello",
+        expression: "neutral",
+        motion_id: "greeting",
+        tool_calls: [],
+      },
+    );
+  });
+
+  it("coerces non-string motion_id to null", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assistant_text: "Hello",
+                  expression: "neutral",
+                  motion_id: 123,
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      {
+        assistant_text: "Hello",
+        expression: "neutral",
+        motion_id: null,
         tool_calls: [],
       },
     );
@@ -422,7 +528,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
     });
 
     await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
-      { assistant_text: "Hello", expression: "neutral", tool_calls: [] },
+      { assistant_text: "Hello", expression: "neutral", motion_id: null, tool_calls: [] },
     );
   });
 
@@ -733,6 +839,7 @@ describe("llm-provider (env)", () => {
       expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).toEqual({
         assistant_text: "うんうん",
         expression: "neutral",
+        motion_id: null,
         tool_calls: [],
       });
     } finally {

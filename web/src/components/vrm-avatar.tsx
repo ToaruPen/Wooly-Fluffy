@@ -124,6 +124,8 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
     let vrm: VRM | null = null;
     let mixer: THREE.AnimationMixer | null = null;
     let currentAction: THREE.AnimationAction | null = null;
+    let oneshotFinishedHandler: ((event: unknown) => void) | null = null;
+    let autoIdleSeq = 0;
     const vrmaCache = new Map<MotionId, VRMAnimation>();
     let lastPlayedMotionInstanceId: string | null = null;
     let pendingMotion: PlayMotionCommand | null = null;
@@ -139,6 +141,15 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
       isDisposed = true;
       window.removeEventListener("resize", onResize);
       cancelAnimationFrame(rafId);
+
+      if (mixer && oneshotFinishedHandler) {
+        try {
+          mixer.removeEventListener("finished", oneshotFinishedHandler);
+        } catch {
+          // ignore
+        }
+        oneshotFinishedHandler = null;
+      }
 
       if (vrm) {
         try {
@@ -217,6 +228,15 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
           return;
         }
 
+        if (oneshotFinishedHandler) {
+          try {
+            mixer.removeEventListener("finished", oneshotFinishedHandler);
+          } catch {
+            // ignore
+          }
+          oneshotFinishedHandler = null;
+        }
+
         vrm.humanoid.resetNormalizedPose();
         if (vrm.lookAt) {
           vrm.lookAt.reset();
@@ -226,7 +246,12 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
         const clip = createVRMAnimationClip(animation, vrm);
         const nextAction = mixer.clipAction(clip);
         nextAction.enabled = true;
-        nextAction.setLoop(THREE.LoopRepeat, Infinity);
+        if (cmd.motionId === "idle") {
+          nextAction.setLoop(THREE.LoopRepeat, Infinity);
+        } else {
+          nextAction.setLoop(THREE.LoopOnce, 1);
+          nextAction.clampWhenFinished = true;
+        }
 
         if (currentAction && currentAction !== nextAction) {
           currentAction.crossFadeTo(nextAction, 0.25, false);
@@ -235,6 +260,35 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
         nextAction.reset();
         nextAction.play();
         currentAction = nextAction;
+
+        if (cmd.motionId !== "idle") {
+          const activeMixer = mixer;
+          const expectedAction = nextAction;
+          const handler = (event: unknown) => {
+            const record = event as { action?: unknown };
+            if (record?.action !== expectedAction) {
+              return;
+            }
+            try {
+              activeMixer.removeEventListener("finished", handler);
+            } catch {
+              // ignore
+            }
+            if (oneshotFinishedHandler === handler) {
+              oneshotFinishedHandler = null;
+            }
+            if (isDisposed) {
+              return;
+            }
+            if (generation !== motionGeneration) {
+              return;
+            }
+            autoIdleSeq += 1;
+            void playMotion({ motionId: "idle", motionInstanceId: `auto-idle-${autoIdleSeq}` });
+          };
+          oneshotFinishedHandler = handler;
+          activeMixer.addEventListener("finished", handler);
+        }
       } catch {
         // ignore: local-only asset may not exist
       }

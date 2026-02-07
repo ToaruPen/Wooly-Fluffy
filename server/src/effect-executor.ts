@@ -57,6 +57,7 @@ export const createEffectExecutor = (deps: {
                     request_id: effect.request_id,
                     assistant_text: result.assistant_text,
                     expression: result.expression,
+                    motion_id: result.motion_id,
                     tool_calls: result.tool_calls,
                   });
                 })
@@ -70,6 +71,7 @@ export const createEffectExecutor = (deps: {
                 request_id: effect.request_id,
                 assistant_text: result.assistant_text,
                 expression: result.expression,
+                motion_id: result.motion_id,
                 tool_calls: result.tool_calls,
               });
             }
