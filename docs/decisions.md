@@ -458,6 +458,11 @@ Local LLM:
 - Ollama: https://raw.githubusercontent.com/ollama/ollama/main/LICENSE
 - Qwen2.5 7B: https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/LICENSE
 
+External LLM (Gemini native SDK):
+
+- Google GenAI SDK (`@google/genai`): https://github.com/googleapis/js-genai/blob/main/LICENSE
+- Model Context Protocol TypeScript SDK (`@modelcontextprotocol/sdk`): https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE
+
 ### 参照
 
 - PRD: `docs/prd/wooly-fluffy.md` セクション 7

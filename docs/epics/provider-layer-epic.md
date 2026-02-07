@@ -129,7 +129,10 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 カテゴリ: LLM（ローカル/外部）
 既存との差: 新規導入
 導入理由: OpenAI互換API（LM Studio）に加え、品質/安定性/コストの観点で外部LLM（Gemini Developer API）へ切替できる。
-補足: Geminiネイティブ（structured outputs / function calling）は公式SDK `@google/genai` を使用する。
+補足:
+
+- Geminiネイティブ（structured outputs / function calling）は公式SDK `@google/genai` を使用する。
+- TypeScript のビルド/型チェックでは、`@google/genai` の型定義が MCP（Model Context Protocol）SDK を参照するため、`@modelcontextprotocol/sdk` を dev dependency としてインストールしておく（実行時にアプリが MCP を直接利用することを意味しない）。
 
 新規技術-5
 名称: Tool/Function Calling（OpenAI互換形式）
