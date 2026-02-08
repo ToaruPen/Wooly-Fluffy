@@ -22,7 +22,7 @@
 **含む:**
 
 - `ROOM` / `PERSONAL(name)` のモード遷移とタイムアウト
-- Push-to-talk（職員操作）
+- Push-to-talk（KIOSK/職員操作。KIOSK/STAFFとも hold-to-talk を前提）
 - 低センシティブの記憶候補（最大1件） + 子どもの同意 + 職員Confirm/Deny + `pending/confirmed` 永続
 - KIOSK/STAFFのRealtime（SSE）と最小UI
 - STAFF最小アクセス制御（LAN内限定/共有パスコード/自動ロック）
@@ -89,7 +89,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 
 コンポーネント-2
 名称: Web Frontend（KIOSK/STAFF）
-責務: KIOSK表示、STAFF操作（PTT/Confirm/Deny/緊急操作）、SSE受信
+責務: KIOSK表示・入力（PTT/同意UI/モーション実行）、STAFF操作（PTT/Confirm/Deny/緊急操作）、SSE受信
 デプロイ形態: 常設PC上で配信（または静的ホスティング）
 
 ### 2.3 新規技術一覧
@@ -575,7 +575,7 @@ N/A（SLA/SLOなし。単機ローカル運用を前提）
 リスク-2
 リスク: 運用上の誤操作（子どもが触る/意図しない送信）
 影響度: 高
-対策: PTTは職員操作のみ、STAFF画面はアクセス制御+自動ロック
+対策: PTTは hold-to-talk（押下中のみ収録）を前提とし、STAFFの緊急停止により入力/出力を中断できる。STAFF画面はアクセス制御+自動ロック
 
 ---
 
