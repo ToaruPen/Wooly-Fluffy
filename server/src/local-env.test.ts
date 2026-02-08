@@ -76,8 +76,8 @@ describe("local-env", () => {
         env,
         platform: "linux",
         homedir: () => "/home/x",
-        existsSync: (p) => p === "/tmp/server.env",
-        readFileSync: () => "KEEP=override\nNEW=1\n",
+        existsSync: (p: any) => p === "/tmp/server.env",
+        readFileSync: (_p: any, _options?: any): any => "KEEP=override\nNEW=1\n",
       });
       expect(env.KEEP).toBe("present");
       expect(env.NEW).toBe("1");
@@ -97,8 +97,8 @@ describe("local-env", () => {
         env,
         platform: "darwin",
         homedir: () => "/Users/test",
-        existsSync: (p) => exists(p),
-        readFileSync: (p) => read(p),
+        existsSync: (p: any) => exists(String(p)),
+        readFileSync: (p: any, _options?: any): any => read(String(p)),
       });
 
       expect(env.A).toBe("1");

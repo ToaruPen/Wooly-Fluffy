@@ -45,16 +45,16 @@ type LoadEnvDeps = {
   env: NodeJS.ProcessEnv;
   platform: string;
   homedir: () => string;
-  existsSync: (path: string) => boolean;
-  readFileSync: (path: string) => string;
+  existsSync: typeof existsSync;
+  readFileSync: typeof readFileSync;
 };
 
 const defaultDeps = (): LoadEnvDeps => ({
   env: process.env,
   platform: process.platform,
   homedir: os.homedir,
-  existsSync: (path) => existsSync(path),
-  readFileSync: (path) => readFileSync(path, "utf8"),
+  existsSync,
+  readFileSync,
 });
 
 export const loadEnvFromAppSupport = (deps: Partial<LoadEnvDeps> = {}): void => {
@@ -79,7 +79,7 @@ export const loadEnvFromAppSupport = (deps: Partial<LoadEnvDeps> = {}): void => 
       if (!d.existsSync(envPath)) {
         continue;
       }
-      const text = d.readFileSync(envPath);
+      const text = d.readFileSync(envPath, "utf8");
       const parsed = parseEnvFile(text);
       for (const [key, value] of Object.entries(parsed)) {
         if (d.env[key] === undefined) {
