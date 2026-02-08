@@ -23,7 +23,7 @@
 **含む:**
 
 - `ROOM` / `PERSONAL(name)` のモード遷移（無操作300秒で `ROOM` に戻る）
-- Push-to-talk（職員操作）で録音開始/停止を制御し、待機中は無反応にできる
+- Push-to-talk（KIOSK/職員操作）で録音開始/停止を制御し、待機中は無反応にできる（KIOSK/STAFFとも hold-to-talk を前提、STAFFは緊急停止を維持）
 - 記憶候補（低センシティブのみ）の提示 → 子どもの「はい/いいえ」 → 「はい」のみ `pending` 作成 → 職員Confirm/Deny
 - `pending` 一覧の取得と、Confirm/Deny 操作（STAFF画面）
 - STAFFアクセス制御（LAN内限定 + 共有パスコード + 自動ロック）
