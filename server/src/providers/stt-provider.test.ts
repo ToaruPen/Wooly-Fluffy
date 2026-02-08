@@ -197,6 +197,7 @@ describe("stt-provider (whisper.cpp)", () => {
       tmp_dir: tmpRoot,
       execFile: (async (file, args) => {
         void file;
+        expect(args).toContain("-np");
         const fIndex = args.indexOf("-f");
         const wavPath = fIndex >= 0 ? args[fIndex + 1] : undefined;
         if (typeof wavPath !== "string") {
@@ -214,6 +215,50 @@ describe("stt-provider (whisper.cpp)", () => {
     expect(result).toEqual({ text: "こんにちは" });
     expect(createdWavPaths.length).toBe(1);
     expect(fs.existsSync(createdWavPaths[0]!)).toBe(false);
+  });
+
+  it("retries without -np when whisper-cli rejects the flag", async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const calls: string[][] = [];
+    let wavPath: string | undefined;
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: "/path/to/whisper-cli",
+      model_path: "/path/to/model.bin",
+      tmp_dir: tmpRoot,
+      execFile: (async (file, args) => {
+        void file;
+        calls.push(args);
+
+        const fIndex = args.indexOf("-f");
+        const currentWavPath = fIndex >= 0 ? args[fIndex + 1] : undefined;
+        if (typeof currentWavPath !== "string") {
+          throw new Error("missing_wav_arg");
+        }
+        if (wavPath === undefined) {
+          wavPath = currentWavPath;
+        } else {
+          expect(currentWavPath).toBe(wavPath);
+        }
+
+        if (args.includes("-np")) {
+          const err = new Error("unknown argument") as Error & { stderr?: string };
+          err.stderr = "unknown argument: -np";
+          throw err;
+        }
+        return "こんにちは";
+      }) satisfies ExecFile,
+    });
+
+    const result = await stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
+    expect(result).toEqual({ text: "こんにちは" });
+
+    expect(calls.length).toBe(2);
+    expect(calls[0]).toContain("-np");
+    expect(calls[1]).not.toContain("-np");
+
+    expect(typeof wavPath).toBe("string");
+    expect(fs.existsSync(wavPath!)).toBe(false);
   });
 
   it("passes timeout_ms to whisper.cpp invocation", async () => {

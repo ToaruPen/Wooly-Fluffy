@@ -59,6 +59,35 @@ const classifyExecError = (cause: unknown): Error => {
   return err;
 };
 
+const isUnsupportedFlagError = (cause: unknown, flag: string): boolean => {
+  if (!(cause instanceof Error)) {
+    return false;
+  }
+  const meta = cause as Error & { stderr?: unknown; stdout?: unknown };
+
+  const stderr =
+    typeof meta.stderr === "string"
+      ? meta.stderr
+      : Buffer.isBuffer(meta.stderr)
+        ? meta.stderr.toString("utf8")
+        : "";
+  const stdout =
+    typeof meta.stdout === "string"
+      ? meta.stdout
+      : Buffer.isBuffer(meta.stdout)
+        ? meta.stdout.toString("utf8")
+        : "";
+
+  const text = `${cause.message}\n${stderr}\n${stdout}`;
+  if (!text.includes(flag)) {
+    return false;
+  }
+  return (
+    /(unknown|unrecognized|invalid)\s+(arguments?|options?|flags?)/i.test(text) ||
+    /\bbad option\b/i.test(text)
+  );
+};
+
 const healthFromPaths = (cliPath: string | null, modelPath: string | null): ProviderHealth => {
   if (!cliPath || !modelPath) {
     return { status: "unavailable" };
@@ -123,14 +152,22 @@ export const createWhisperCppSttProvider = (
       }
 
       let stdout: string;
+
+      const execOptions = { timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8" } as const;
+      const baseArgs = ["-m", configured.model, "-f", wavPath, "-l", "ja", "-nt"];
+      const preferredArgs = [...baseArgs, "-np"];
+
       try {
-        stdout = await execFile(
-          configured.cli,
-          ["-m", configured.model, "-f", wavPath, "-l", "ja", "-nt"],
-          { timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8" },
-        );
+        stdout = await execFile(configured.cli, preferredArgs, execOptions);
       } catch (cause: unknown) {
-        throw classifyExecError(cause);
+        if (!isUnsupportedFlagError(cause, "-np")) {
+          throw classifyExecError(cause);
+        }
+        try {
+          stdout = await execFile(configured.cli, baseArgs, execOptions);
+        } catch (fallbackCause: unknown) {
+          throw classifyExecError(fallbackCause);
+        }
       }
       const text = stdout.trim();
       if (!text) {
