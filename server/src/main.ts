@@ -1,3 +1,5 @@
+import "./local-env.js";
+
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
 import { join } from "node:path";
