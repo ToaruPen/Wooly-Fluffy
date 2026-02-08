@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 
-const parseEnvFile = (text: string): Record<string, string> => {
+export const parseEnvFile = (text: string): Record<string, string> => {
   const out: Record<string, string> = {};
   const lines = text.split(/\r?\n/);
   for (const rawLine of lines) {
@@ -23,9 +23,6 @@ const parseEnvFile = (text: string): Record<string, string> => {
       continue;
     }
     const key = normalized.slice(0, eqIndex).trim();
-    if (!key) {
-      continue;
-    }
     if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
       continue;
     }
@@ -44,31 +41,49 @@ const parseEnvFile = (text: string): Record<string, string> => {
   return out;
 };
 
-const loadEnvFromAppSupport = () => {
-  const envPathOverride = process.env.WOOLY_FLUFFY_ENV_PATH;
+type LoadEnvDeps = {
+  env: NodeJS.ProcessEnv;
+  platform: string;
+  homedir: () => string;
+  existsSync: (path: string) => boolean;
+  readFileSync: (path: string) => string;
+};
+
+const defaultDeps = (): LoadEnvDeps => ({
+  env: process.env,
+  platform: process.platform,
+  homedir: os.homedir,
+  existsSync: (path) => existsSync(path),
+  readFileSync: (path) => readFileSync(path, "utf8"),
+});
+
+export const loadEnvFromAppSupport = (deps: Partial<LoadEnvDeps> = {}): void => {
+  const d = { ...defaultDeps(), ...deps } satisfies LoadEnvDeps;
+
+  const envPathOverride = d.env.WOOLY_FLUFFY_ENV_PATH;
 
   const candidates = (() => {
     if (envPathOverride) {
       return [envPathOverride];
     }
-    if (process.platform !== "darwin") {
+    if (d.platform !== "darwin") {
       return [];
     }
 
-    const appSupportDir = join(os.homedir(), "Library", "Application Support", "wooly-fluffy");
+    const appSupportDir = join(d.homedir(), "Library", "Application Support", "wooly-fluffy");
     return [join(appSupportDir, "server.env"), join(appSupportDir, ".env")];
   })();
 
   for (const envPath of candidates) {
     try {
-      if (!existsSync(envPath)) {
+      if (!d.existsSync(envPath)) {
         continue;
       }
-      const text = readFileSync(envPath, "utf8");
+      const text = d.readFileSync(envPath);
       const parsed = parseEnvFile(text);
       for (const [key, value] of Object.entries(parsed)) {
-        if (process.env[key] === undefined) {
-          process.env[key] = value;
+        if (d.env[key] === undefined) {
+          d.env[key] = value;
         }
       }
       // First match wins.
