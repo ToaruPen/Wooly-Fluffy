@@ -197,6 +197,7 @@ describe("stt-provider (whisper.cpp)", () => {
       tmp_dir: tmpRoot,
       execFile: (async (file, args) => {
         void file;
+        expect(args).toContain("-np");
         const fIndex = args.indexOf("-f");
         const wavPath = fIndex >= 0 ? args[fIndex + 1] : undefined;
         if (typeof wavPath !== "string") {
@@ -214,6 +215,134 @@ describe("stt-provider (whisper.cpp)", () => {
     expect(result).toEqual({ text: "こんにちは" });
     expect(createdWavPaths.length).toBe(1);
     expect(fs.existsSync(createdWavPaths[0]!)).toBe(false);
+  });
+
+  it("retries without -np when whisper-cli rejects the flag", async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const calls: string[][] = [];
+    let wavPath: string | undefined;
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: "/path/to/whisper-cli",
+      model_path: "/path/to/model.bin",
+      tmp_dir: tmpRoot,
+      execFile: (async (file, args) => {
+        void file;
+        calls.push(args);
+
+        const fIndex = args.indexOf("-f");
+        const currentWavPath = fIndex >= 0 ? args[fIndex + 1] : undefined;
+        if (typeof currentWavPath !== "string") {
+          throw new Error("missing_wav_arg");
+        }
+        if (wavPath === undefined) {
+          wavPath = currentWavPath;
+        } else {
+          expect(currentWavPath).toBe(wavPath);
+        }
+
+        if (args.includes("-np")) {
+          const err = new Error("unknown argument") as Error & { stderr?: string };
+          err.stderr = "unknown argument: -np";
+          throw err;
+        }
+        return "こんにちは";
+      }) satisfies ExecFile,
+    });
+
+    const result = await stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
+    expect(result).toEqual({ text: "こんにちは" });
+
+    expect(calls.length).toBe(2);
+    expect(calls[0]).toContain("-np");
+    expect(calls[1]).not.toContain("-np");
+
+    expect(typeof wavPath).toBe("string");
+    expect(fs.existsSync(wavPath!)).toBe(false);
+  });
+
+  it("detects unsupported flag errors from Buffer stderr/stdout", async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const calls: string[][] = [];
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: "/path/to/whisper-cli",
+      model_path: "/path/to/model.bin",
+      tmp_dir: tmpRoot,
+      execFile: (async (_file, args) => {
+        calls.push(args);
+        if (args.includes("-np")) {
+          const err = new Error("bad option: -np") as Error & {
+            stderr?: unknown;
+            stdout?: unknown;
+          };
+          err.stderr = Buffer.from("bad option: -np", "utf8");
+          err.stdout = Buffer.from("", "utf8");
+          throw err;
+        }
+        return "ok";
+      }) satisfies ExecFile,
+    });
+
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).resolves.toEqual({
+      text: "ok",
+    });
+
+    expect(calls.length).toBe(2);
+    expect(calls[0]).toContain("-np");
+    expect(calls[1]).not.toContain("-np");
+  });
+
+  it("detects unsupported flag errors from stdout string", async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const calls: string[][] = [];
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: "/path/to/whisper-cli",
+      model_path: "/path/to/model.bin",
+      tmp_dir: tmpRoot,
+      execFile: (async (_file, args) => {
+        calls.push(args);
+        if (args.includes("-np")) {
+          const err = new Error("whisper failed") as Error & { stdout?: string };
+          err.stdout = "unrecognized option: -np";
+          throw err;
+        }
+        return "ok";
+      }) satisfies ExecFile,
+    });
+
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).resolves.toEqual({
+      text: "ok",
+    });
+    expect(calls.length).toBe(2);
+  });
+
+  it("fails when both preferred and fallback whisper-cli invocations fail", async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
+    const calls: string[][] = [];
+
+    const stt = createWhisperCppSttProvider({
+      cli_path: "/path/to/whisper-cli",
+      model_path: "/path/to/model.bin",
+      tmp_dir: tmpRoot,
+      execFile: (async (_file, args) => {
+        calls.push(args);
+        if (args.includes("-np")) {
+          const err = new Error("unknown argument: -np") as Error & { stderr?: string };
+          err.stderr = "unknown argument: -np";
+          throw err;
+        }
+        throw new Error("boom");
+      }) satisfies ExecFile,
+    });
+
+    await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toMatchObject(
+      {
+        name: "SttProcessError",
+      },
+    );
+    expect(calls.length).toBe(2);
   });
 
   it("passes timeout_ms to whisper.cpp invocation", async () => {

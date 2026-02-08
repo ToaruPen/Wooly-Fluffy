@@ -240,6 +240,19 @@ Server (required unless noted):
 - `WHISPER_CPP_CLI_PATH` (required for STT): path to `whisper-cli`
 - `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file
 
+#### Local env file (macOS)
+
+For local development on macOS, the server will also (best-effort) load environment variables from:
+
+- `~/Library/Application Support/wooly-fluffy/server.env` (preferred), or
+- `~/Library/Application Support/wooly-fluffy/.env`
+
+Values from these files only fill **missing** keys (they do not override variables already present in `process.env`).
+
+You can override the path explicitly with:
+
+- `WOOLY_FLUFFY_ENV_PATH=/absolute/path/to/server.env`
+
 Web (optional):
 
 - `VITE_VRM_URL` (optional): defaults to `/assets/vrm/mascot.vrm`
