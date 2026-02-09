@@ -1,5 +1,7 @@
 import type { ProviderHealth, Providers } from "./types.js";
 
+import { readEnvInt } from "../env.js";
+
 type FetchResponse = {
   ok: boolean;
   status: number;
@@ -143,7 +145,14 @@ export const createVoiceVoxTtsProvider = (
   const baseUrl = normalizeBaseUrl(
     options.engine_url ?? process.env.VOICEVOX_ENGINE_URL ?? "http://127.0.0.1:50021",
   );
-  const timeoutMs = options.timeout_ms ?? 2_000;
+  const timeoutMs =
+    options.timeout_ms ??
+    readEnvInt(process.env, {
+      name: "VOICEVOX_TIMEOUT_MS",
+      defaultValue: 2_000,
+      min: 200,
+      max: 60_000,
+    });
 
   const fetchFn: FetchFn =
     options.fetch ??

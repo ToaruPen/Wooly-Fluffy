@@ -187,6 +187,32 @@ describe("stt-provider (whisper.cpp)", () => {
     );
   });
 
+  it("reads timeout from env when timeout_ms is not provided", async () => {
+    const prevTimeout = process.env.WHISPER_CPP_TIMEOUT_MS;
+    try {
+      process.env.WHISPER_CPP_TIMEOUT_MS = "1234";
+
+      const stt = createWhisperCppSttProvider({
+        cli_path: "/path/to/whisper-cli",
+        model_path: "/path/to/model.bin",
+        execFile: (async (_file, _args, options) => {
+          expect(options?.timeout).toBe(1234);
+          return "ok";
+        }) satisfies ExecFile,
+      });
+
+      await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).resolves.toEqual({
+        text: "ok",
+      });
+    } finally {
+      if (prevTimeout === undefined) {
+        delete process.env.WHISPER_CPP_TIMEOUT_MS;
+      } else {
+        process.env.WHISPER_CPP_TIMEOUT_MS = prevTimeout;
+      }
+    }
+  });
+
   it("always deletes the temp wav file (success)", async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wf-stt-test-"));
     const createdWavPaths: string[] = [];
