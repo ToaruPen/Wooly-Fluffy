@@ -406,7 +406,7 @@ Orchestrator は純粋ロジック（副作用なし）として実装する:
 
 Provider方針:
 
-- timeout: STT=12s, Chat=12s, InnerTask=4s
+- timeout: STT=15s, Chat=12s, InnerTask=4s（いずれも環境変数で調整可能）
 - retry: 0（MVP）
 - cancel: 状態変化（force-room / emergency stop 等）でベストエフォートキャンセル
 
