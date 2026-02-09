@@ -7,7 +7,9 @@ import {
   createInitialState,
   createKioskSnapshot,
   createStaffSnapshot,
+  DEFAULT_ORCHESTRATOR_CONFIG,
   reduceOrchestrator,
+  type OrchestratorConfig,
   type OrchestratorEvent,
   type OrchestratorState,
 } from "./orchestrator.js";
@@ -18,6 +20,7 @@ import type { Providers } from "./providers/types.js";
 import { createWhisperCppSttProvider } from "./providers/stt-provider.js";
 import { createVoiceVoxTtsProvider } from "./providers/tts-provider.js";
 import { createLlmProviderFromEnv } from "./providers/llm-provider.js";
+import { readEnvInt } from "./env.js";
 
 const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
@@ -61,7 +64,9 @@ type StaffSession = {
 };
 
 const STAFF_SESSION_COOKIE_NAME = "wf_staff_session";
-const STAFF_SESSION_TTL_MS = 180_000;
+const STAFF_SESSION_TTL_MS_DEFAULT = 180_000;
+const SSE_KEEPALIVE_INTERVAL_MS_DEFAULT = 25_000;
+const TICK_INTERVAL_MS_DEFAULT = 1_000;
 
 const parseCookies = (cookieHeader: string): Record<string, string> => {
   const result: Record<string, string> = {};
@@ -104,8 +109,8 @@ const isPasscodeMatch = (actual: string, expected: string): boolean => {
   return timingSafeEqual(a, b);
 };
 
-const createSessionCookie = (token: string): string => {
-  const maxAge = Math.floor(STAFF_SESSION_TTL_MS / 1000);
+const createSessionCookie = (token: string, sessionTtlMs: number): string => {
+  const maxAge = Math.floor(sessionTtlMs / 1000);
   return `${STAFF_SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 };
 
@@ -127,6 +132,7 @@ const openSse = (
   res: ServerResponse,
   snapshotType: string,
   snapshotData: object,
+  keepAliveIntervalMs: number,
   onOpen: (client: SseClient) => void,
   onClose: (client: SseClient) => void,
 ) => {
@@ -167,7 +173,7 @@ const openSse = (
     res.write(": keep-alive\n\n");
   };
   writeKeepAlive();
-  keepAlive = setInterval(writeKeepAlive, 25000);
+  keepAlive = setInterval(writeKeepAlive, keepAliveIntervalMs);
 
   req.on("close", () => {
     cleanupOnce();
@@ -260,6 +266,40 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   const getRemoteAddress =
     options.get_remote_address ?? ((req: IncomingMessage) => String(req.socket.remoteAddress));
 
+  const staffSessionTtlMs = readEnvInt(process.env, {
+    name: "WF_STAFF_SESSION_TTL_MS",
+    defaultValue: STAFF_SESSION_TTL_MS_DEFAULT,
+    min: 10_000,
+    max: 24 * 60 * 60 * 1000,
+  });
+  const sseKeepAliveIntervalMs = readEnvInt(process.env, {
+    name: "WF_SSE_KEEPALIVE_INTERVAL_MS",
+    defaultValue: SSE_KEEPALIVE_INTERVAL_MS_DEFAULT,
+    min: 1_000,
+    max: 5 * 60 * 1000,
+  });
+  const tickIntervalMs = readEnvInt(process.env, {
+    name: "WF_TICK_INTERVAL_MS",
+    defaultValue: TICK_INTERVAL_MS_DEFAULT,
+    min: 50,
+    max: 60_000,
+  });
+
+  const orchestratorConfig: OrchestratorConfig = {
+    consent_timeout_ms: readEnvInt(process.env, {
+      name: "WF_CONSENT_TIMEOUT_MS",
+      defaultValue: DEFAULT_ORCHESTRATOR_CONFIG.consent_timeout_ms,
+      min: 1_000,
+      max: 10 * 60 * 1000,
+    }),
+    inactivity_timeout_ms: readEnvInt(process.env, {
+      name: "WF_INACTIVITY_TIMEOUT_MS",
+      defaultValue: DEFAULT_ORCHESTRATOR_CONFIG.inactivity_timeout_ms,
+      min: 10_000,
+      max: 60 * 60 * 1000,
+    }),
+  };
+
   const staffSessions = new Map<string, StaffSession>();
 
   const validateStaffSession = (token: string): boolean => {
@@ -276,7 +316,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
   const createStaffSession = (): string => {
     const token = randomUUID();
-    staffSessions.set(token, { expires_at_ms: nowMs() + STAFF_SESSION_TTL_MS });
+    staffSessions.set(token, { expires_at_ms: nowMs() + staffSessionTtlMs });
     return token;
   };
 
@@ -284,7 +324,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     if (!validateStaffSession(token)) {
       return false;
     }
-    staffSessions.set(token, { expires_at_ms: nowMs() + STAFF_SESSION_TTL_MS });
+    staffSessions.set(token, { expires_at_ms: nowMs() + staffSessionTtlMs });
     return true;
   };
 
@@ -378,7 +418,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   });
 
   const processEvent = (event: OrchestratorEvent, now: number) => {
-    const result = reduceOrchestrator(state, event, now);
+    const result = reduceOrchestrator(state, event, now, orchestratorConfig);
     state = result.next_state;
     broadcastSnapshotsIfChanged();
 
@@ -472,7 +512,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           }
 
           const token = createStaffSession();
-          res.setHeader("set-cookie", createSessionCookie(token));
+          res.setHeader("set-cookie", createSessionCookie(token, staffSessionTtlMs));
           sendJson(res, 200, okBody);
         })
         .catch((err: unknown) => {
@@ -500,7 +540,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         return;
       }
 
-      res.setHeader("set-cookie", createSessionCookie(token));
+      res.setHeader("set-cookie", createSessionCookie(token, staffSessionTtlMs));
       sendJson(res, 200, okBody);
       return;
     }
@@ -515,6 +555,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         res,
         "kiosk.snapshot",
         createKioskSnapshot(state),
+        sseKeepAliveIntervalMs,
         (client) => {
           kioskClients.add(client);
         },
@@ -542,6 +583,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         res,
         "staff.snapshot",
         createStaffSnapshot(state, store.listPending().length),
+        sseKeepAliveIntervalMs,
         (client) => {
           staffClients.add(client);
           staffSseSessions.set(client, token);
@@ -776,7 +818,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   const tickTimer = setInterval(() => {
     sweepExpiredStaffSseClients();
     enqueueEvent({ type: "TICK" }, nowMs());
-  }, 1000);
+  }, tickIntervalMs);
   tickTimer.unref();
   server.on("close", () => {
     clearInterval(tickTimer);

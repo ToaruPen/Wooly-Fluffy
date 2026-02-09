@@ -296,6 +296,11 @@ beforeEach(async () => {
   delete process.env.TEST_STT_THROW;
   delete process.env.TEST_STT_HEALTH;
   delete process.env.TEST_STT_DELAY_MS;
+  delete process.env.WF_STAFF_SESSION_TTL_MS;
+  delete process.env.WF_SSE_KEEPALIVE_INTERVAL_MS;
+  delete process.env.WF_TICK_INTERVAL_MS;
+  delete process.env.WF_CONSENT_TIMEOUT_MS;
+  delete process.env.WF_INACTIVITY_TIMEOUT_MS;
 
   store = createStore({ db_path: ":memory:" });
   server = createHttpServer({
@@ -351,6 +356,11 @@ afterEach(async () => {
   delete process.env.TEST_STT_THROW;
   delete process.env.TEST_STT_HEALTH;
   delete process.env.TEST_STT_DELAY_MS;
+  delete process.env.WF_STAFF_SESSION_TTL_MS;
+  delete process.env.WF_SSE_KEEPALIVE_INTERVAL_MS;
+  delete process.env.WF_TICK_INTERVAL_MS;
+  delete process.env.WF_CONSENT_TIMEOUT_MS;
+  delete process.env.WF_INACTIVITY_TIMEOUT_MS;
   staffCookie = "";
 
   vi.unstubAllGlobals();
@@ -607,6 +617,60 @@ describe("http-server", () => {
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "payload_too_large", message: "Payload Too Large" },
     });
+  });
+
+  it("sets staff session cookie Max-Age from default TTL", async () => {
+    const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passcode: "test-pass" }),
+    });
+
+    expect(response.status).toBe(200);
+    const setCookie = response.headers["set-cookie"];
+    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    expect(String(first ?? "")).toContain("Max-Age=180");
+  });
+
+  it("sets staff session cookie Max-Age from env override", async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    process.env.WF_STAFF_SESSION_TTL_MS = "60000";
+
+    server = createHttpServer({
+      store,
+      stt_provider: {
+        transcribe: (input) => ({
+          text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
+        }),
+        health: () => ({ status: "ok" }),
+      },
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("server address unavailable");
+    }
+    port = address.port;
+
+    const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passcode: "test-pass" }),
+    });
+
+    expect(response.status).toBe(200);
+    const setCookie = response.headers["set-cookie"];
+    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    expect(String(first ?? "")).toContain("Max-Age=60");
   });
 
   it("returns 200 for staff keepalive with valid session", async () => {
