@@ -208,6 +208,173 @@ describe("sse-client", () => {
     client.close();
     expect(source.closed).toBe(true);
   });
+
+  it("does not reconnect when VITE_SSE_RECONNECT_ENABLED=false", async () => {
+    vi.resetModules();
+
+    const originalEnabled = import.meta.env.VITE_SSE_RECONNECT_ENABLED;
+    import.meta.env.VITE_SSE_RECONNECT_ENABLED = "false";
+
+    try {
+      class FakeEventSource {
+        static instances: FakeEventSource[] = [];
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        closed = false;
+        url: string;
+
+        constructor(url: string) {
+          this.url = url;
+          FakeEventSource.instances.push(this);
+        }
+
+        close() {
+          this.closed = true;
+        }
+      }
+
+      vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+
+      const { connectSse } = await import("./sse-client");
+
+      const onSnapshot = vi.fn();
+      const onError = vi.fn();
+      connectSse("/api/v1/kiosk/stream", { onSnapshot, onError });
+
+      const source = FakeEventSource.instances[0];
+      source.onerror?.(new Event("error"));
+
+      expect(onError).toHaveBeenCalled();
+      expect(FakeEventSource.instances.length).toBe(1);
+      expect(source.closed).toBe(true);
+    } finally {
+      import.meta.env.VITE_SSE_RECONNECT_ENABLED = originalEnabled;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reconnects when VITE_SSE_RECONNECT_ENABLED=true", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+
+    const originalEnabled = import.meta.env.VITE_SSE_RECONNECT_ENABLED;
+    const originalBaseDelay = import.meta.env.VITE_SSE_RECONNECT_BASE_DELAY_MS;
+    const originalMaxDelay = import.meta.env.VITE_SSE_RECONNECT_MAX_DELAY_MS;
+    import.meta.env.VITE_SSE_RECONNECT_ENABLED = "true";
+    import.meta.env.VITE_SSE_RECONNECT_BASE_DELAY_MS = "100";
+    import.meta.env.VITE_SSE_RECONNECT_MAX_DELAY_MS = "100";
+
+    try {
+      class FakeEventSource {
+        static instances: FakeEventSource[] = [];
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        closed = false;
+        url: string;
+
+        constructor(url: string) {
+          this.url = url;
+          FakeEventSource.instances.push(this);
+        }
+
+        close() {
+          this.closed = true;
+        }
+      }
+
+      vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+
+      const { connectSse } = await import("./sse-client");
+
+      const onSnapshot = vi.fn();
+      const onError = vi.fn();
+      connectSse("/api/v1/kiosk/stream", { onSnapshot, onError });
+
+      const first = FakeEventSource.instances[0];
+      first.onerror?.(new Event("error"));
+
+      expect(onError).toHaveBeenCalled();
+      expect(first.closed).toBe(true);
+      expect(FakeEventSource.instances.length).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(FakeEventSource.instances.length).toBe(2);
+      const second = FakeEventSource.instances[1];
+
+      second.onopen?.(new Event("open"));
+
+      second.onmessage?.({
+        data: JSON.stringify({
+          type: "kiosk.snapshot",
+          seq: 1,
+          data: { state: { mode: "ROOM" } },
+        }),
+      } as MessageEvent);
+      expect(onSnapshot).toHaveBeenCalledWith({ state: { mode: "ROOM" } });
+    } finally {
+      import.meta.env.VITE_SSE_RECONNECT_ENABLED = originalEnabled;
+      import.meta.env.VITE_SSE_RECONNECT_BASE_DELAY_MS = originalBaseDelay;
+      import.meta.env.VITE_SSE_RECONNECT_MAX_DELAY_MS = originalMaxDelay;
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not reconnect after close()", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+
+    const originalEnabled = import.meta.env.VITE_SSE_RECONNECT_ENABLED;
+    const originalBaseDelay = import.meta.env.VITE_SSE_RECONNECT_BASE_DELAY_MS;
+    const originalMaxDelay = import.meta.env.VITE_SSE_RECONNECT_MAX_DELAY_MS;
+    import.meta.env.VITE_SSE_RECONNECT_ENABLED = "true";
+    import.meta.env.VITE_SSE_RECONNECT_BASE_DELAY_MS = "100";
+    import.meta.env.VITE_SSE_RECONNECT_MAX_DELAY_MS = "100";
+
+    try {
+      class FakeEventSource {
+        static instances: FakeEventSource[] = [];
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+        closed = false;
+        url: string;
+
+        constructor(url: string) {
+          this.url = url;
+          FakeEventSource.instances.push(this);
+        }
+
+        close() {
+          this.closed = true;
+        }
+      }
+
+      vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+
+      const { connectSse } = await import("./sse-client");
+
+      const onSnapshot = vi.fn();
+      const client = connectSse("/api/v1/kiosk/stream", { onSnapshot });
+      const first = FakeEventSource.instances[0];
+      first.onerror?.(new Event("error"));
+
+      client.close();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(FakeEventSource.instances.length).toBe(1);
+      expect(first.closed).toBe(true);
+    } finally {
+      import.meta.env.VITE_SSE_RECONNECT_ENABLED = originalEnabled;
+      import.meta.env.VITE_SSE_RECONNECT_BASE_DELAY_MS = originalBaseDelay;
+      import.meta.env.VITE_SSE_RECONNECT_MAX_DELAY_MS = originalMaxDelay;
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("getPage", () => {

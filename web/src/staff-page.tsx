@@ -3,6 +3,7 @@ import { getJson, postEmpty, postJson, readJson } from "./api";
 import { connectSse, type ServerMessage } from "./sse-client";
 import styles from "./styles.module.css";
 import { DevDebugLink } from "./dev-debug-link";
+import { readViteInt } from "./env";
 
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
@@ -37,8 +38,18 @@ type PendingItem = {
 
 type StaffView = "logged_out" | "locked" | "logged_in";
 
-const INACTIVITY_LOCK_MS = 180_000;
-const KEEPALIVE_INTERVAL_MS = 30_000;
+const INACTIVITY_LOCK_MS = readViteInt({
+  name: "VITE_STAFF_INACTIVITY_LOCK_MS",
+  defaultValue: 180_000,
+  min: 10_000,
+  max: 24 * 60 * 60 * 1000,
+});
+const KEEPALIVE_INTERVAL_MS = readViteInt({
+  name: "VITE_STAFF_KEEPALIVE_INTERVAL_MS",
+  defaultValue: 30_000,
+  min: 1_000,
+  max: 5 * 60 * 1000,
+});
 
 const isPendingListData = (data: unknown): data is { items: PendingItem[] } => {
   if (!data || typeof data !== "object") {
