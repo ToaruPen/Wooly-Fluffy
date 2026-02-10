@@ -1,0 +1,58 @@
+# Wooly-Fluffy server env template (safe to commit)
+#
+# How to use (macOS dev):
+# 1) Copy this file to:
+#    ~/Library/Application Support/wooly-fluffy/server.env
+# 2) Replace placeholders
+# 3) Start the server
+#
+# Notes:
+# - The server loads ~/Library/Application Support/wooly-fluffy/server.env (best-effort) on macOS.
+# - Values from that file only fill missing keys; they do not override existing process.env.
+# - Do not commit real secrets. Keep this template with placeholders only.
+
+## Required
+
+STAFF_PASSCODE="<CHOOSE_A_PASSCODE>"
+WHISPER_CPP_CLI_PATH="/ABS/PATH/TO/whisper.cpp/build/bin/whisper-cli"
+WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-base.bin"
+
+## Optional: server bind + DB
+
+# HOST="127.0.0.1"
+# PORT="3000"
+# DB_PATH="/ABS/PATH/TO/var/wooly-fluffy.sqlite3"
+
+## Optional: TTS (VOICEVOX)
+
+# VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
+
+## Optional: LLM
+
+# LLM_PROVIDER_KIND="stub"  # stub|local|external|gemini_native
+# LLM_BASE_URL="http://127.0.0.1:1234/v1"  # required for local/external (include /v1)
+# LLM_MODEL="<MODEL_ID>"
+# LLM_API_KEY="<SECRET>"  # required for external/gemini_native (keep secret)
+
+## Optional tuning (ms)
+
+# STAFF UI session TTL (cookie Max-Age + server-side expiry)
+# WF_STAFF_SESSION_TTL_MS="180000"
+
+# SSE server keep-alive interval
+# WF_SSE_KEEPALIVE_INTERVAL_MS="25000"
+
+# Server tick interval
+# WF_TICK_INTERVAL_MS="1000"
+
+# Orchestrator timeouts
+# WF_CONSENT_TIMEOUT_MS="30000"
+# WF_INACTIVITY_TIMEOUT_MS="300000"
+
+# Provider timeouts
+# WHISPER_CPP_TIMEOUT_MS="15000"
+# VOICEVOX_TIMEOUT_MS="2000"
+# LLM_TIMEOUT_CHAT_MS="12000"
+# LLM_TIMEOUT_INNER_TASK_MS="4000"
+# LLM_TIMEOUT_HEALTH_MS="1500"
+# LLM_TOOL_TIMEOUT_MS="2000"
