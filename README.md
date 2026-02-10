@@ -240,6 +240,21 @@ Server (required unless noted):
 - `WHISPER_CPP_CLI_PATH` (required for STT): path to `whisper-cli`
 - `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file
 
+Server (optional tuning):
+
+- `WF_STAFF_SESSION_TTL_MS` (optional): staff session TTL in ms (cookie Max-Age + server-side expiry; default: 180000; clamp: 10000..86400000)
+- `WF_SSE_KEEPALIVE_INTERVAL_MS` (optional): SSE keep-alive interval in ms (default: 25000; clamp: 1000..300000)
+- `WF_TICK_INTERVAL_MS` (optional): tick interval in ms (default: 1000; clamp: 50..60000)
+- `WF_CONSENT_TIMEOUT_MS` (optional): consent wait timeout in ms (default: 30000; clamp: 1000..600000)
+- `WF_INACTIVITY_TIMEOUT_MS` (optional): inactivity timeout in ms (default: 300000; clamp: 10000..3600000)
+- `WHISPER_CPP_TIMEOUT_MS` (optional): whisper.cpp process timeout in ms (default: 15000; clamp: 1000..120000)
+- `VOICEVOX_TIMEOUT_MS` (optional): VOICEVOX request timeout in ms (default: 2000; clamp: 200..60000)
+- `LLM_TIMEOUT_CHAT_MS` (optional): LLM chat timeout in ms (default: 12000; clamp: 1000..120000)
+- `LLM_TIMEOUT_INNER_TASK_MS` (optional): LLM inner task timeout in ms (default: 4000; clamp: 500..120000)
+- `LLM_TIMEOUT_HEALTH_MS` (optional): LLM health timeout in ms (default: 1500; clamp: 200..30000)
+- `LLM_TOOL_TIMEOUT_MS` (optional): tool execution timeout cap in ms (default: 2000; clamp: 200..120000)
+  - Note: tool timeout uses `min(LLM_TOOL_TIMEOUT_MS, LLM_TIMEOUT_CHAT_MS)`
+
 #### Local env file (macOS)
 
 For local development on macOS, the server will also (best-effort) load environment variables from:
@@ -256,6 +271,13 @@ You can override the path explicitly with:
 Web (optional):
 
 - `VITE_VRM_URL` (optional): defaults to `/assets/vrm/mascot.vrm`
+- `VITE_STAFF_INACTIVITY_LOCK_MS` (optional): staff UI inactivity lock in ms (default: 180000; clamp: 10000..86400000)
+- `VITE_STAFF_KEEPALIVE_INTERVAL_MS` (optional): staff keepalive interval in ms (default: 30000; clamp: 1000..300000)
+- `VITE_FETCH_TIMEOUT_MS` (optional): fetch timeout in ms (default: 0 = disabled; clamp: 0..120000)
+  - Applies to request timeout and `readJson()` timeout
+- `VITE_SSE_RECONNECT_ENABLED` (optional): enable SSE reconnect (default: true)
+- `VITE_SSE_RECONNECT_BASE_DELAY_MS` (optional): reconnect base delay in ms (default: 3000; clamp: 50..60000)
+- `VITE_SSE_RECONNECT_MAX_DELAY_MS` (optional): reconnect max delay in ms (default: 30000; clamp: 50..300000)
 
 Example (bash; placeholders):
 
