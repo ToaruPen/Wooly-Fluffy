@@ -77,7 +77,7 @@ export const KioskPage = () => {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
-  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
+  const [isAudioUnlockNeeded, setIsAudioUnlockNeeded] = useState(false);
   const isAudioUnlockedRef = useRef(false);
   const [ttsWav, setTtsWav] = useState<ArrayBuffer | null>(null);
   const [ttsPlayId, setTtsPlayId] = useState(0);
@@ -209,7 +209,7 @@ export const KioskPage = () => {
     }
     isAudioUnlockedRef.current = true;
     setIsAudioUnlocked(true);
-    setNeedsAudioUnlock(false);
+    setIsAudioUnlockNeeded(false);
     performGestureAudioUnlock();
   }, [performGestureAudioUnlock]);
 
@@ -386,7 +386,7 @@ export const KioskPage = () => {
             }
             pendingTtsTextRef.current = text;
             pendingSayIdRef.current = sayId;
-            setNeedsAudioUnlock(true);
+            setIsAudioUnlockNeeded(true);
             return;
           }
 
@@ -425,7 +425,7 @@ export const KioskPage = () => {
           setAudioError(null);
           pendingTtsTextRef.current = null;
           pendingSayIdRef.current = null;
-          setNeedsAudioUnlock(false);
+          setIsAudioUnlockNeeded(false);
         }
       },
       onError: (error) => {
@@ -551,7 +551,7 @@ export const KioskPage = () => {
             <div className={styles.kioskBadge}>Phase: {phase ?? "-"}</div>
           </div>
 
-          {!isAudioUnlocked || needsAudioUnlock ? (
+          {!isAudioUnlocked || isAudioUnlockNeeded ? (
             <div className={styles.audioUnlockPill} aria-live="polite">
               おとをだすには 1かい タップしてね
             </div>
@@ -649,7 +649,7 @@ export const KioskPage = () => {
             setTtsWav(null);
             isAudioUnlockedRef.current = false;
             setIsAudioUnlocked(false);
-            setNeedsAudioUnlock(true);
+            setIsAudioUnlockNeeded(true);
             return;
           }
 
