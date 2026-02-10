@@ -51,7 +51,7 @@ describe("env", () => {
   it("readViteBool supports boolean and common string values", () => {
     const key = "VITE__TEST_BOOL";
     const original = saveEnv(key);
-    const originalDev = import.meta.env.DEV;
+    const isDevOriginal = import.meta.env.DEV;
     try {
       setEnv(key, undefined);
       expect(readViteBool({ name: key, defaultValue: false })).toBe(false);
@@ -85,7 +85,7 @@ describe("env", () => {
       expect(readViteBool({ name: key, defaultValue: true })).toBe(true);
     } finally {
       setEnv(key, original);
-      import.meta.env.DEV = originalDev;
+      import.meta.env.DEV = isDevOriginal;
     }
   });
 });
