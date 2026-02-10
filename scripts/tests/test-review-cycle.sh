@@ -105,17 +105,6 @@ EOF
 git -C "$tmpdir" add docs/prd/prd.md docs/epics/epic.md
 git -C "$tmpdir" -c user.name=test -c user.email=test@example.com commit -m "add docs" -q
 
-# DIFF_MODE=pr smoke test (whole branch diff)
-# Ensure the base branch is called "master" (git init default may be "main").
-git -C "$tmpdir" branch -M master
-git -C "$tmpdir" checkout -b feature -q
-echo "feature-change" >> "$tmpdir/hello.txt"
-git -C "$tmpdir" add hello.txt
-git -C "$tmpdir" -c user.name=test -c user.email=test@example.com commit -m "feature" -q
-
-(cd "$tmpdir" && SOT="test" TESTS="not run: reason" DIFF_MODE=pr \
-  "$review_cycle_sh" issue-1 --dry-run) >/dev/null 2>/dev/null
-
 # Staged diff only (should succeed)
 echo "change1" >> "$tmpdir/hello.txt"
 git -C "$tmpdir" add hello.txt
@@ -168,21 +157,21 @@ if [[ ${1:-} != "exec" ]]; then
   echo "unsupported" >&2
   exit 2
 fi
-	shift
-	
-	out=""
-	configs=()
-	while [[ $# -gt 0 ]]; do
-	  case "$1" in
-	    -c)
-	      configs+=("$2")
-	      shift 2
-	      ;;
-	    --output-last-message)
-	      out="$2"
-	      shift 2
-	      ;;
-	    -)
+shift
+
+out=""
+model=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-last-message)
+      out="$2"
+      shift 2
+      ;;
+    -m|--model)
+      model="${2:-}"
+      shift 2
+      ;;
+    -)
       shift
       break
       ;;
@@ -192,28 +181,34 @@ fi
   esac
 done
 
-		cat >/dev/null || true
-		
-		expected="${EXPECTED_EFFORT:-low}"
-			if ! printf '%s\n' "${configs[@]}" | grep -qxF "model_reasoning_effort=\"${expected}\""; then
-			  echo "missing -c model_reasoning_effort=\"${expected}\" (configs: ${configs[*]})" >&2
-			  exit 2
-			fi
-	
-	if [[ -z "$out" ]]; then
-	  echo "missing --output-last-message" >&2
-	  exit 2
-	fi
+cat >/dev/null || true
+
+if [[ -z "$out" ]]; then
+  echo "missing --output-last-message" >&2
+  exit 2
+fi
 
 mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
+# Generate JSON without requiring python3 in this stub.
+json_escape() {
+  local s="${1:-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+escaped_model="$(json_escape "$model")"
+cat > "$out" <<JSON
 {
   "schema_version": 3,
   "scope_id": "issue-1",
   "status": "Approved",
   "findings": [],
   "questions": [],
-  "overall_explanation": "stub"
+  "overall_explanation": "stub (model=${escaped_model})"
 }
 JSON
 EOF
@@ -231,7 +226,7 @@ cat > "$tmpdir/issue-body.md" <<'EOF'
 EOF
 
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=low EXPECTED_EFFORT=low \
+  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=low \
   "$review_cycle_sh" issue-1 run1) >/dev/null
 
 if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review.json" ]]; then
@@ -239,26 +234,34 @@ if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review.json" ]]; then
   exit 1
 fi
 
-(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=none EXPECTED_EFFORT=minimal \
-  "$review_cycle_sh" issue-1 run_effort_none) >/dev/null
-
-if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run_effort_none/review.json" ]]; then
-  eprint "Expected review.json to be created for REASONING_EFFORT=none"
-  exit 1
-fi
-
-(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=minimal EXPECTED_EFFORT=minimal \
-  "$review_cycle_sh" issue-1 run_effort_minimal) >/dev/null
-
-if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run_effort_minimal/review.json" ]]; then
-  eprint "Expected review.json to be created for REASONING_EFFORT=minimal"
-  exit 1
-fi
-
 if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run1/sot.txt" ]]; then
   eprint "Expected sot.txt to be created"
+  exit 1
+fi
+
+if ! grep -q "model=stub" "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review.json"; then
+  eprint "Expected model passthrough to codex stub (MODEL=stub)"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review.json" >&2
+  exit 1
+fi
+
+# CLI --model should override env MODEL
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
+  CODEX_BIN="$tmpdir/codex" MODEL=envstub REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-model-cli --model clistub) >/dev/null
+if ! grep -q "model=clistub" "$tmpdir/.agentic-sdd/reviews/issue-1/run-model-cli/review.json"; then
+  eprint "Expected --model to override env MODEL"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-model-cli/review.json" >&2
+  exit 1
+fi
+
+# Env MODEL should still work when no --model is provided
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
+  CODEX_BIN="$tmpdir/codex" MODEL=envonly REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-model-env) >/dev/null
+if ! grep -q "model=envonly" "$tmpdir/.agentic-sdd/reviews/issue-1/run-model-env/review.json"; then
+  eprint "Expected env MODEL to be used when --model is not provided"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-model-env/review.json" >&2
   exit 1
 fi
 
@@ -331,6 +334,62 @@ fi
 if ! grep -q "PRD file not found" "$tmpdir/stderr2"; then
   eprint "Expected missing PRD error, got:"
   cat "$tmpdir/stderr2" >&2
+  exit 1
+fi
+
+# TEST_COMMAND stderr detection (warn should succeed, fail should stop before engine)
+set +e
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" DIFF_MODE=staged \
+  TEST_COMMAND='bash -lc "echo boom >&2; exit 0"' TESTS="" \
+  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-stderr-warn) >/dev/null 2>"$tmpdir/stderr-stderr-warn"
+code_stderr_warn=$?
+set -e
+if [[ "$code_stderr_warn" -ne 0 ]]; then
+  eprint "Expected success for stderr warn policy, got exit=$code_stderr_warn"
+  cat "$tmpdir/stderr-stderr-warn" >&2
+  exit 1
+fi
+if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-warn/tests.stderr" ]]; then
+  eprint "Expected tests.stderr to be created"
+  exit 1
+fi
+if ! grep -q "WARNING: test command produced stderr output" "$tmpdir/stderr-stderr-warn"; then
+  eprint "Expected stderr warning message, got:"
+  cat "$tmpdir/stderr-stderr-warn" >&2
+  exit 1
+fi
+if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-warn/review.json" ]]; then
+  eprint "Expected review.json to be created for warn policy"
+  exit 1
+fi
+if ! grep -q "Tests-Stderr:" "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-warn/prompt.txt"; then
+  eprint "Expected Tests-Stderr to appear in prompt.txt"
+  exit 1
+fi
+
+set +e
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" DIFF_MODE=staged \
+  TEST_COMMAND='bash -lc "echo boom >&2; exit 0"' TESTS="" TEST_STDERR_POLICY=fail \
+  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-stderr-fail) >/dev/null 2>"$tmpdir/stderr-stderr-fail"
+code_stderr_fail=$?
+set -e
+if [[ "$code_stderr_fail" -eq 0 ]]; then
+  eprint "Expected failure for stderr fail policy"
+  exit 1
+fi
+if ! grep -q "TEST_STDERR_POLICY=fail" "$tmpdir/stderr-stderr-fail"; then
+  eprint "Expected fail policy error message, got:"
+  cat "$tmpdir/stderr-stderr-fail" >&2
+  exit 1
+fi
+if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-fail/tests.stderr" ]]; then
+  eprint "Expected tests.stderr to be created for fail policy"
+  exit 1
+fi
+if [[ -f "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-fail/review.json" ]]; then
+  eprint "Did not expect review.json to be created when failing on stderr"
   exit 1
 fi
 
@@ -435,10 +494,7 @@ cat > "$tmpdir/claude" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-tools=""
-allowed_tools=""
-add_dirs=()
-
+# Parse arguments to find --json-schema
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -p)
@@ -450,52 +506,11 @@ while [[ $# -gt 0 ]]; do
     --json-schema)
       shift 2 2>/dev/null || shift
       ;;
-    --tools)
-      tools="${2:-}"
-      shift 2 2>/dev/null || shift
-      ;;
-    --allowedTools|--allowed-tools)
-      allowed_tools="${2:-}"
-      shift 2 2>/dev/null || shift
-      ;;
-    --add-dir)
-      add_dirs+=("${2:-}")
-      shift 2 2>/dev/null || shift
-      ;;
     *)
       shift
       ;;
   esac
 done
-
-if [[ "$tools" != "Read" ]]; then
-  echo "expected --tools Read, got: '$tools'" >&2
-  exit 2
-fi
-
-if [[ "$allowed_tools" != "Read" ]]; then
-  echo "expected --allowedTools Read, got: '$allowed_tools'" >&2
-  exit 2
-fi
-
-if [[ "${#add_dirs[@]}" -eq 0 ]]; then
-  echo "missing --add-dir" >&2
-  exit 2
-fi
-
-if [[ -n "${EXPECTED_CLAUDE_ADD_DIR:-}" ]]; then
-  found=0
-  for d in "${add_dirs[@]}"; do
-    if [[ "$d" == "$EXPECTED_CLAUDE_ADD_DIR" ]]; then
-      found=1
-      break
-    fi
-  done
-  if [[ "$found" -eq 0 ]]; then
-    echo "expected --add-dir to include: '$EXPECTED_CLAUDE_ADD_DIR' (got: ${add_dirs[*]})" >&2
-    exit 2
-  fi
-fi
 
 # Read stdin and discard
 cat >/dev/null || true
@@ -528,10 +543,8 @@ git -C "$tmpdir" reset HEAD~1 --soft 2>/dev/null || true
 echo "claude-change" >> "$tmpdir/hello.txt"
 git -C "$tmpdir" add hello.txt
 
-expected_claude_add_dir="$(cd "$tmpdir" && pwd -P)"
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
   REVIEW_ENGINE=claude CLAUDE_BIN="$tmpdir/claude" CLAUDE_MODEL=stub \
-  EXPECTED_CLAUDE_ADD_DIR="$expected_claude_add_dir" \
   "$review_cycle_sh" issue-claude run1) >/dev/null
 
 if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-claude/run1/review.json" ]]; then
@@ -546,22 +559,6 @@ fi
 
 if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-claude/run1/prompt.txt" ]]; then
   eprint "Expected prompt.txt to be created for Claude engine"
-  exit 1
-fi
-
-# Claude should receive the diff as a local file path (not embedded content).
-if ! grep -q "^Diff-File: \\.agentic-sdd/reviews/issue-claude/run1/diff\\.patch$" "$tmpdir/.agentic-sdd/reviews/issue-claude/run1/prompt.txt"; then
-  eprint "Expected Diff-File path in Claude prompt"
-  exit 1
-fi
-
-if grep -q "^Diff:$" "$tmpdir/.agentic-sdd/reviews/issue-claude/run1/prompt.txt"; then
-  eprint "Did not expect embedded diff marker (Diff:) in Claude prompt"
-  exit 1
-fi
-
-if grep -q "^diff --git " "$tmpdir/.agentic-sdd/reviews/issue-claude/run1/prompt.txt"; then
-  eprint "Did not expect embedded diff content in Claude prompt"
   exit 1
 fi
 

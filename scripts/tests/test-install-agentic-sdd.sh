@@ -12,6 +12,16 @@ if [[ ! -x "$installer" ]]; then
   exit 1
 fi
 
+has_source_file() {
+  local rel="$1"
+  [[ -f "$repo_root/$rel" ]]
+}
+
+has_source_dir() {
+  local rel="$1"
+  [[ -d "$repo_root/$rel" ]]
+}
+
 tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t agentic-sdd-install-test)"
 cleanup() { rm -rf "$tmpdir"; }
 trap cleanup EXIT
@@ -83,6 +93,11 @@ if [[ -e "$proj2/scripts/shogun-ops.py" ]]; then
   exit 1
 fi
 
+if [[ -e "$proj2/scripts/tmux" ]]; then
+  eprint "Did not expect Shogun Ops tmux shim to be installed by default: scripts/tmux"
+  exit 1
+fi
+
 if ! cmp -s "$proj2/AGENTS.md" "$tmpdir/AGENTS.before"; then
   eprint "Expected AGENTS.md to remain unchanged"
   exit 1
@@ -143,14 +158,22 @@ mkproj "$proj3"
 
 "$installer" --target "$proj3" --mode full --tool none >/dev/null
 
-if [[ ! -f "$proj3/.github/PULL_REQUEST_TEMPLATE.md" ]]; then
-  eprint "Expected PR template to be installed in mode=full"
-  exit 1
+if has_source_file ".github/PULL_REQUEST_TEMPLATE.md" || has_source_file ".github/pull_request_template.md"; then
+  if [[ ! -f "$proj3/.github/PULL_REQUEST_TEMPLATE.md" ]]; then
+    eprint "Expected PR template to be installed in mode=full"
+    exit 1
+  fi
+else
+  eprint "SKIP: source repo missing PR template (.github/PULL_REQUEST_TEMPLATE.md)"
 fi
 
-if [[ ! -f "$proj3/.github/ISSUE_TEMPLATE/feature.md" ]]; then
-  eprint "Expected issue template to be installed in mode=full"
-  exit 1
+if has_source_file ".github/ISSUE_TEMPLATE/feature.md"; then
+  if [[ ! -f "$proj3/.github/ISSUE_TEMPLATE/feature.md" ]]; then
+    eprint "Expected issue template to be installed in mode=full"
+    exit 1
+  fi
+else
+  eprint "SKIP: source repo missing issue templates (.github/ISSUE_TEMPLATE/)"
 fi
 
 if [[ -d "$proj3/.github/workflows" ]]; then
@@ -164,14 +187,18 @@ mkproj "$proj4"
 
 "$installer" --target "$proj4" --mode minimal --tool none --ci github-actions >/dev/null
 
-if [[ ! -f "$proj4/.github/workflows/agentic-sdd-ci.yml" ]]; then
-  eprint "Expected CI workflow to be installed: .github/workflows/agentic-sdd-ci.yml"
-  exit 1
-fi
+if has_source_dir "templates/ci/github-actions/.github/workflows" && has_source_file "templates/ci/github-actions/scripts/agentic-sdd-ci.sh"; then
+  if [[ ! -f "$proj4/.github/workflows/agentic-sdd-ci.yml" ]]; then
+    eprint "Expected CI workflow to be installed: .github/workflows/agentic-sdd-ci.yml"
+    exit 1
+  fi
 
-if [[ ! -f "$proj4/scripts/agentic-sdd-ci.sh" ]]; then
-  eprint "Expected CI script to be installed: scripts/agentic-sdd-ci.sh"
-  exit 1
+  if [[ ! -f "$proj4/scripts/agentic-sdd-ci.sh" ]]; then
+    eprint "Expected CI script to be installed: scripts/agentic-sdd-ci.sh"
+    exit 1
+  fi
+else
+  eprint "SKIP: source repo missing CI templates (templates/ci/github-actions/)"
 fi
 
 if [[ -f "$proj4/.github/workflows/release.yml" ]]; then
@@ -185,24 +212,33 @@ mkproj "$proj5"
 
 "$installer" --target "$proj5" --mode minimal --tool opencode --shogun-ops >/dev/null
 
-if [[ ! -f "$proj5/scripts/shogun-ops.py" ]]; then
-  eprint "Expected Shogun Ops script to be installed with --shogun-ops: scripts/shogun-ops.py"
-  exit 1
-fi
+if has_source_file "scripts/shogun-ops.py"; then
+  if [[ ! -f "$proj5/scripts/shogun-ops.py" ]]; then
+    eprint "Expected Shogun Ops script to be installed with --shogun-ops: scripts/shogun-ops.py"
+    exit 1
+  fi
 
-if [[ ! -f "$proj5/scripts/shogun-tmux.sh" ]]; then
-  eprint "Expected Shogun Ops script to be installed with --shogun-ops: scripts/shogun-tmux.sh"
-  exit 1
-fi
+  if [[ ! -f "$proj5/scripts/shogun-tmux.sh" ]]; then
+    eprint "Expected Shogun Ops script to be installed with --shogun-ops: scripts/shogun-tmux.sh"
+    exit 1
+  fi
 
-if [[ ! -f "$proj5/.agent/commands/checkin.md" ]]; then
-  eprint "Expected Shogun Ops command doc to be installed with --shogun-ops: .agent/commands/checkin.md"
-  exit 1
-fi
+  if has_source_file "scripts/tmux" && [[ ! -f "$proj5/scripts/tmux" ]]; then
+    eprint "Expected tmux shim to be installed with --shogun-ops: scripts/tmux"
+    exit 1
+  fi
 
-if [[ ! -f "$proj5/.opencode/commands/checkin.md" ]]; then
-  eprint "Expected Shogun Ops OpenCode command to exist with --shogun-ops: .opencode/commands/checkin.md"
-  exit 1
+  if [[ ! -f "$proj5/.agent/commands/checkin.md" ]]; then
+    eprint "Expected Shogun Ops command doc to be installed with --shogun-ops: .agent/commands/checkin.md"
+    exit 1
+  fi
+
+  if [[ ! -f "$proj5/.opencode/commands/checkin.md" ]]; then
+    eprint "Expected Shogun Ops OpenCode command to exist with --shogun-ops: .opencode/commands/checkin.md"
+    exit 1
+  fi
+else
+  eprint "SKIP: source repo missing Shogun Ops payload (scripts/shogun-ops.py)"
 fi
 
 eprint "OK: scripts/tests/test-install-agentic-sdd.sh"

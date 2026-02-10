@@ -12,6 +12,14 @@ Rules defining the appropriate size and structure of a single Issue.
 
 ---
 
+## Language (user-facing)
+
+Issue titles and bodies are user-facing artifacts and must remain in Japanese.
+Exception: Conventional Commit-style prefixes at the start of the title (e.g. `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`) may remain in English.
+Exception: machine-readable keys/tokens used for automation may remain in English (e.g. `- PRD:`, `- Epic:`, `Blocked by:`, label names like `parallel-ok` / `blocked` / `priority:P[0-4]`).
+
+---
+
 ## Priority (Triage)
 
 For bug fix / urgent response Issues, assign Priority:
@@ -174,15 +182,6 @@ If file targets are unknown or overlaps exist, do NOT use `parallel-ok`; mark as
 
 ## Issue body template (Japanese output)
 
-## Implementation mode decision (required)
-
-Every Issue must include a short, explicit implementation-mode decision so the team can choose `/impl` vs `/tdd` deterministically.
-
-Rule of thumb:
-
-- Prefer `/tdd` when behavior can be fixed via unit/integration tests (parsing, state machines, allowlists, fallbacks, error handling, request correlation).
-- Prefer `/impl` when the work is primarily integration/UI/device/3D where deterministic tests are hard at first (recording, WebAudio, three.js/VRM, heavy browser APIs). Still unit-test any pure functions extracted.
-
 ```markdown
 ## 概要
 
@@ -207,18 +206,6 @@ Rule of thumb:
 - [ ] AC1: [観測可能な条件]
 - [ ] AC2: [観測可能な条件]
 
-## 境界条件（異常系/リソース解放/レース条件）
-
-<!--
-目的: AI/人間の実装判断がブレやすい部分（異常系・後始末・競合）を事前に固定する。
-ここで挙げた項目のうち、最低1つはACまたはテスト観点に落とす（重要なものは複数）。
--->
-
-- [ ] 入力不正/欠損: [無効payload/不足フィールド/型不一致] のとき安全に失敗/フォールバックする
-- [ ] リソース解放: [connection/process/tmp file/media track] を成功/失敗/中断/アンマウントで確実に解放する
-- [ ] レース条件: [start/stop連打、重複/順序逆転、再接続] の期待挙動が決まっている（優先/無視/キャンセル）
-- [ ] タイムアウト/キャンセル: ハングせず、キャンセル時も状態が壊れない
-
 ## 技術メモ
 
 ### 変更対象ファイル（推定）
@@ -235,17 +222,6 @@ Rule of thumb:
 - [ ] 150〜300行（大きめ）
 - [ ] 300行超（要分割検討）
 
-## 実装アプローチ（Agentic-SDD）
-
-推奨: `/tdd` または `/impl`
-
-理由:
-- [1-2行]
-
-最低限のテスト観点:
-※ここに書くのは「下限」。ACを満たす/回帰を防ぐために必要なテストは追加する。
-- [2-4行]
-
 ## 依存関係
 
 - Blocked by: #[Issue番号]（[理由]）
@@ -253,7 +229,6 @@ Rule of thumb:
 
 ## ラベル
 
-- 少なくとも1つ付与（例: `enhancement` / `bug` / `documentation` / `question`）
 - `priority:P[0-4]`（バグ修正の場合）
 - `parallel-ok` / `blocked`
 ```
