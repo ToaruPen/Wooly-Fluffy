@@ -8,6 +8,8 @@ import path from "node:path";
 import type { Mode } from "../orchestrator.js";
 import type { ProviderHealth, Providers } from "./types.js";
 
+import { readEnvInt } from "../env.js";
+
 type ExecFile = (
   file: string,
   args: string[],
@@ -109,7 +111,14 @@ export const createWhisperCppSttProvider = (
 ): Providers["stt"] => {
   const cliPath = options.cli_path ?? process.env.WHISPER_CPP_CLI_PATH ?? null;
   const modelPath = options.model_path ?? process.env.WHISPER_CPP_MODEL_PATH ?? null;
-  const timeoutMs = options.timeout_ms ?? 15_000;
+  const timeoutMs =
+    options.timeout_ms ??
+    readEnvInt(process.env, {
+      name: "WHISPER_CPP_TIMEOUT_MS",
+      defaultValue: 15_000,
+      min: 1_000,
+      max: 120_000,
+    });
   const tmpDir = options.tmp_dir ?? os.tmpdir();
   const execFile: ExecFile =
     options.execFile ??

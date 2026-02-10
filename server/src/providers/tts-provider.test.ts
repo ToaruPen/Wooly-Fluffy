@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createVoiceVoxTtsProvider } from "./tts-provider.js";
 
 const createAbortableNeverFetch = () => {
@@ -81,6 +81,29 @@ describe("tts-provider (VOICEVOX)", () => {
     });
 
     await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("reads timeout from env when timeout_ms is not provided", async () => {
+    const prev = process.env.VOICEVOX_TIMEOUT_MS;
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    try {
+      process.env.VOICEVOX_TIMEOUT_MS = "234";
+
+      const tts = createVoiceVoxTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: createAbortableNeverFetch(),
+      });
+
+      await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
+      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 234);
+    } finally {
+      setTimeoutSpy.mockRestore();
+      if (prev === undefined) {
+        delete process.env.VOICEVOX_TIMEOUT_MS;
+      } else {
+        process.env.VOICEVOX_TIMEOUT_MS = prev;
+      }
+    }
   });
 
   it("synthesizes wav via audio_query -> synthesis with speaker=2", async () => {

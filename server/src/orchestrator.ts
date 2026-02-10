@@ -129,8 +129,15 @@ export type OrchestratorResult = {
   effects: OrchestratorEffect[];
 };
 
-const CONSENT_TIMEOUT_MS = 30_000;
-const INACTIVITY_TIMEOUT_MS = 300_000;
+export type OrchestratorConfig = {
+  consent_timeout_ms: number;
+  inactivity_timeout_ms: number;
+};
+
+export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
+  consent_timeout_ms: 30_000,
+  inactivity_timeout_ms: 300_000,
+};
 
 const FORGET_CONSENT_TEXT = "さっきのことは忘れるね";
 const STT_FALLBACK_TEXT = "ごめんね、もう一回言ってね";
@@ -291,6 +298,7 @@ export const reduceOrchestrator = (
   state: OrchestratorState,
   event: OrchestratorEvent,
   now: number,
+  config: OrchestratorConfig = DEFAULT_ORCHESTRATOR_CONFIG,
 ): OrchestratorResult => {
   if (state.is_emergency_stopped) {
     if (event.type === "STAFF_RESUME") {
@@ -548,7 +556,7 @@ export const reduceOrchestrator = (
           next_state: {
             ...state,
             phase: "asking_consent",
-            consent_deadline_at_ms: now + CONSENT_TIMEOUT_MS,
+            consent_deadline_at_ms: now + config.consent_timeout_ms,
             memory_candidate: candidate,
             in_flight: {
               ...state.in_flight,
@@ -689,7 +697,10 @@ export const reduceOrchestrator = (
           ],
         };
       }
-      if (state.mode === "PERSONAL" && now - state.last_action_at_ms >= INACTIVITY_TIMEOUT_MS) {
+      if (
+        state.mode === "PERSONAL" &&
+        now - state.last_action_at_ms >= config.inactivity_timeout_ms
+      ) {
         const nextState = resetForRoom(state, now);
         return {
           next_state: nextState,

@@ -361,6 +361,31 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("uses consent_timeout_ms from config when entering asking_consent", () => {
+    const base = createInitialState(0);
+    const waiting: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "waiting_inner_task",
+      in_flight: { ...base.in_flight, memory_extract_request_id: "inner-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waiting,
+      {
+        type: "INNER_TASK_RESULT",
+        request_id: "inner-1",
+        json_text: '{"task":"memory_extract","candidate":{"kind":"food","value":"カレー"}}',
+      },
+      1000,
+      { consent_timeout_ms: 123, inactivity_timeout_ms: 999_999 },
+    );
+
+    expect(result.next_state.phase).toBe("asking_consent");
+    expect(result.next_state.consent_deadline_at_ms).toBe(1123);
+  });
+
   it("returns to room after inactivity", () => {
     const base = createInitialState(0);
     const personal: OrchestratorState = {
@@ -377,6 +402,28 @@ describe("orchestrator", () => {
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);
+  });
+
+  it("uses inactivity_timeout_ms from config", () => {
+    const base = createInitialState(0);
+    const personal: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      last_action_at_ms: 0,
+    };
+
+    const noReturn = reduceOrchestrator(personal, { type: "TICK" }, 10, {
+      consent_timeout_ms: 30_000,
+      inactivity_timeout_ms: 11,
+    });
+    expect(noReturn.next_state.mode).toBe("PERSONAL");
+
+    const returns = reduceOrchestrator(personal, { type: "TICK" }, 10, {
+      consent_timeout_ms: 30_000,
+      inactivity_timeout_ms: 10,
+    });
+    expect(returns.next_state.mode).toBe("ROOM");
   });
 
   it("ignores request_id mismatches", () => {

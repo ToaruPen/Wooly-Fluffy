@@ -8,6 +8,7 @@ import type {
   Providers,
 } from "./types.js";
 import { executeToolCalls } from "../tools/tool-executor.js";
+import { readEnvInt } from "../env.js";
 import { GoogleGenAI } from "@google/genai";
 
 type FetchResponse = {
@@ -33,6 +34,7 @@ type OpenAiCompatibleLlmProviderOptions = {
   api_key?: string;
   timeout_ms_chat?: number;
   timeout_ms_inner_task?: number;
+  timeout_ms_tool?: number;
   fetch?: FetchFn;
 };
 
@@ -63,6 +65,7 @@ type GeminiNativeLlmProviderOptions = {
   timeout_ms_chat?: number;
   timeout_ms_inner_task?: number;
   timeout_ms_health?: number;
+  timeout_ms_tool?: number;
   fetch?: FetchFn;
   gemini_models?: GeminiNativeModelsClient;
 };
@@ -377,6 +380,7 @@ export const createOpenAiCompatibleLlmProvider = (
   const model = options.model;
   const timeoutChatMs = options.timeout_ms_chat ?? 12_000;
   const timeoutInnerTaskMs = options.timeout_ms_inner_task ?? 4_000;
+  const timeoutToolMs = options.timeout_ms_tool ?? 2_000;
 
   const fetchFn: FetchFn =
     options.fetch ??
@@ -447,7 +451,7 @@ export const createOpenAiCompatibleLlmProvider = (
       const toolResult = await executeToolCalls({
         tool_calls,
         fetch: fetchFn,
-        timeout_ms: Math.min(2_000, timeoutChatMs),
+        timeout_ms: Math.min(timeoutToolMs, timeoutChatMs),
       });
 
       const followUpBody = {
@@ -583,6 +587,7 @@ export const createGeminiNativeLlmProvider = (
   const timeoutChatMs = options.timeout_ms_chat ?? 12_000;
   const timeoutInnerTaskMs = options.timeout_ms_inner_task ?? 4_000;
   const timeoutHealthMs = options.timeout_ms_health ?? 1_500;
+  const timeoutToolMs = options.timeout_ms_tool ?? 2_000;
 
   const fetchFn: FetchFn =
     options.fetch ??
@@ -660,7 +665,7 @@ export const createGeminiNativeLlmProvider = (
     const toolResult = await executeToolCalls({
       tool_calls: allowed_tool_calls,
       fetch: fetchFn,
-      timeout_ms: Math.min(2_000, timeoutChatMs),
+      timeout_ms: Math.min(timeoutToolMs, timeoutChatMs),
     });
 
     const toolMessageById = new Map(
@@ -828,6 +833,31 @@ export const createLlmProviderFromEnv = (options?: {
   gemini_models?: GeminiNativeModelsClient;
 }): Providers["llm"] => {
   const kind = (process.env.LLM_PROVIDER_KIND ?? "stub") as LlmProviderKind;
+
+  const timeoutChatMs = readEnvInt(process.env, {
+    name: "LLM_TIMEOUT_CHAT_MS",
+    defaultValue: 12_000,
+    min: 1_000,
+    max: 120_000,
+  });
+  const timeoutInnerTaskMs = readEnvInt(process.env, {
+    name: "LLM_TIMEOUT_INNER_TASK_MS",
+    defaultValue: 4_000,
+    min: 500,
+    max: 120_000,
+  });
+  const timeoutHealthMs = readEnvInt(process.env, {
+    name: "LLM_TIMEOUT_HEALTH_MS",
+    defaultValue: 1_500,
+    min: 200,
+    max: 30_000,
+  });
+  const timeoutToolMs = readEnvInt(process.env, {
+    name: "LLM_TOOL_TIMEOUT_MS",
+    defaultValue: 2_000,
+    min: 200,
+    max: 120_000,
+  });
   if (kind === "gemini_native") {
     const model = process.env.LLM_MODEL;
     const apiKey =
@@ -855,6 +885,10 @@ export const createLlmProviderFromEnv = (options?: {
     return createGeminiNativeLlmProvider({
       model,
       api_key: apiKey,
+      timeout_ms_chat: timeoutChatMs,
+      timeout_ms_inner_task: timeoutInnerTaskMs,
+      timeout_ms_health: timeoutHealthMs,
+      timeout_ms_tool: timeoutToolMs,
       fetch: options?.fetch,
       gemini_models: options?.gemini_models,
     });
@@ -914,6 +948,9 @@ export const createLlmProviderFromEnv = (options?: {
     base_url: baseUrl,
     model,
     api_key: process.env.LLM_API_KEY,
+    timeout_ms_chat: timeoutChatMs,
+    timeout_ms_inner_task: timeoutInnerTaskMs,
+    timeout_ms_tool: timeoutToolMs,
     fetch: options?.fetch,
   });
 };
