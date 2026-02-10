@@ -1,4 +1,4 @@
-export type EnvIntOptions = {
+type EnvIntOptions = {
   name: string;
   defaultValue: number;
   min?: number;

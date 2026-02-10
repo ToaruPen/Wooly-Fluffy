@@ -1,11 +1,11 @@
-export type ViteIntOptions = {
+type ViteIntOptions = {
   name: string;
   defaultValue: number;
   min?: number;
   max?: number;
 };
 
-export type ViteBoolOptions = {
+type ViteBoolOptions = {
   name: string;
   defaultValue: boolean;
 };
