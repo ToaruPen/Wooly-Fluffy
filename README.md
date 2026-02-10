@@ -253,6 +253,23 @@ You can override the path explicitly with:
 
 - `WOOLY_FLUFFY_ENV_PATH=/absolute/path/to/server.env`
 
+#### Env templates (new machine setup)
+
+This repo includes env templates you can copy and edit.
+
+Server (macOS dev):
+
+```bash
+mkdir -p "$HOME/Library/Application Support/wooly-fluffy"
+cp ./server-env.example "$HOME/Library/Application Support/wooly-fluffy/server.env"
+```
+
+Web (Vite dev):
+
+```bash
+cp ./web/env.example ./web/.env.local
+```
+
 Web (optional):
 
 - `VITE_VRM_URL` (optional): defaults to `/assets/vrm/mascot.vrm`
