@@ -4,9 +4,18 @@ type AudioPlayerProps = {
   wav: ArrayBuffer | null;
   playId: number;
   onEnded?: (playId: number) => void;
-  onError?: (playId: number, message: string) => void;
+  onError?: (playId: number, code: AudioErrorCode) => void;
   onLevel?: (playId: number, level: number) => void;
 };
+
+export const AUDIO_ERROR_UNSUPPORTED = "audio_unsupported";
+export const AUDIO_ERROR_PLAY_BLOCKED = "audio_play_blocked";
+export const AUDIO_ERROR_PLAY_FAILED = "audio_play_failed";
+
+export type AudioErrorCode =
+  | typeof AUDIO_ERROR_UNSUPPORTED
+  | typeof AUDIO_ERROR_PLAY_BLOCKED
+  | typeof AUDIO_ERROR_PLAY_FAILED;
 
 export const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
@@ -112,7 +121,7 @@ export const AudioPlayer = ({ wav, playId, onEnded, onError, onLevel }: AudioPla
     }
 
     if (typeof URL.createObjectURL !== "function" || typeof Audio !== "function") {
-      onErrorRef.current?.(playId, "Failed to play audio");
+      onErrorRef.current?.(playId, AUDIO_ERROR_UNSUPPORTED);
       return;
     }
 
@@ -223,11 +232,25 @@ export const AudioPlayer = ({ wav, playId, onEnded, onError, onLevel }: AudioPla
     void audio
       .play()
       .then(() => undefined)
-      .catch(() => {
+      .catch((err: unknown) => {
         if (runtimeRef.current !== runtime) {
           return;
         }
-        onErrorRef.current?.(playId, "Failed to play audio");
+
+        const name =
+          err &&
+          typeof err === "object" &&
+          "name" in err &&
+          typeof (err as { name?: unknown }).name === "string"
+            ? (err as { name: string }).name
+            : "";
+
+        const isLikelyAutoplayBlocked = name === "NotAllowedError" || name === "SecurityError";
+
+        onErrorRef.current?.(
+          playId,
+          isLikelyAutoplayBlocked ? AUDIO_ERROR_PLAY_BLOCKED : AUDIO_ERROR_PLAY_FAILED,
+        );
         void stopRuntime(runtime, playId, onLevelRef.current);
         if (runtimeRef.current === runtime) {
           runtimeRef.current = null;

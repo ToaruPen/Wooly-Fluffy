@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AudioPlayer } from "./audio-player";
+import { AUDIO_ERROR_PLAY_BLOCKED, AUDIO_ERROR_UNSUPPORTED, AudioPlayer } from "./audio-player";
 
 type FakeAudioInstance = {
   src: string;
@@ -33,7 +33,7 @@ describe("AudioPlayer (component)", () => {
       );
     });
 
-    expect(onError).toHaveBeenCalledWith(1, "Failed to play audio");
+    expect(onError).toHaveBeenCalledWith(1, AUDIO_ERROR_UNSUPPORTED);
 
     await act(async () => {
       root.unmount();
@@ -140,7 +140,9 @@ describe("AudioPlayer (component)", () => {
       src: string;
       onended: (() => void) | null = null;
       play = vi.fn(async () => {
-        throw new Error("nope");
+        const err = new Error("blocked");
+        (err as unknown as { name: string }).name = "NotAllowedError";
+        throw err;
       });
       pause = vi.fn(() => undefined);
       constructor(src: string) {
@@ -162,7 +164,7 @@ describe("AudioPlayer (component)", () => {
       await Promise.resolve();
     });
 
-    expect(onError).toHaveBeenCalledWith(2, "Failed to play audio");
+    expect(onError).toHaveBeenCalledWith(2, AUDIO_ERROR_PLAY_BLOCKED);
     expect(onLevel).toHaveBeenCalledWith(2, 0);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:tts");
 

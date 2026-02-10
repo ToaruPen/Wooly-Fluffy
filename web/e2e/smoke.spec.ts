@@ -10,6 +10,11 @@ test("/kiosk shows kiosk UI", async ({ page }) => {
   await expect(
     stage.getByTestId("mascot-stage-fallback").or(stage.locator("canvas")),
   ).toBeVisible();
+
+  const stageBgVar = await stage.evaluate((el) => {
+    return (el as HTMLElement).style.getPropertyValue("--wf-kiosk-stage-bg");
+  });
+  expect(stageBgVar === "none" || stageBgVar.includes("url(")).toBe(true);
 });
 
 test("/staff shows login UI", async ({ page }) => {
