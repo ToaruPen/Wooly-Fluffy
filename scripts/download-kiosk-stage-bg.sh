@@ -35,4 +35,4 @@ unzip -j "$tmpdir/kenney_background-elements.zip" "$ZIP_ENTRY" -d "$tmpdir" >/de
 cp "$tmpdir/uncolored_hills.png" "$OUT_FILE"
 
 echo "Wrote: $OUT_FILE"
-echo "Attribution: $ROOT_DIR/web/public/assets/stage-bg/ATTRIBUTION.md"
+echo "Attribution: $ROOT_DIR/web/public/assets/stage-bg/attribution.md"
