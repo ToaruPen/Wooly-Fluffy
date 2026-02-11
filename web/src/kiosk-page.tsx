@@ -14,7 +14,6 @@ import {
 } from "./kiosk-play-motion";
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
-import { DevDebugLink } from "./dev-debug-link";
 import { performGestureAudioUnlock } from "./audio-unlock";
 
 const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
@@ -87,6 +86,9 @@ export const KioskPage = () => {
   const [toolCallsCount, setToolCallsCount] = useState(0);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamConnection, setStreamConnection] = useState<"connected" | "reconnecting">(
+    "connected",
+  );
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const [isAudioUnlockNeeded, setIsAudioUnlockNeeded] = useState(false);
@@ -100,6 +102,7 @@ export const KioskPage = () => {
   const isKioskPttButtonHeldRef = useRef(false);
   const isKioskPttDownRef = useRef(false);
   const isKioskPttStateUncertainRef = useRef(false);
+  const isStreamConnectedRef = useRef(true);
   const isKioskPttSendingRef = useRef(false);
   const kioskPttInFlightPromiseRef = useRef<Promise<boolean> | null>(null);
   const kioskPttRetryTimeoutIdRef = useRef<number | null>(null);
@@ -141,6 +144,9 @@ export const KioskPage = () => {
       return;
     }
     if (isKioskPttSendingRef.current) {
+      return;
+    }
+    if (!isStreamConnectedRef.current) {
       return;
     }
     const shouldBeDown = isKioskPttSpaceHeldRef.current || isKioskPttButtonHeldRef.current;
@@ -285,6 +291,7 @@ export const KioskPage = () => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isSpaceKey(e)) return;
+      if (!isStreamConnectedRef.current) return;
 
       const el = document.activeElement as HTMLElement | null;
       if (isInteractiveElement(el)) return;
@@ -394,6 +401,12 @@ export const KioskPage = () => {
     const client = connectSse("/api/v1/kiosk/stream", {
       onSnapshot: (data) => {
         setSnapshot(data as KioskSnapshot);
+        if (!isStreamConnectedRef.current) {
+          isStreamConnectedRef.current = true;
+          setStreamConnection("connected");
+        }
+        setStreamError(null);
+        flushKioskPtt();
       },
       onMessage: (message: ServerMessage) => {
         if (message.type === "kiosk.command.record_start") {
@@ -553,6 +566,23 @@ export const KioskPage = () => {
       },
       onError: (error) => {
         setStreamError(error.message);
+        isStreamConnectedRef.current = false;
+        setStreamConnection("reconnecting");
+
+        const wasPossiblyDown =
+          isKioskPttSpaceHeldRef.current ||
+          isKioskPttButtonHeldRef.current ||
+          isKioskPttDownRef.current ||
+          isKioskPttStateUncertainRef.current;
+
+        if (wasPossiblyDown) {
+          isKioskPttStateUncertainRef.current = true;
+        }
+        isKioskPttSpaceHeldRef.current = false;
+        isKioskPttButtonHeldRef.current = false;
+        isKioskPttDownRef.current = false;
+        setIsKioskPttButtonHeld(false);
+        setIsKioskPttDown(false);
       },
     });
 
@@ -574,14 +604,20 @@ export const KioskPage = () => {
       stopTtsAudio();
       client.close();
     };
-  }, [playTts, stopTtsAudio]);
+  }, [flushKioskPtt, playTts, stopTtsAudio]);
 
-  const mode = snapshot?.state.mode ?? null;
-  const personalName = snapshot?.state.personal_name ?? null;
   const phase = snapshot?.state.phase ?? null;
   const isConsentVisible = snapshot?.state.consent_ui_visible ?? false;
   const shouldShowRecording = isRecording || phase === "listening";
-  const isLocalPttActive = isKioskPttDown || isKioskPttButtonHeld;
+  const isStreamConnected = streamConnection === "connected";
+  const isPttAvailable = isStreamConnected;
+  const isLocalPttActive = isPttAvailable && (isKioskPttDown || isKioskPttButtonHeld);
+  const hasKioskErrors = Boolean(streamError || pttError || audioError);
+  const pttButtonLabel = !isPttAvailable
+    ? "つながるまで まってね"
+    : isLocalPttActive
+      ? "はなして とめる"
+      : "おして はなす";
 
   const sendConsent = async (answer: "yes" | "no") => {
     setConsentError(null);
@@ -594,9 +630,6 @@ export const KioskPage = () => {
       setConsentError("Network error");
     }
   };
-
-  const modeText =
-    mode === "PERSONAL" ? `PERSONAL${personalName ? ` (${personalName})` : ""}` : "ROOM";
 
   const vrmExpression: ExpressionLabel = speech?.expression ?? "neutral";
   const vrmUrl = import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm";
@@ -656,36 +689,67 @@ export const KioskPage = () => {
     <div className={styles.page} data-wf-tool-calls-count={toolCallsCount}>
       <header className={styles.header}>
         <h1>KIOSK</h1>
-        <DevDebugLink isDev={import.meta.env.DEV as boolean} />
       </header>
 
       <main className={styles.kioskLayout}>
-        <section className={styles.kioskStage} aria-label="Mascot stage" style={stageStyle}>
-          <VrmAvatar
-            vrmUrl={vrmUrl}
-            expression={vrmExpression}
-            mouthOpen={mouthOpen}
-            motion={motion}
-          />
-        </section>
+        <div className={styles.kioskStageFrame}>
+          <section className={styles.kioskStage} aria-label="Mascot stage" style={stageStyle}>
+            <VrmAvatar
+              vrmUrl={vrmUrl}
+              expression={vrmExpression}
+              mouthOpen={mouthOpen}
+              motion={motion}
+            />
+          </section>
 
-        <section className={styles.kioskOverlay} aria-label="Kiosk overlay">
-          <div className={styles.kioskStatusRow}>
-            <div className={styles.kioskBadge}>Mode: {modeText}</div>
-            <div className={styles.kioskBadge}>Phase: {phase ?? "-"}</div>
-          </div>
+          <section className={styles.kioskOverlay} aria-label="Kiosk overlay">
+            {shouldShowRecording ? (
+              <div className={styles.recordingPill} aria-live="polite">
+                <span className={styles.recordingDot} aria-hidden="true" />
+                きいてるよ
+              </div>
+            ) : null}
 
-          {!isAudioUnlocked || isAudioUnlockNeeded ? (
-            <div className={styles.audioUnlockPill} aria-live="polite">
-              おとをだすには 1かい タップしてね
+            {speech ? (
+              <div className={styles.speechBubble}>
+                <div className={styles.speechText}>{speech.text}</div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        <section className={styles.kioskControls} aria-label="Kiosk controls">
+          {!isAudioUnlocked || isAudioUnlockNeeded || !isPttAvailable ? (
+            <div className={styles.kioskNoticeStack}>
+              {!isAudioUnlocked || isAudioUnlockNeeded ? (
+                <div className={styles.audioUnlockPill} aria-live="polite">
+                  おとをだすには 1かい タップしてね
+                </div>
+              ) : null}
+
+              {!isPttAvailable ? (
+                <div className={styles.connectionPill} role="status" aria-live="polite">
+                  つながるまで ちょっとまってね
+                </div>
+              ) : null}
             </div>
           ) : null}
 
           <button
             type="button"
-            className={isLocalPttActive ? styles.pttButtonActive : styles.pttButton}
+            className={
+              !isPttAvailable
+                ? styles.kioskPttButtonDisabled
+                : isLocalPttActive
+                  ? styles.kioskPttButtonActive
+                  : styles.kioskPttButton
+            }
+            disabled={!isPttAvailable}
             aria-pressed={isLocalPttActive}
             onPointerDown={() => {
+              if (!isPttAvailable) {
+                return;
+              }
               isKioskPttButtonHeldRef.current = true;
               setIsKioskPttButtonHeld(true);
               flushKioskPtt();
@@ -706,35 +770,32 @@ export const KioskPage = () => {
               flushKioskPtt();
             }}
           >
-            {isLocalPttActive ? "はなして とめる" : "おして はなす"}
+            {pttButtonLabel}
           </button>
 
-          {shouldShowRecording ? (
-            <div className={styles.recordingPill} aria-live="polite">
-              <span className={styles.recordingDot} aria-hidden="true" />
-              きいてるよ
+          {isPttAvailable ? (
+            <div className={styles.kioskPttHint} aria-live="polite">
+              {isLocalPttActive ? "はなすと そうしんするよ" : "ながおしで おはなししてね"}
             </div>
           ) : null}
 
-          {speech ? (
-            <div className={styles.speechBubble}>
-              <div className={styles.speechText}>{speech.text}</div>
-            </div>
-          ) : null}
-
-          {streamError ? (
-            <div className={styles.errorText} role="alert">
-              {toKidFriendlyError("stream", streamError)}
-            </div>
-          ) : null}
-          {pttError ? (
-            <div className={styles.errorText} role="alert">
-              {toKidFriendlyError("stream", pttError)}
-            </div>
-          ) : null}
-          {audioError ? (
-            <div className={styles.errorText} role="alert">
-              {toKidFriendlyError("audio", audioError)}
+          {hasKioskErrors ? (
+            <div className={styles.kioskErrorStack}>
+              {streamError ? (
+                <div className={styles.errorText} role="alert">
+                  {toKidFriendlyError("stream", streamError)}
+                </div>
+              ) : null}
+              {pttError ? (
+                <div className={styles.errorText} role="alert">
+                  {toKidFriendlyError("stream", pttError)}
+                </div>
+              ) : null}
+              {audioError ? (
+                <div className={styles.errorText} role="alert">
+                  {toKidFriendlyError("audio", audioError)}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
