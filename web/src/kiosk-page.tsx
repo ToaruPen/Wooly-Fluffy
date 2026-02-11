@@ -146,10 +146,12 @@ export const KioskPage = () => {
     if (isKioskPttSendingRef.current) {
       return;
     }
-    if (!isStreamConnectedRef.current) {
+    const shouldBeDown = isKioskPttSpaceHeldRef.current || isKioskPttButtonHeldRef.current;
+    const shouldSendPttUpWhileDisconnected =
+      !shouldBeDown && (isKioskPttDownRef.current || isKioskPttStateUncertainRef.current);
+    if (!isStreamConnectedRef.current && !shouldSendPttUpWhileDisconnected) {
       return;
     }
-    const shouldBeDown = isKioskPttSpaceHeldRef.current || isKioskPttButtonHeldRef.current;
     if (isKioskPttDownRef.current === shouldBeDown && !isKioskPttStateUncertainRef.current) {
       return;
     }
@@ -583,6 +585,7 @@ export const KioskPage = () => {
         isKioskPttDownRef.current = false;
         setIsKioskPttButtonHeld(false);
         setIsKioskPttDown(false);
+        flushKioskPtt();
       },
     });
 

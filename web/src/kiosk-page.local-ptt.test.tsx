@@ -117,6 +117,19 @@ describe("KioskPage local PTT", () => {
     expect(button).toBeTruthy();
 
     await act(async () => {
+      button?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const initialDownCalls = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_DOWN",
+    );
+    expect(initialDownCalls.length).toBe(1);
+
+    postJsonWithTimeout.mockClear();
+
+    await act(async () => {
       connectHandlers?.onError?.(new Error("boom"));
       await Promise.resolve();
     });
@@ -124,17 +137,41 @@ describe("KioskPage local PTT", () => {
     expect(button?.disabled).toBe(true);
     expect(container.textContent ?? "").toContain("つながるまで ちょっとまってね");
 
+    const upCalls = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_UP",
+    );
+    expect(upCalls.length).toBe(1);
+
+    postJsonWithTimeout.mockClear();
+
     await act(async () => {
+      button?.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      button?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
+      button?.dispatchEvent(new Event("pointerleave", { bubbles: true }));
       button?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " " }));
       await Promise.resolve();
     });
 
-    const downCalls = postJsonWithTimeout.mock.calls.filter(
+    const downCallsWhileDisconnected = postJsonWithTimeout.mock.calls.filter(
       ([path, body]) =>
         path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_DOWN",
     );
-    expect(downCalls.length).toBe(0);
+    expect(downCallsWhileDisconnected.length).toBe(0);
+
+    await act(async () => {
+      connectHandlers?.onSnapshot?.({
+        state: {
+          phase: "idle",
+          consent_ui_visible: false,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(button?.disabled).toBe(false);
+    expect(container.textContent ?? "").not.toContain("つながるまで ちょっとまってね");
 
     await act(async () => {
       root.unmount();
