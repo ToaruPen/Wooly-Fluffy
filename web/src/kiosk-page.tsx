@@ -569,13 +569,13 @@ export const KioskPage = () => {
         isStreamConnectedRef.current = false;
         setStreamConnection("reconnecting");
 
-        const wasPossiblyDown =
+        const isPossiblyDown =
           isKioskPttSpaceHeldRef.current ||
           isKioskPttButtonHeldRef.current ||
           isKioskPttDownRef.current ||
           isKioskPttStateUncertainRef.current;
 
-        if (wasPossiblyDown) {
+        if (isPossiblyDown) {
           isKioskPttStateUncertainRef.current = true;
         }
         isKioskPttSpaceHeldRef.current = false;
