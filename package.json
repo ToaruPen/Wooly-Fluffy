@@ -27,6 +27,7 @@
       "web/e2e/webserver.mjs"
     ],
     "ignoreFiles": [
+      "var/**",
       "server/eslint.naming.config.js",
       "web/eslint.naming.config.js"
     ],

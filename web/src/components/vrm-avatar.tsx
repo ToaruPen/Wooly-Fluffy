@@ -53,6 +53,81 @@ const applyMouthOpen = (vrm: VRM, mouthOpen: number) => {
   manager.setValue("aa", Math.min(1, Math.max(0, mouthOpen)));
 };
 
+const prefersReducedMotion = () => {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+};
+
+const pickBlinkExpressionNames = (vrm: VRM): string[] => {
+  const manager = vrm.expressionManager as unknown as
+    | { getExpression?: (name: string) => unknown }
+    | null
+    | undefined;
+  const getExpression = manager?.getExpression;
+
+  const hasExpression = (name: string): boolean => {
+    if (typeof getExpression !== "function") {
+      return false;
+    }
+    try {
+      return Boolean(getExpression.call(manager, name));
+    } catch {
+      return false;
+    }
+  };
+
+  const singleCandidates = ["blink", "Blink", "eyeBlink", "EyeBlink", "blinkAll", "BlinkAll"];
+  for (const name of singleCandidates) {
+    if (hasExpression(name)) {
+      return [name];
+    }
+  }
+
+  const leftCandidates = [
+    "blinkLeft",
+    "BlinkLeft",
+    "blink_L",
+    "blink_l",
+    "Blink_L",
+    "Blink_l",
+    "eyeBlinkLeft",
+    "EyeBlinkLeft",
+  ];
+  const rightCandidates = [
+    "blinkRight",
+    "BlinkRight",
+    "blink_R",
+    "blink_r",
+    "Blink_R",
+    "Blink_r",
+    "eyeBlinkRight",
+    "EyeBlinkRight",
+  ];
+
+  const left = leftCandidates.find((n) => hasExpression(n)) ?? null;
+  const right = rightCandidates.find((n) => hasExpression(n)) ?? null;
+  const hasLeft = Boolean(left);
+  const hasRight = Boolean(right);
+  if (hasLeft && hasRight) {
+    return [left!, right!];
+  }
+  if (hasLeft) {
+    return [left!];
+  }
+  if (hasRight) {
+    return [right!];
+  }
+
+  // Fall back to the canonical name (setValue is best-effort).
+  return ["blink"];
+};
+
 const isWebGlAvailable = () => {
   try {
     const canvas = document.createElement("canvas");
@@ -104,13 +179,23 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
     setError(null);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#eef2ff");
+    // Render the VRM on a transparent canvas so the kiosk stage CSS background
+    // can be swapped without touching three.js scene setup.
+    scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
     camera.position.set(0, 1.35, 2.4);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    if (
+      typeof (renderer as unknown as { setClearColor?: (color: number, alpha: number) => void })
+        .setClearColor === "function"
+    ) {
+      (
+        renderer as unknown as { setClearColor: (color: number, alpha: number) => void }
+      ).setClearColor(0x000000, 0);
+    }
     container.appendChild(renderer.domElement);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x3b2f2a, 1.0);
@@ -131,6 +216,19 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
     let pendingMotion: PlayMotionCommand | null = null;
     let motionGeneration = 0;
     let isDisposed = false;
+
+    const shouldBlink = !prefersReducedMotion();
+    let elapsedS = 0;
+    let blinkNames: string[] | null = null;
+    let nextBlinkAtS = 1.8 + Math.random() * 2.2;
+    let isBlinking = false;
+    let blinkProgressS = 0;
+    let lastBlinkValue = 0;
+    let blinkSetValueErrorCount = 0;
+
+    const scheduleNextBlink = () => {
+      nextBlinkAtS = elapsedS + 3.0 + Math.random() * 4.0;
+    };
 
     const onResize = () => resize();
 
@@ -360,12 +458,60 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
       rafId = requestAnimationFrame(animate);
       const delta = clock.getDelta();
 
+      elapsedS += delta;
+
       if (vrm) {
         if (mixer) {
           mixer.update(delta);
         }
+
         applyExpression(vrm, expressionRef.current);
         applyMouthOpen(vrm, mouthOpenRef.current);
+
+        // Apply blink after other expressions, so any expression resets don't clear it.
+        if (shouldBlink && vrm.expressionManager) {
+          if (!blinkNames) {
+            blinkNames = pickBlinkExpressionNames(vrm);
+          }
+
+          if (!isBlinking && elapsedS >= nextBlinkAtS) {
+            isBlinking = true;
+            blinkProgressS = 0;
+          }
+
+          let blinkValue = 0;
+          if (isBlinking) {
+            blinkProgressS += delta;
+            const closeS = 0.06;
+            const holdS = 0.03;
+            const openS = 0.09;
+            if (blinkProgressS < closeS) {
+              blinkValue = blinkProgressS / closeS;
+            } else if (blinkProgressS < closeS + holdS) {
+              blinkValue = 1;
+            } else if (blinkProgressS < closeS + holdS + openS) {
+              blinkValue = 1 - (blinkProgressS - closeS - holdS) / openS;
+            } else {
+              isBlinking = false;
+              blinkValue = 0;
+              scheduleNextBlink();
+            }
+          }
+
+          const shouldApplyBlink = isBlinking || lastBlinkValue !== 0;
+          if (shouldApplyBlink) {
+            const clamped = Math.min(1, Math.max(0, blinkValue));
+            for (const name of blinkNames) {
+              try {
+                vrm.expressionManager.setValue(name, clamped);
+              } catch {
+                blinkSetValueErrorCount += 1;
+              }
+            }
+            lastBlinkValue = clamped;
+          }
+        }
+
         vrm.update(delta);
       }
 
@@ -413,4 +559,6 @@ export const __test__ = {
   applyExpression,
   applyMouthOpen,
   isWebGlAvailable,
+  prefersReducedMotion,
+  pickBlinkExpressionNames,
 };

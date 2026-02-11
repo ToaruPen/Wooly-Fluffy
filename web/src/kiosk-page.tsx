@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { postFormData, postJson } from "./api";
 import { convertRecordingBlobToWavFile } from "./kiosk-audio";
 import { startPttSession, type PttSession } from "./kiosk-ptt";
 import { connectSse, type ServerMessage } from "./sse-client";
-import { AudioPlayer } from "./components/audio-player";
+import { AudioPlayer, AUDIO_ERROR_PLAY_BLOCKED } from "./components/audio-player";
 import { VrmAvatar, type ExpressionLabel } from "./components/vrm-avatar";
 import { parseExpressionLabel } from "./kiosk-expression";
 import {
@@ -14,6 +15,7 @@ import {
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 import { DevDebugLink } from "./dev-debug-link";
+import { performGestureAudioUnlock } from "./audio-unlock";
 
 const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string => {
   if (prefix === "stream") {
@@ -72,6 +74,9 @@ export const KioskPage = () => {
   const [consentError, setConsentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+  const [isAudioUnlockNeeded, setIsAudioUnlockNeeded] = useState(false);
+  const isAudioUnlockedRef = useRef(false);
   const [ttsWav, setTtsWav] = useState<ArrayBuffer | null>(null);
   const [ttsPlayId, setTtsPlayId] = useState(0);
   const ttsPlayIdRef = useRef(0);
@@ -87,6 +92,10 @@ export const KioskPage = () => {
   const ttsGenerationRef = useRef(0);
   const lastPlayedSayIdRef = useRef<string | null>(null);
   const toolCallsRef = useRef<ToolCallLite[]>([]);
+  const pendingTtsTextRef = useRef<string | null>(null);
+  const pendingSayIdRef = useRef<string | null>(null);
+  const lastSpokenTextRef = useRef<string | null>(null);
+  const lastSpokenSayIdRef = useRef<string | null>(null);
 
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
@@ -131,6 +140,55 @@ export const KioskPage = () => {
     },
     [stopTtsAudio],
   );
+
+  const unlockAudio = useCallback(() => {
+    if (isAudioUnlockedRef.current) {
+      return;
+    }
+    isAudioUnlockedRef.current = true;
+    setIsAudioUnlocked(true);
+    setIsAudioUnlockNeeded(false);
+    performGestureAudioUnlock();
+  }, []);
+
+  useEffect(() => {
+    if (isAudioUnlocked) {
+      return;
+    }
+
+    const handleUnlock = () => {
+      unlockAudio();
+    };
+
+    window.addEventListener("pointerdown", handleUnlock, { passive: true });
+    window.addEventListener("click", handleUnlock, { passive: true });
+    window.addEventListener("touchstart", handleUnlock, { passive: true });
+    window.addEventListener("keydown", handleUnlock);
+    return () => {
+      window.removeEventListener("pointerdown", handleUnlock);
+      window.removeEventListener("click", handleUnlock);
+      window.removeEventListener("touchstart", handleUnlock);
+      window.removeEventListener("keydown", handleUnlock);
+    };
+  }, [isAudioUnlocked, unlockAudio]);
+
+  useEffect(() => {
+    if (!isAudioUnlocked) {
+      return;
+    }
+    const pending = pendingTtsTextRef.current;
+    if (!pending) {
+      return;
+    }
+
+    const pendingSayId = pendingSayIdRef.current;
+    if (pendingSayId) {
+      lastPlayedSayIdRef.current = pendingSayId;
+    }
+    pendingTtsTextRef.current = null;
+    pendingSayIdRef.current = null;
+    void playTts(pending);
+  }, [isAudioUnlocked, playTts]);
 
   useEffect(() => {
     const ignoreStopError = (_err: unknown) => undefined;
@@ -244,6 +302,8 @@ export const KioskPage = () => {
           const sayId = data.say_id;
           const text = data.text;
           const expression = parseExpressionLabel((data as Record<string, unknown>).expression);
+          lastSpokenSayIdRef.current = sayId;
+          lastSpokenTextRef.current = text;
           setSpeech((prev: SpeakState | null) => {
             if (
               prev &&
@@ -256,12 +316,23 @@ export const KioskPage = () => {
             return { sayId, text, expression };
           });
 
+          setAudioError(null);
+
+          if (!isAudioUnlockedRef.current) {
+            if (pendingSayIdRef.current === sayId) {
+              return;
+            }
+            pendingTtsTextRef.current = text;
+            pendingSayIdRef.current = sayId;
+            setIsAudioUnlockNeeded(true);
+            return;
+          }
+
           if (lastPlayedSayIdRef.current === sayId) {
             return;
           }
           lastPlayedSayIdRef.current = sayId;
 
-          setAudioError(null);
           void playTts(text);
           return;
         }
@@ -290,6 +361,9 @@ export const KioskPage = () => {
           setSpeech(null);
           stopTtsAudio();
           setAudioError(null);
+          pendingTtsTextRef.current = null;
+          pendingSayIdRef.current = null;
+          setIsAudioUnlockNeeded(false);
         }
       },
       onError: (error) => {
@@ -341,6 +415,25 @@ export const KioskPage = () => {
   const vrmExpression: ExpressionLabel = speech?.expression ?? "neutral";
   const vrmUrl = import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm";
 
+  const stageBgEnv = import.meta.env.VITE_KIOSK_STAGE_BG_URL as string | undefined;
+  const defaultStageBgUrl = "/assets/stage-bg/kenney-uncolored-hills.png";
+  const stageBgUrl = (() => {
+    if (stageBgEnv === "") {
+      return null;
+    }
+    if (!stageBgEnv) {
+      return defaultStageBgUrl;
+    }
+    // Avoid runtime loading of external assets; keep the kiosk self-contained.
+    if (/^https?:\/\//i.test(stageBgEnv) || /^\/\//.test(stageBgEnv)) {
+      return defaultStageBgUrl;
+    }
+    return stageBgEnv;
+  })();
+  const stageStyle = {
+    "--wf-kiosk-stage-bg": stageBgUrl ? `url(${JSON.stringify(stageBgUrl)})` : "none",
+  } as CSSProperties;
+
   const consentDialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -381,7 +474,7 @@ export const KioskPage = () => {
       </header>
 
       <main className={styles.kioskLayout}>
-        <section className={styles.kioskStage} aria-label="Mascot stage">
+        <section className={styles.kioskStage} aria-label="Mascot stage" style={stageStyle}>
           <VrmAvatar
             vrmUrl={vrmUrl}
             expression={vrmExpression}
@@ -395,6 +488,12 @@ export const KioskPage = () => {
             <div className={styles.kioskBadge}>Mode: {modeText}</div>
             <div className={styles.kioskBadge}>Phase: {phase ?? "-"}</div>
           </div>
+
+          {!isAudioUnlocked || isAudioUnlockNeeded ? (
+            <div className={styles.audioUnlockPill} aria-live="polite">
+              おとをだすには 1かい タップしてね
+            </div>
+          ) : null}
 
           {shouldShowRecording ? (
             <div className={styles.recordingPill} aria-live="polite">
@@ -477,6 +576,21 @@ export const KioskPage = () => {
           if (ttsPlayIdRef.current !== playId) {
             return;
           }
+          if (message === AUDIO_ERROR_PLAY_BLOCKED) {
+            const pending = lastSpokenTextRef.current;
+            const pendingSayId = lastSpokenSayIdRef.current;
+            if (pending) {
+              pendingTtsTextRef.current = pending;
+              pendingSayIdRef.current = pendingSayId;
+            }
+            setMouthOpen(0);
+            setTtsWav(null);
+            isAudioUnlockedRef.current = false;
+            setIsAudioUnlocked(false);
+            setIsAudioUnlockNeeded(true);
+            return;
+          }
+
           setMouthOpen(0);
           setTtsWav(null);
           setAudioError(message);

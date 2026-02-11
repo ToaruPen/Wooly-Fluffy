@@ -46,6 +46,13 @@ const setNativeInputValue = (input: HTMLInputElement, value: string) => {
   setter.call(input, value);
 };
 
+const unlockKioskAudio = async () => {
+  await act(async () => {
+    window.dispatchEvent(new Event("pointerdown"));
+    await Promise.resolve();
+  });
+};
+
 describe("sse-client", () => {
   it("handles snapshots and errors", async () => {
     vi.resetModules();
@@ -782,6 +789,8 @@ describe("app", () => {
     expect(document.body.textContent ?? "").toContain("Mode: ROOM");
     expect(document.body.textContent ?? "").toContain("Phase: idle");
 
+    await unlockKioskAudio();
+
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.speak", seq: 1, data: null });
       handlers.onMessage?.({
@@ -974,6 +983,8 @@ describe("app", () => {
         });
       });
 
+      await unlockKioskAudio();
+
       await act(async () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
@@ -1075,6 +1086,8 @@ describe("app", () => {
         });
       });
 
+      await unlockKioskAudio();
+
       await act(async () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
@@ -1110,7 +1123,9 @@ describe("app", () => {
     class FakeAudio {
       static latest: FakeAudio | null = null;
       play = vi.fn(async () => {
-        throw new Error("blocked");
+        const err = new Error("blocked");
+        (err as unknown as { name: string }).name = "NotAllowedError";
+        throw err;
       });
       pause = vi.fn(() => {
         throw new Error("pause boom");
@@ -1165,6 +1180,8 @@ describe("app", () => {
         });
       });
 
+      await unlockKioskAudio();
+
       await act(async () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
@@ -1174,7 +1191,7 @@ describe("app", () => {
         await Promise.resolve();
       });
 
-      expect(document.body.textContent ?? "").toContain("おとがでないみたい… すこしまってね");
+      expect(document.body.textContent ?? "").toContain("おとをだすには 1かい タップしてね");
 
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 2, data: {} });
@@ -1243,6 +1260,8 @@ describe("app", () => {
         },
       });
     });
+
+    await unlockKioskAudio();
 
     await act(async () => {
       handlers.onMessage?.({
@@ -1322,6 +1341,8 @@ describe("app", () => {
           },
         });
       });
+
+      await unlockKioskAudio();
 
       await act(async () => {
         handlers.onMessage?.({
@@ -1435,6 +1456,8 @@ describe("app", () => {
         });
       });
 
+      await unlockKioskAudio();
+
       await act(async () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
@@ -1520,6 +1543,8 @@ describe("app", () => {
         },
       });
     });
+
+    await unlockKioskAudio();
 
     await act(async () => {
       handlers.onMessage?.({
@@ -1615,6 +1640,8 @@ describe("app", () => {
         });
       });
 
+      await unlockKioskAudio();
+
       await act(async () => {
         handlers.onMessage?.({
           type: "kiosk.command.speak",
@@ -1697,6 +1724,8 @@ describe("app", () => {
         },
       });
     });
+
+    await unlockKioskAudio();
 
     await act(async () => {
       handlers.onMessage?.({
