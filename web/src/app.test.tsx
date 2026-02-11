@@ -904,7 +904,7 @@ describe("app", () => {
 
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 7, data: {} });
-      handlers.onError?.(new Error("boom"));
+      handlers.onError?.(new Error("SSE connection error"));
     });
 
     expect(document.body.textContent ?? "").toContain("つながらないよ");

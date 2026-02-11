@@ -130,7 +130,7 @@ describe("KioskPage local PTT", () => {
     postJsonWithTimeout.mockClear();
 
     await act(async () => {
-      connectHandlers?.onError?.(new Error("boom"));
+      connectHandlers?.onError?.(new Error("SSE connection error"));
       await Promise.resolve();
     });
 
@@ -167,6 +167,40 @@ describe("KioskPage local PTT", () => {
           consent_ui_visible: false,
         },
       });
+      await Promise.resolve();
+    });
+
+    expect(button?.disabled).toBe(false);
+    expect(container.textContent ?? "").not.toContain("つながるまで ちょっとまってね");
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("keeps local PTT enabled on non-transport SSE errors", async () => {
+    vi.resetModules();
+    postJsonWithTimeout.mockClear();
+
+    const { KioskPage } = await import("./kiosk-page");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<KioskPage />);
+      await Promise.resolve();
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((el) =>
+      (el.textContent ?? "").includes("おして"),
+    ) as HTMLButtonElement | undefined;
+    expect(button).toBeTruthy();
+
+    await act(async () => {
+      connectHandlers?.onError?.(new Error("Invalid SSE message"));
       await Promise.resolve();
     });
 

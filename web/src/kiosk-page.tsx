@@ -37,6 +37,8 @@ const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string =>
   return "おとがでないみたい… すこしまってね";
 };
 
+const isSseTransportError = (error: Error): boolean => error.message === "SSE connection error";
+
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
   | "idle"
@@ -568,6 +570,9 @@ export const KioskPage = () => {
       },
       onError: (error) => {
         setStreamError(error.message);
+        if (!isSseTransportError(error)) {
+          return;
+        }
         isStreamConnectedRef.current = false;
         setStreamConnection("reconnecting");
 
