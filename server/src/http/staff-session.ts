@@ -1,19 +1,19 @@
 import type { IncomingMessage } from "http";
 import { randomUUID } from "node:crypto";
 
-export const STAFF_SESSION_COOKIE_NAME = "wf_staff_session";
+const STAFF_SESSION_COOKIE_NAME = "wf_staff_session";
 
 type StaffSession = {
   expires_at_ms: number;
 };
 
-export type StaffSessionStore = {
+type StaffSessionStore = {
   create: () => string;
   validate: (token: string) => boolean;
   keepalive: (token: string) => boolean;
 };
 
-export const parseCookies = (cookieHeader: string): Record<string, string> => {
+const parseCookies = (cookieHeader: string): Record<string, string> => {
   const result: Record<string, string> = {};
   for (const part of cookieHeader.split(";")) {
     const trimmed = part.trim();
