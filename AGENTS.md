@@ -120,6 +120,7 @@ Directory-scoped guidance:
 - `/estimation`: write a Full estimate (11 sections) and get approval
 - `/impl`: implement an Issue (estimate required)
 - `/tdd`: implement via TDD (red -> green -> refactor)
+- `/ui-iterate`: iterate UI redesign in short loops (capture -> patch -> verify)
 - `/review-cycle`: local review loop
 - `/review`: definition-of-done check
 - `/create-pr`: create a PR (gh)
