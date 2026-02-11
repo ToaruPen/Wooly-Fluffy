@@ -151,6 +151,112 @@ describe("tts-provider (VOICEVOX)", () => {
     expect(calls.length).toBe(2);
   });
 
+  it("reads speaker id from env for audio_query and synthesis", async () => {
+    const prev = process.env.VOICEVOX_SPEAKER_ID;
+    const calls: Array<{ input: string; init?: unknown }> = [];
+    const audioQuery = { foo: "bar" };
+    const wav = new Uint8Array([4, 5, 6]).buffer;
+
+    try {
+      process.env.VOICEVOX_SPEAKER_ID = "7";
+
+      const tts = createVoiceVoxTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: async (input, init) => {
+          calls.push({ input, init });
+
+          const url = new URL(input);
+          if (url.pathname === "/audio_query") {
+            expect(init?.method).toBe("POST");
+            expect(url.searchParams.get("speaker")).toBe("7");
+            return {
+              ok: true,
+              status: 200,
+              json: async () => audioQuery,
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+
+          if (url.pathname === "/synthesis") {
+            expect(init?.method).toBe("POST");
+            expect(url.searchParams.get("speaker")).toBe("7");
+            const body = (init as { body?: unknown } | undefined)?.body;
+            expect(body).toBe(JSON.stringify(audioQuery));
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({}),
+              arrayBuffer: async () => wav,
+            };
+          }
+
+          throw new Error(`unexpected url: ${input}`);
+        },
+      });
+
+      const result = await tts.synthesize({ text: "Hello" });
+      expect(result.wav).toEqual(Buffer.from(wav));
+      expect(calls.length).toBe(2);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.VOICEVOX_SPEAKER_ID;
+      } else {
+        process.env.VOICEVOX_SPEAKER_ID = prev;
+      }
+    }
+  });
+
+  it("falls back to speaker=2 when env is empty or non-integer", async () => {
+    const prev = process.env.VOICEVOX_SPEAKER_ID;
+    const invalidValues = ["", "   ", "abc", "1.5"];
+
+    try {
+      for (const value of invalidValues) {
+        process.env.VOICEVOX_SPEAKER_ID = value;
+
+        const tts = createVoiceVoxTtsProvider({
+          engine_url: "http://voicevox.local",
+          fetch: async (input, init) => {
+            const url = new URL(input);
+            if (url.pathname === "/audio_query") {
+              expect(init?.method).toBe("POST");
+              expect(url.searchParams.get("speaker")).toBe("2");
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({ query: true }),
+                arrayBuffer: async () => new ArrayBuffer(0),
+              };
+            }
+
+            if (url.pathname === "/synthesis") {
+              expect(init?.method).toBe("POST");
+              expect(url.searchParams.get("speaker")).toBe("2");
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({}),
+                arrayBuffer: async () => new Uint8Array([9]).buffer,
+              };
+            }
+
+            throw new Error(`unexpected url: ${input}`);
+          },
+        });
+
+        await expect(tts.synthesize({ text: "Hello" })).resolves.toEqual({
+          wav: Buffer.from(new Uint8Array([9]).buffer),
+        });
+      }
+    } finally {
+      if (prev === undefined) {
+        delete process.env.VOICEVOX_SPEAKER_ID;
+      } else {
+        process.env.VOICEVOX_SPEAKER_ID = prev;
+      }
+    }
+  });
+
   it("throws when audio_query returns non-2xx", async () => {
     const tts = createVoiceVoxTtsProvider({
       engine_url: "http://voicevox.local",

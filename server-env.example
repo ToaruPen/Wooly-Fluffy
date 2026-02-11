@@ -15,7 +15,7 @@
 
 STAFF_PASSCODE="<CHOOSE_A_PASSCODE>"
 WHISPER_CPP_CLI_PATH="/ABS/PATH/TO/whisper.cpp/build/bin/whisper-cli"
-WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-base.bin"
+WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-large-v3-turbo.bin"
 
 ## Optional: server bind + DB
 
@@ -26,6 +26,7 @@ WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-base.bin"
 ## Optional: TTS (VOICEVOX)
 
 # VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
+# VOICEVOX_SPEAKER_ID="2"
 
 ## Optional: LLM
 

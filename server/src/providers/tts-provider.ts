@@ -25,7 +25,7 @@ type VoiceVoxTtsProviderOptions = {
   fetch?: FetchFn;
 };
 
-const SPEAKER_ID = 2;
+const DEFAULT_SPEAKER_ID = 2;
 
 const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
 
@@ -101,12 +101,13 @@ const synthesizeFromVoiceVox = async (input: {
   timeoutMs: number;
   fetch: FetchFn;
   text: string;
+  speakerId: number;
 }): Promise<{ wav: Buffer }> => {
   return await withOneRetry(
     async () => {
       const queryParams = new URLSearchParams({
         text: input.text,
-        speaker: String(SPEAKER_ID),
+        speaker: String(input.speakerId),
       });
       const audioQueryRes = await withTimeout(input.timeoutMs, (signal) =>
         input.fetch(`${input.baseUrl}/audio_query?${queryParams.toString()}`, {
@@ -120,7 +121,7 @@ const synthesizeFromVoiceVox = async (input: {
 
       const audioQuery = await audioQueryRes.json();
 
-      const synthesisParams = new URLSearchParams({ speaker: String(SPEAKER_ID) });
+      const synthesisParams = new URLSearchParams({ speaker: String(input.speakerId) });
       const synthesisRes = await withTimeout(input.timeoutMs, (signal) =>
         input.fetch(`${input.baseUrl}/synthesis?${synthesisParams.toString()}`, {
           method: "POST",
@@ -153,6 +154,11 @@ export const createVoiceVoxTtsProvider = (
       min: 200,
       max: 60_000,
     });
+  const rawSpeakerId = readEnvInt(process.env, {
+    name: "VOICEVOX_SPEAKER_ID",
+    defaultValue: DEFAULT_SPEAKER_ID,
+  });
+  const speakerId = rawSpeakerId >= 0 ? rawSpeakerId : DEFAULT_SPEAKER_ID;
 
   const fetchFn: FetchFn =
     options.fetch ??
@@ -172,6 +178,12 @@ export const createVoiceVoxTtsProvider = (
   return {
     health: () => healthFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn }),
     synthesize: (input) =>
-      synthesizeFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn, text: input.text }),
+      synthesizeFromVoiceVox({
+        baseUrl,
+        timeoutMs,
+        fetch: fetchFn,
+        text: input.text,
+        speakerId,
+      }),
   };
 };

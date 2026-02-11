@@ -88,20 +88,22 @@ cd whisper.cpp
 cmake -B build -DWHISPER_COREML=1
 cmake --build build -j --config Release
 
-# Download base model (multilingual, 141MB)
-./models/download-ggml-model.sh base
+# Download the adopted model in this repo (multilingual)
+./models/download-ggml-model.sh large-v3-turbo
 
 # Generate Core ML encoder (optional, for iOS/macOS optimization)
 pip install ane_transformers openai-whisper coremltools
-./models/generate-coreml-model.sh base
+./models/generate-coreml-model.sh large-v3-turbo
 ```
 
 **Verification**:
 
 ```bash
 ./build/bin/whisper-cli --help
-ls -lah models/ggml-base.bin  # Should be ~141MB
+ls -lah models/ggml-large-v3-turbo.bin  # Should be around 1.5GB
 ```
+
+Current adoption in this repository: `ggml-large-v3-turbo.bin`.
 
 **Fallback**: If Core ML build fails, the CPU backend will be used automatically.
 
@@ -234,13 +236,14 @@ Server (required unless noted):
 - `STAFF_PASSCODE` (required): passcode for `/staff` login (STAFF APIs are LAN-only)
 - `DB_PATH` (optional): defaults to `var/wooly-fluffy.sqlite3`
 - `VOICEVOX_ENGINE_URL` (optional): defaults to `http://127.0.0.1:50021`
+- `VOICEVOX_SPEAKER_ID` (optional): VOICEVOX speaker id (default: `2`; empty/non-integer falls back to `2`)
 - `LLM_PROVIDER_KIND` (required for non-stub): `local` / `external` / `gemini_native` (default: `stub`)
 - `LLM_BASE_URL` (required for `local`/`external`): OpenAI-compatible base URL (include `/v1`)
 - `LLM_MODEL` (required for `local`/`external`/`gemini_native`): model id string
 - `LLM_API_KEY` (required for `external`/`gemini_native`): API key string (keep secret)
   - For Gemini native, `GEMINI_API_KEY` / `GOOGLE_API_KEY` are also accepted.
 - `WHISPER_CPP_CLI_PATH` (required for STT): path to `whisper-cli`
-- `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file
+- `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file (adopted: `ggml-large-v3-turbo.bin`)
 
 Server (optional tuning):
 
@@ -303,7 +306,7 @@ Example (bash; placeholders):
 ```bash
 export STAFF_PASSCODE="<choose-a-passcode>"
 export WHISPER_CPP_CLI_PATH="/ABS/PATH/TO/whisper.cpp/build/bin/whisper-cli"
-export WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-base.bin"
+export WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-large-v3-turbo.bin"
 
 export LLM_PROVIDER_KIND="local"
 export LLM_BASE_URL="http://127.0.0.1:1234/v1"
@@ -316,6 +319,7 @@ export LLM_MODEL="<lm-studio-model-id>"
 
 # Optional overrides
 # export VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
+# export VOICEVOX_SPEAKER_ID="2"
 # export DB_PATH="$(pwd)/var/wooly-fluffy.sqlite3"
 ```
 

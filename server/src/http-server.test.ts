@@ -301,6 +301,7 @@ beforeEach(async () => {
   delete process.env.WF_TICK_INTERVAL_MS;
   delete process.env.WF_CONSENT_TIMEOUT_MS;
   delete process.env.WF_INACTIVITY_TIMEOUT_MS;
+  delete process.env.VOICEVOX_SPEAKER_ID;
 
   store = createStore({ db_path: ":memory:" });
   server = createHttpServer({
@@ -361,6 +362,7 @@ afterEach(async () => {
   delete process.env.WF_TICK_INTERVAL_MS;
   delete process.env.WF_CONSENT_TIMEOUT_MS;
   delete process.env.WF_INACTIVITY_TIMEOUT_MS;
+  delete process.env.VOICEVOX_SPEAKER_ID;
   staffCookie = "";
 
   vi.unstubAllGlobals();
@@ -505,12 +507,42 @@ describe("http-server", () => {
 
   describe("kiosk tts", () => {
     it("returns audio/wav from /api/v1/kiosk/tts", async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+
+      process.env.VOICEVOX_SPEAKER_ID = "9";
+
+      server = createHttpServer({
+        store,
+        stt_provider: {
+          transcribe: (input) => ({
+            text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
+          }),
+          health: () => ({ status: "ok" }),
+        },
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("server address unavailable");
+      }
+      port = address.port;
+
       vi.stubGlobal("fetch", (async (input: unknown, init?: unknown) => {
         const url = new URL(String(input));
 
         if (url.pathname === "/audio_query") {
           expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
-          expect(url.searchParams.get("speaker")).toBe("2");
+          expect(url.searchParams.get("speaker")).toBe("9");
           expect(url.searchParams.get("text")).toBe("Hello");
           return {
             ok: true,
@@ -522,7 +554,7 @@ describe("http-server", () => {
 
         if (url.pathname === "/synthesis") {
           expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
-          expect(url.searchParams.get("speaker")).toBe("2");
+          expect(url.searchParams.get("speaker")).toBe("9");
           return {
             ok: true,
             status: 200,
