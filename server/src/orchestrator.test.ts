@@ -424,6 +424,34 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("ignores UI consent button while listening from consent PTT", () => {
+    const base = createInitialState(0);
+    const asking: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "asking_consent",
+      consent_deadline_at_ms: 4000,
+      memory_candidate: { kind: "food", value: "カレー" },
+    };
+
+    const pttDown = reduceOrchestrator(asking, { type: "STAFF_PTT_DOWN" }, 100);
+    expect(pttDown.next_state.phase).toBe("listening");
+
+    const consentButton = reduceOrchestrator(
+      pttDown.next_state,
+      { type: "UI_CONSENT_BUTTON", answer: "yes" },
+      110,
+    );
+    expect(consentButton.next_state).toEqual(pttDown.next_state);
+    expect(consentButton.effects).toEqual([]);
+
+    const pttUp = reduceOrchestrator(consentButton.next_state, { type: "STAFF_PTT_UP" }, 120);
+    const sttEffect = getEffect(pttUp.effects, "CALL_STT");
+    expect(pttUp.next_state.phase).toBe("waiting_stt");
+    expect(sttEffect?.request_id).toBe("stt-1");
+  });
+
   it("times out consent after 30s", () => {
     const base = createInitialState(0);
     const asking: OrchestratorState = {
@@ -442,6 +470,24 @@ describe("orchestrator", () => {
       { type: "SAY", text: "さっきのことは忘れるね" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);
+  });
+
+  it("does not timeout consent while listening", () => {
+    const base = createInitialState(0);
+    const listening: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "listening",
+      consent_deadline_at_ms: 1000,
+      memory_candidate: { kind: "play", value: "サッカー" },
+      is_staff_ptt_held: true,
+    };
+
+    const result = reduceOrchestrator(listening, { type: "TICK" }, 1000);
+
+    expect(result.next_state).toEqual(listening);
+    expect(result.effects).toEqual([]);
   });
 
   it("uses consent_timeout_ms from config when entering asking_consent", () => {

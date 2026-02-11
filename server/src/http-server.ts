@@ -597,6 +597,11 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path === "/api/v1/kiosk/event") {
+      const remoteAddress = getRemoteAddress(req);
+      if (!isLanAddress(remoteAddress)) {
+        sendError(res, 403, "forbidden", "Forbidden");
+        return;
+      }
       if (req.method !== "POST") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
         return;

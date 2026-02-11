@@ -718,7 +718,11 @@ export const reduceOrchestrator = (
       return { next_state: state, effects: [] };
     }
     case "UI_CONSENT_BUTTON": {
-      if (!state.memory_candidate || state.consent_deadline_at_ms === null) {
+      if (
+        state.phase !== "asking_consent" ||
+        !state.memory_candidate ||
+        state.consent_deadline_at_ms === null
+      ) {
         return { next_state: state, effects: [] };
       }
       if (event.answer === "yes" && state.personal_name) {
@@ -752,7 +756,11 @@ export const reduceOrchestrator = (
       };
     }
     case "TICK": {
-      if (state.consent_deadline_at_ms !== null && now >= state.consent_deadline_at_ms) {
+      if (
+        state.phase === "asking_consent" &&
+        state.consent_deadline_at_ms !== null &&
+        now >= state.consent_deadline_at_ms
+      ) {
         return {
           next_state: clearConsentState(state),
           effects: [

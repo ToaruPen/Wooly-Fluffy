@@ -128,6 +128,36 @@ describe("staff access control", () => {
     });
   });
 
+  it("returns 403 for kiosk PTT events when remoteAddress is not LAN", async () => {
+    process.env.STAFF_PASSCODE = "test-pass";
+    const localServer = createHttpServer({ store, get_remote_address: () => "8.8.8.8" });
+    closeServer = () =>
+      new Promise<void>((resolve, reject) => {
+        localServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    await new Promise<void>((resolve) => localServer.listen(0, "127.0.0.1", resolve));
+    const address = localServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("server address unavailable");
+    }
+    port = address.port;
+
+    const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+    });
+    expect(response.status).toBe(403);
+    expect(JSON.parse(response.body)).toEqual({
+      error: { code: "forbidden", message: "Forbidden" },
+    });
+  });
+
   it("returns 403 for staff deny when remoteAddress is not LAN", async () => {
     process.env.STAFF_PASSCODE = "test-pass";
     const localServer = createHttpServer({ store, get_remote_address: () => "8.8.8.8" });
