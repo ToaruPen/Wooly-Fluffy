@@ -96,6 +96,123 @@ describe("KioskPage local PTT", () => {
     document.body.removeChild(container);
   });
 
+  it("disables local PTT controls while stream is reconnecting", async () => {
+    vi.resetModules();
+    postJsonWithTimeout.mockClear();
+
+    const { KioskPage } = await import("./kiosk-page");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<KioskPage />);
+      await Promise.resolve();
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((el) =>
+      (el.textContent ?? "").includes("おして"),
+    ) as HTMLButtonElement | undefined;
+    expect(button).toBeTruthy();
+
+    await act(async () => {
+      button?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const initialDownCalls = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_DOWN",
+    );
+    expect(initialDownCalls.length).toBe(1);
+
+    postJsonWithTimeout.mockClear();
+
+    await act(async () => {
+      connectHandlers?.onError?.(new Error("SSE connection error"));
+      await Promise.resolve();
+    });
+
+    expect(button?.disabled).toBe(true);
+    expect(container.textContent ?? "").toContain("つながるまで ちょっとまってね");
+
+    const upCalls = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_UP",
+    );
+    expect(upCalls.length).toBe(1);
+
+    postJsonWithTimeout.mockClear();
+
+    await act(async () => {
+      button?.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      button?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
+      button?.dispatchEvent(new Event("pointerleave", { bubbles: true }));
+      button?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " " }));
+      await Promise.resolve();
+    });
+
+    const downCallsWhileDisconnected = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_DOWN",
+    );
+    expect(downCallsWhileDisconnected.length).toBe(0);
+
+    await act(async () => {
+      connectHandlers?.onSnapshot?.({
+        state: {
+          phase: "idle",
+          consent_ui_visible: false,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(button?.disabled).toBe(false);
+    expect(container.textContent ?? "").not.toContain("つながるまで ちょっとまってね");
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("keeps local PTT enabled on non-transport SSE errors", async () => {
+    vi.resetModules();
+    postJsonWithTimeout.mockClear();
+
+    const { KioskPage } = await import("./kiosk-page");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<KioskPage />);
+      await Promise.resolve();
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find((el) =>
+      (el.textContent ?? "").includes("おして"),
+    ) as HTMLButtonElement | undefined;
+    expect(button).toBeTruthy();
+
+    await act(async () => {
+      connectHandlers?.onError?.(new Error("Invalid SSE message"));
+      await Promise.resolve();
+    });
+
+    expect(button?.disabled).toBe(false);
+    expect(container.textContent ?? "").not.toContain("つながるまで ちょっとまってね");
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
   it("ignores Space key repeats and prevents default while held", async () => {
     vi.resetModules();
     postJsonWithTimeout.mockClear();

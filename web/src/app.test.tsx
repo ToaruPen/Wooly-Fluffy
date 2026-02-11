@@ -784,10 +784,11 @@ describe("app", () => {
 
     expect(document.body.textContent ?? "").toContain("KIOSK");
     expect(document.body.textContent ?? "").toContain("Mascot Stage");
+    expect(document.body.textContent ?? "").not.toContain("Open Debug");
     expect(document.body.textContent ?? "").not.toContain("TTS:");
     expect(document.body.textContent ?? "").not.toContain("Stream:");
-    expect(document.body.textContent ?? "").toContain("Mode: ROOM");
-    expect(document.body.textContent ?? "").toContain("Phase: idle");
+    expect(document.body.textContent ?? "").not.toContain("Mode:");
+    expect(document.body.textContent ?? "").not.toContain("Phase:");
 
     await unlockKioskAudio();
 
@@ -860,7 +861,6 @@ describe("app", () => {
       });
     });
 
-    expect(document.body.textContent ?? "").toContain("Mode: PERSONAL");
     expect(document.body.textContent ?? "").toContain("きいてるよ");
     expect(document.body.textContent ?? "").toContain("覚えていい？");
 
@@ -874,7 +874,7 @@ describe("app", () => {
         },
       });
     });
-    expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");
+    expect(document.body.textContent ?? "").not.toContain("Mode:");
 
     const yesButton = Array.from(document.querySelectorAll("button")).find((b) =>
       (b.textContent ?? "").includes("おぼえて！"),
@@ -904,10 +904,14 @@ describe("app", () => {
 
     await act(async () => {
       handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 7, data: {} });
-      handlers.onError?.(new Error("boom"));
+      handlers.onError?.(new Error("SSE connection error"));
     });
 
     expect(document.body.textContent ?? "").toContain("つながらないよ");
+    const kioskPtt = Array.from(document.querySelectorAll("button")).find((b) =>
+      /おして はなす|はなして とめる|つながるまで まってね/.test(b.textContent ?? ""),
+    ) as HTMLButtonElement | undefined;
+    expect(kioskPtt?.disabled).toBe(true);
 
     await act(async () => {
       appRoot.unmount();
