@@ -583,7 +583,7 @@ describe("http-server", () => {
       expect(response.status).toBe(200);
       expect(String(response.headers["content-type"] ?? "")).toContain("audio/wav");
       expect(Array.from(response.body)).toEqual([1, 2, 3]);
-    });
+    }, 2000);
 
     it("returns 400 invalid_request for /api/v1/kiosk/tts when text is missing", async () => {
       const response = await sendRequest("POST", "/api/v1/kiosk/tts", {

@@ -204,7 +204,7 @@ describe("tts-provider (VOICEVOX)", () => {
         process.env.VOICEVOX_SPEAKER_ID = prev;
       }
     }
-  });
+  }, 2000);
 
   it("falls back to speaker=2 when env is empty or non-integer", async () => {
     const prev = process.env.VOICEVOX_SPEAKER_ID;
@@ -255,7 +255,7 @@ describe("tts-provider (VOICEVOX)", () => {
         process.env.VOICEVOX_SPEAKER_ID = prev;
       }
     }
-  });
+  }, 2000);
 
   it("throws when audio_query returns non-2xx", async () => {
     const tts = createVoiceVoxTtsProvider({
