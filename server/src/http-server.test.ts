@@ -368,83 +368,277 @@ afterEach(async () => {
 });
 
 describe("http-server", () => {
-  it("returns healthcheck status", async () => {
-    const response = await sendRequest("GET", "/health");
+  describe("health and baseline routes", () => {
+    it("returns healthcheck status", async () => {
+      const response = await sendRequest("GET", "/health");
 
-    expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({
-      status: "ok",
-      providers: {
-        stt: { status: "ok" },
-        tts: { status: "ok" },
-        llm: { status: "ok", kind: "stub" },
-      },
-    });
-  });
-
-  it("returns stt provider status from /health", async () => {
-    process.env.TEST_STT_HEALTH = "unavailable";
-    const response = await sendRequest("GET", "/health");
-
-    expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({
-      status: "ok",
-      providers: {
-        stt: { status: "unavailable" },
-        tts: { status: "ok" },
-        llm: { status: "ok", kind: "stub" },
-      },
-    });
-  });
-
-  it("uses whisper.cpp STT provider by default", async () => {
-    const prevCli = process.env.WHISPER_CPP_CLI_PATH;
-    const prevModel = process.env.WHISPER_CPP_MODEL_PATH;
-    process.env.WHISPER_CPP_CLI_PATH = "/__missing_whisper_cli__";
-    process.env.WHISPER_CPP_MODEL_PATH = "/__missing_whisper_model__";
-
-    const localStore = createStore({ db_path: ":memory:" });
-    const localServer = createHttpServer({ store: localStore });
-
-    let localPort = 0;
-    await new Promise<void>((resolve) => {
-      localServer.listen(0, "127.0.0.1", () => {
-        const address = localServer.address();
-        if (!address || typeof address === "string") {
-          throw new Error("server address unavailable");
-        }
-        localPort = address.port;
-        resolve();
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({
+        status: "ok",
+        providers: {
+          stt: { status: "ok" },
+          tts: { status: "ok" },
+          llm: { status: "ok", kind: "stub" },
+        },
       });
     });
 
-    try {
-      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-        const req = request(
-          { host: "127.0.0.1", port: localPort, method: "GET", path: "/health" },
-          (res) => {
-            let body = "";
-            res.setEncoding("utf8");
-            res.on("data", (chunk) => {
-              body += chunk;
-            });
-            res.on("end", () => {
-              resolve({ status: res.statusCode ?? 0, body });
-            });
-          },
-        );
-        req.on("error", reject);
-        req.end();
+    it("returns stt provider status from /health", async () => {
+      process.env.TEST_STT_HEALTH = "unavailable";
+      const response = await sendRequest("GET", "/health");
+
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({
+        status: "ok",
+        providers: {
+          stt: { status: "unavailable" },
+          tts: { status: "ok" },
+          llm: { status: "ok", kind: "stub" },
+        },
+      });
+    });
+
+    it("uses whisper.cpp STT provider by default", async () => {
+      const prevCli = process.env.WHISPER_CPP_CLI_PATH;
+      const prevModel = process.env.WHISPER_CPP_MODEL_PATH;
+      process.env.WHISPER_CPP_CLI_PATH = "/__missing_whisper_cli__";
+      process.env.WHISPER_CPP_MODEL_PATH = "/__missing_whisper_model__";
+
+      const localStore = createStore({ db_path: ":memory:" });
+      const localServer = createHttpServer({ store: localStore });
+
+      let localPort = 0;
+      await new Promise<void>((resolve) => {
+        localServer.listen(0, "127.0.0.1", () => {
+          const address = localServer.address();
+          if (!address || typeof address === "string") {
+            throw new Error("server address unavailable");
+          }
+          localPort = address.port;
+          resolve();
+        });
+      });
+
+      try {
+        const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+          const req = request(
+            { host: "127.0.0.1", port: localPort, method: "GET", path: "/health" },
+            (res) => {
+              let body = "";
+              res.setEncoding("utf8");
+              res.on("data", (chunk) => {
+                body += chunk;
+              });
+              res.on("end", () => {
+                resolve({ status: res.statusCode ?? 0, body });
+              });
+            },
+          );
+          req.on("error", reject);
+          req.end();
+        });
+
+        expect(response.status).toBe(200);
+        const parsed = JSON.parse(response.body) as {
+          providers: { stt: { status: string } };
+        };
+        expect(parsed.providers.stt.status).toBe("unavailable");
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          localServer.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+        localStore.close();
+        if (prevCli === undefined) {
+          delete process.env.WHISPER_CPP_CLI_PATH;
+        } else {
+          process.env.WHISPER_CPP_CLI_PATH = prevCli;
+        }
+        if (prevModel === undefined) {
+          delete process.env.WHISPER_CPP_MODEL_PATH;
+        } else {
+          process.env.WHISPER_CPP_MODEL_PATH = prevModel;
+        }
+      }
+    });
+
+    it("returns 200 healthcheck even when tts is unavailable", async () => {
+      vi.stubGlobal("fetch", (async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/version")) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        }
+        throw new Error(`unexpected_fetch:${url}`);
+      }) as unknown as typeof fetch);
+
+      const response = await sendRequest("GET", "/health");
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({
+        status: "ok",
+        providers: {
+          stt: { status: "ok" },
+          tts: { status: "unavailable" },
+          llm: { status: "ok", kind: "stub" },
+        },
+      });
+    });
+
+    it("returns 404 for unknown paths", async () => {
+      const response = await sendRequest("GET", "/unknown");
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+  });
+
+  describe("kiosk tts", () => {
+    it("returns audio/wav from /api/v1/kiosk/tts", async () => {
+      vi.stubGlobal("fetch", (async (input: unknown, init?: unknown) => {
+        const url = new URL(String(input));
+
+        if (url.pathname === "/audio_query") {
+          expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+          expect(url.searchParams.get("speaker")).toBe("2");
+          expect(url.searchParams.get("text")).toBe("Hello");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ query: true }),
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        }
+
+        if (url.pathname === "/synthesis") {
+          expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+          expect(url.searchParams.get("speaker")).toBe("2");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+          };
+        }
+
+        if (url.pathname === "/version") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ version: "test" }),
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        }
+
+        throw new Error(`unexpected_fetch:${url.toString()}`);
+      }) as unknown as typeof fetch);
+
+      const response = await sendRequestBuffer("POST", "/api/v1/kiosk/tts", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "Hello" }),
       });
 
       expect(response.status).toBe(200);
-      const parsed = JSON.parse(response.body) as {
-        providers: { stt: { status: string } };
-      };
-      expect(parsed.providers.stt.status).toBe("unavailable");
-    } finally {
+      expect(String(response.headers["content-type"] ?? "")).toContain("audio/wav");
+      expect(Array.from(response.body)).toEqual([1, 2, 3]);
+    });
+
+    it("returns 400 invalid_request for /api/v1/kiosk/tts when text is missing", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 400 invalid_json for /api/v1/kiosk/tts when body is invalid JSON", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+        headers: { "content-type": "application/json" },
+        body: "{",
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_json", message: "Invalid JSON" },
+      });
+    });
+
+    it("returns 503 unavailable for /api/v1/kiosk/tts when provider fails", async () => {
+      vi.stubGlobal("fetch", (async (input: unknown) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/audio_query") {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        }
+        throw new Error(`unexpected_fetch:${url.toString()}`);
+      }) as unknown as typeof fetch);
+
+      const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "Hello" }),
+      });
+
+      expect(response.status).toBe(503);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "unavailable", message: "Unavailable" },
+      });
+    });
+
+    it("returns 405 for /api/v1/kiosk/tts with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/kiosk/tts");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 413 payload_too_large for /api/v1/kiosk/tts", async () => {
+      const bigText = "a".repeat(200_000);
+      const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: bigText }),
+      });
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "payload_too_large", message: "Payload Too Large" },
+      });
+    });
+  });
+
+  describe("staff auth and keepalive", () => {
+    it("sets staff session cookie Max-Age from default TTL", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passcode: "test-pass" }),
+      });
+
+      expect(response.status).toBe(200);
+      const setCookie = response.headers["set-cookie"];
+      const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+      expect(String(first ?? "")).toContain("Max-Age=180");
+    });
+
+    it("sets staff session cookie Max-Age from env override", async () => {
       await new Promise<void>((resolve, reject) => {
-        localServer.close((error) => {
+        server.close((error) => {
           if (error) {
             reject(error);
             return;
@@ -452,985 +646,657 @@ describe("http-server", () => {
           resolve();
         });
       });
-      localStore.close();
-      if (prevCli === undefined) {
-        delete process.env.WHISPER_CPP_CLI_PATH;
-      } else {
-        process.env.WHISPER_CPP_CLI_PATH = prevCli;
+
+      process.env.WF_STAFF_SESSION_TTL_MS = "60000";
+
+      server = createHttpServer({
+        store,
+        stt_provider: {
+          transcribe: (input) => ({
+            text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
+          }),
+          health: () => ({ status: "ok" }),
+        },
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("server address unavailable");
       }
-      if (prevModel === undefined) {
-        delete process.env.WHISPER_CPP_MODEL_PATH;
-      } else {
-        process.env.WHISPER_CPP_MODEL_PATH = prevModel;
-      }
-    }
-  });
+      port = address.port;
 
-  it("returns 200 healthcheck even when tts is unavailable", async () => {
-    vi.stubGlobal("fetch", (async (input: unknown) => {
-      const url = String(input);
-      if (url.endsWith("/version")) {
-        return {
-          ok: false,
-          status: 503,
-          json: async () => ({}),
-          arrayBuffer: async () => new ArrayBuffer(0),
-        };
-      }
-      throw new Error(`unexpected_fetch:${url}`);
-    }) as unknown as typeof fetch);
+      const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passcode: "test-pass" }),
+      });
 
-    const response = await sendRequest("GET", "/health");
-    expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({
-      status: "ok",
-      providers: {
-        stt: { status: "ok" },
-        tts: { status: "unavailable" },
-        llm: { status: "ok", kind: "stub" },
-      },
-    });
-  });
-
-  it("returns 404 for unknown paths", async () => {
-    const response = await sendRequest("GET", "/unknown");
-
-    expect(response.status).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "not_found", message: "Not Found" },
-    });
-  });
-
-  it("returns audio/wav from /api/v1/kiosk/tts", async () => {
-    vi.stubGlobal("fetch", (async (input: unknown, init?: unknown) => {
-      const url = new URL(String(input));
-
-      if (url.pathname === "/audio_query") {
-        expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
-        expect(url.searchParams.get("speaker")).toBe("2");
-        expect(url.searchParams.get("text")).toBe("Hello");
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ query: true }),
-          arrayBuffer: async () => new ArrayBuffer(0),
-        };
-      }
-
-      if (url.pathname === "/synthesis") {
-        expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
-        expect(url.searchParams.get("speaker")).toBe("2");
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({}),
-          arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-        };
-      }
-
-      if (url.pathname === "/version") {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ version: "test" }),
-          arrayBuffer: async () => new ArrayBuffer(0),
-        };
-      }
-
-      throw new Error(`unexpected_fetch:${url.toString()}`);
-    }) as unknown as typeof fetch);
-
-    const response = await sendRequestBuffer("POST", "/api/v1/kiosk/tts", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "Hello" }),
+      expect(response.status).toBe(200);
+      const setCookie = response.headers["set-cookie"];
+      const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+      expect(String(first ?? "")).toContain("Max-Age=60");
     });
 
-    expect(response.status).toBe(200);
-    expect(String(response.headers["content-type"] ?? "")).toContain("audio/wav");
-    expect(Array.from(response.body)).toEqual([1, 2, 3]);
-  });
+    it("returns 200 for staff keepalive with valid session", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive", {
+        headers: withStaffCookie(),
+      });
 
-  it("returns 400 invalid_request for /api/v1/kiosk/tts when text is missing", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ ok: true });
+      expect(String(response.headers["set-cookie"] ?? "")).toContain("wf_staff_session=");
     });
 
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 invalid_json for /api/v1/kiosk/tts when body is invalid JSON", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
-      headers: { "content-type": "application/json" },
-      body: "{",
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_json", message: "Invalid JSON" },
-    });
-  });
-
-  it("returns 503 unavailable for /api/v1/kiosk/tts when provider fails", async () => {
-    vi.stubGlobal("fetch", (async (input: unknown) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/audio_query") {
-        return {
-          ok: false,
-          status: 503,
-          json: async () => ({}),
-          arrayBuffer: async () => new ArrayBuffer(0),
-        };
-      }
-      throw new Error(`unexpected_fetch:${url.toString()}`);
-    }) as unknown as typeof fetch);
-
-    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "Hello" }),
-    });
-
-    expect(response.status).toBe(503);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unavailable", message: "Unavailable" },
-    });
-  });
-
-  it("returns 405 for /api/v1/kiosk/tts with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/kiosk/tts");
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("returns 413 payload_too_large for /api/v1/kiosk/tts", async () => {
-    const bigText = "a".repeat(200_000);
-    const response = await sendRequest("POST", "/api/v1/kiosk/tts", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: bigText }),
-    });
-    expect(response.status).toBe(413);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "payload_too_large", message: "Payload Too Large" },
-    });
-  });
-
-  it("sets staff session cookie Max-Age from default TTL", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" }),
-    });
-
-    expect(response.status).toBe(200);
-    const setCookie = response.headers["set-cookie"];
-    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-    expect(String(first ?? "")).toContain("Max-Age=180");
-  });
-
-  it("sets staff session cookie Max-Age from env override", async () => {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    it("returns 401 for staff keepalive without session", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive");
+      expect(response.status).toBe(401);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "unauthorized", message: "Unauthorized" },
       });
     });
 
-    process.env.WF_STAFF_SESSION_TTL_MS = "60000";
-
-    server = createHttpServer({
-      store,
-      stt_provider: {
-        transcribe: (input) => ({
-          text: input.mode === "ROOM" ? "パーソナル、たろう" : "りんごがすき",
-        }),
-        health: () => ({ status: "ok" }),
-      },
-    });
-    await new Promise<void>((resolve) => {
-      server.listen(0, "127.0.0.1", resolve);
-    });
-    const address = server.address();
-    if (!address || typeof address === "string") {
-      throw new Error("server address unavailable");
-    }
-    port = address.port;
-
-    const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" }),
+    it("returns 405 for staff keepalive with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/auth/keepalive", {
+        headers: withStaffCookie(),
+      });
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
     });
 
-    expect(response.status).toBe(200);
-    const setCookie = response.headers["set-cookie"];
-    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-    expect(String(first ?? "")).toContain("Max-Age=60");
-  });
+    it("does not crash on invalid URL encoding", async () => {
+      const response = await sendRequest("GET", "/%E0%A4%A");
 
-  it("returns 200 for staff keepalive with valid session", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive", {
-      headers: withStaffCookie(),
-    });
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
 
-    expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ ok: true });
-    expect(String(response.headers["set-cookie"] ?? "")).toContain("wf_staff_session=");
-  });
-
-  it("returns 401 for staff keepalive without session", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/auth/keepalive");
-    expect(response.status).toBe(401);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "unauthorized", message: "Unauthorized" },
+      const health = await sendRequest("GET", "/health");
+      expect(health.status).toBe(200);
     });
   });
 
-  it("returns 405 for staff keepalive with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/staff/auth/keepalive", {
-      headers: withStaffCookie(),
-    });
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
+  describe("stream endpoints", () => {
+    it("streams kiosk snapshot on connect", async () => {
+      const response = await readFirstSseMessage("/api/v1/kiosk/stream");
 
-  it("does not crash on invalid URL encoding", async () => {
-    const response = await sendRequest("GET", "/%E0%A4%A");
+      expect(response.status).toBe(200);
+      expect(response.contentType).toContain("text/event-stream");
 
-    expect(response.status).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "not_found", message: "Not Found" },
-    });
-
-    const health = await sendRequest("GET", "/health");
-    expect(health.status).toBe(200);
-  });
-
-  it("streams kiosk snapshot on connect", async () => {
-    const response = await readFirstSseMessage("/api/v1/kiosk/stream");
-
-    expect(response.status).toBe(200);
-    expect(response.contentType).toContain("text/event-stream");
-
-    const message = JSON.parse(response.data) as {
-      type: string;
-      seq: number;
-      data: object;
-    };
-
-    expect(message.type).toBe("kiosk.snapshot");
-    expect(message.seq).toBe(1);
-    expect(message.data).toEqual({
-      state: {
-        mode: "ROOM",
-        personal_name: null,
-        phase: "idle",
-        consent_ui_visible: false,
-      },
-    });
-  });
-
-  it("returns 405 for kiosk stream with non-GET", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/stream");
-
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("streams staff snapshot on connect", async () => {
-    const response = await readFirstSseMessage("/api/v1/staff/stream", {
-      headers: withStaffCookie(),
-    });
-
-    expect(response.status).toBe(200);
-    expect(response.contentType).toContain("text/event-stream");
-
-    const message = JSON.parse(response.data) as {
-      type: string;
-      seq: number;
-      data: object;
-    };
-
-    expect(message.type).toBe("staff.snapshot");
-    expect(message.seq).toBe(1);
-    expect(message.data).toEqual({
-      state: {
-        mode: "ROOM",
-        personal_name: null,
-        phase: "idle",
-      },
-      pending: {
-        count: 0,
-      },
-    });
-  });
-
-  it("returns 405 for staff stream with non-GET", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/stream");
-
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("returns 400 for kiosk event with invalid json", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-      headers: { "content-type": "application/json" },
-      body: "{",
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_json", message: "Invalid JSON" },
-    });
-  });
-
-  it("does not crash when client closes during body read", async () => {
-    await new Promise<void>((resolve, reject) => {
-      const req = request({ host: "127.0.0.1", port, method: "POST", path: "/api/v1/kiosk/event" });
-
-      let isFinished = false;
-      const finish = (err?: unknown) => {
-        if (isFinished) {
-          return;
-        }
-        isFinished = true;
-        clearTimeout(timeout);
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve();
+      const message = JSON.parse(response.data) as {
+        type: string;
+        seq: number;
+        data: object;
       };
 
-      const timeout = setTimeout(() => {
-        req.destroy();
-        finish();
-      }, 100);
+      expect(message.type).toBe("kiosk.snapshot");
+      expect(message.seq).toBe(1);
+      expect(message.data).toEqual({
+        state: {
+          mode: "ROOM",
+          personal_name: null,
+          phase: "idle",
+          consent_ui_visible: false,
+        },
+      });
+    });
 
-      req.on("close", () => finish());
-      req.on("error", (err) => {
-        if ((err as { code?: unknown }).code === "ECONNRESET") {
-          finish();
-          return;
-        }
-        finish(err);
+    it("returns 405 for kiosk stream with non-GET", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/stream");
+
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("streams staff snapshot on connect", async () => {
+      const response = await readFirstSseMessage("/api/v1/staff/stream", {
+        headers: withStaffCookie(),
       });
 
-      req.setHeader("content-type", "application/json");
-      req.flushHeaders();
-      req.write('{"type":"UI_CONSENT_BUTTON","answer":"yes"');
-      setTimeout(() => {
-        req.destroy();
-      }, 10);
+      expect(response.status).toBe(200);
+      expect(response.contentType).toContain("text/event-stream");
+
+      const message = JSON.parse(response.data) as {
+        type: string;
+        seq: number;
+        data: object;
+      };
+
+      expect(message.type).toBe("staff.snapshot");
+      expect(message.seq).toBe(1);
+      expect(message.data).toEqual({
+        state: {
+          mode: "ROOM",
+          personal_name: null,
+          phase: "idle",
+        },
+        pending: {
+          count: 0,
+        },
+      });
     });
 
-    const health = await sendRequest("GET", "/health");
-    expect(health.status).toBe(200);
-  });
+    it("returns 405 for staff stream with non-GET", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/stream");
 
-  it("handles invalid percent-encoded paths", async () => {
-    const response = await sendRequest("GET", "/%");
-
-    expect(response.status).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "not_found", message: "Not Found" },
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
     });
   });
 
-  it("does not crash when sending an error response throws", async () => {
-    const originalEnd = ServerResponse.prototype.end;
-    ServerResponse.prototype.end = ((..._args: unknown[]) => {
-      throw new Error("boom");
-    }) as unknown as ServerResponse["end"];
+  describe("event endpoints and robustness", () => {
+    it("returns 400 for kiosk event with invalid json", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: "{",
+      });
 
-    try {
-      await new Promise<void>((resolve) => {
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_json", message: "Invalid JSON" },
+      });
+    });
+
+    it("does not crash when client closes during body read", async () => {
+      await new Promise<void>((resolve, reject) => {
+        const req = request({
+          host: "127.0.0.1",
+          port,
+          method: "POST",
+          path: "/api/v1/kiosk/event",
+        });
+
+        let isFinished = false;
+        const finish = (err?: unknown) => {
+          if (isFinished) {
+            return;
+          }
+          isFinished = true;
+          clearTimeout(timeout);
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        };
+
+        const timeout = setTimeout(() => {
+          req.destroy();
+          finish();
+        }, 100);
+
+        req.on("close", () => finish());
+        req.on("error", (err) => {
+          if ((err as { code?: unknown }).code === "ECONNRESET") {
+            finish();
+            return;
+          }
+          finish(err);
+        });
+
+        req.setHeader("content-type", "application/json");
+        req.flushHeaders();
+        req.write('{"type":"UI_CONSENT_BUTTON","answer":"yes"');
+        setTimeout(() => {
+          req.destroy();
+        }, 10);
+      });
+
+      const health = await sendRequest("GET", "/health");
+      expect(health.status).toBe(200);
+    });
+
+    it("handles invalid percent-encoded paths", async () => {
+      const response = await sendRequest("GET", "/%");
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
+    it("does not crash when sending an error response throws", async () => {
+      const originalEnd = ServerResponse.prototype.end;
+      ServerResponse.prototype.end = ((..._args: unknown[]) => {
+        throw new Error("boom");
+      }) as unknown as ServerResponse["end"];
+
+      try {
+        await new Promise<void>((resolve) => {
+          const req = request(
+            {
+              host: "127.0.0.1",
+              port,
+              method: "POST",
+              path: "/api/v1/kiosk/event",
+              headers: { "content-type": "application/json" },
+            },
+            (res) => {
+              res.destroy();
+              resolve();
+            },
+          );
+
+          const timeout = setTimeout(() => {
+            req.destroy();
+            resolve();
+          }, 100);
+
+          req.on("close", () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          req.on("error", () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          req.end("{");
+        });
+      } finally {
+        ServerResponse.prototype.end = originalEnd;
+      }
+
+      const health = await sendRequest("GET", "/health");
+      expect(health.status).toBe(200);
+    });
+
+    it("returns 405 for kiosk event with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/kiosk/event");
+
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 400 for kiosk event with unknown type", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "NOPE", answer: "yes" }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 400 for kiosk event with invalid answer", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "maybe" }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 413 for kiosk event with too large body", async () => {
+      const big = "a".repeat(128_001);
+      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: big }),
+      });
+
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "payload_too_large", message: "Payload Too Large" },
+      });
+    });
+
+    it("returns 400 for staff event with unknown type", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "NOPE" }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 400 for staff event with invalid json", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: "{",
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_json", message: "Invalid JSON" },
+      });
+    });
+
+    it("does not hang when client aborts request body", async () => {
+      await new Promise<void>((resolve, reject) => {
+        let isFinished = false;
+        const finish = () => {
+          if (isFinished) {
+            return;
+          }
+          isFinished = true;
+          resolve();
+        };
+
         const req = request(
           {
             host: "127.0.0.1",
             port,
             method: "POST",
-            path: "/api/v1/kiosk/event",
-            headers: { "content-type": "application/json" },
+            path: "/api/v1/staff/event",
+            headers: withStaffCookie({ "content-type": "application/json" }),
           },
-          (res) => {
-            res.destroy();
-            resolve();
+          () => {
+            // Ignore response; this request is aborted.
           },
         );
 
-        const timeout = setTimeout(() => {
-          req.destroy();
-          resolve();
-        }, 100);
+        req.on("error", finish);
+        req.on("close", finish);
 
-        req.on("close", () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        req.on("error", () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        req.end("{");
+        req.write("{");
+        req.destroy();
+
+        setTimeout(() => {
+          if (!isFinished) {
+            reject(new Error("abort did not finish"));
+          }
+        }, 500);
       });
-    } finally {
-      ServerResponse.prototype.end = originalEnd;
-    }
 
-    const health = await sendRequest("GET", "/health");
-    expect(health.status).toBe(200);
-  });
-
-  it("returns 405 for kiosk event with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/kiosk/event");
-
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("returns 400 for kiosk event with unknown type", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "NOPE", answer: "yes" }),
+      const health = await sendRequest("GET", "/health");
+      expect(health.status).toBe(200);
     });
 
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for kiosk event with invalid answer", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "maybe" }),
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 413 for kiosk event with too large body", async () => {
-    const big = "a".repeat(128_001);
-    const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: big }),
-    });
-
-    expect(response.status).toBe(413);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "payload_too_large", message: "Payload Too Large" },
-    });
-  });
-
-  it("returns 400 for staff event with unknown type", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: JSON.stringify({ type: "NOPE" }),
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for staff event with invalid json", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: "{",
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_json", message: "Invalid JSON" },
-    });
-  });
-
-  it("does not hang when client aborts request body", async () => {
-    await new Promise<void>((resolve, reject) => {
-      let isFinished = false;
-      const finish = () => {
-        if (isFinished) {
-          return;
-        }
-        isFinished = true;
-        resolve();
-      };
-
-      const req = request(
-        {
-          host: "127.0.0.1",
-          port,
-          method: "POST",
-          path: "/api/v1/staff/event",
-          headers: withStaffCookie({ "content-type": "application/json" }),
-        },
-        () => {
-          // Ignore response; this request is aborted.
-        },
-      );
-
-      req.on("error", finish);
-      req.on("close", finish);
-
-      req.write("{");
-      req.destroy();
-
-      setTimeout(() => {
-        if (!isFinished) {
-          reject(new Error("abort did not finish"));
-        }
-      }, 500);
-    });
-
-    const health = await sendRequest("GET", "/health");
-    expect(health.status).toBe(200);
-  });
-
-  it("returns 413 for staff event with too large body", async () => {
-    const big = "a".repeat(128_001);
-    const response = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: JSON.stringify({ type: big }),
-    });
-
-    expect(response.status).toBe(413);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "payload_too_large", message: "Payload Too Large" },
-    });
-  });
-
-  it("returns 405 for staff event with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/staff/event");
-
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("returns 400 for stt-audio with non-multipart content-type", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": "application/octet-stream" },
-      body: Buffer.from("dummy", "utf8"),
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for stt-audio without content-type", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      body: Buffer.from("dummy", "utf8"),
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("ignores querystring in routes", async () => {
-    const response = await sendRequest("GET", "/api/v1/staff/pending?x=1", {
-      headers: withStaffCookie(),
-    });
-
-    expect(response.status).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({ items: [] });
-  });
-
-  it("returns 400 for stt-audio without boundary", async () => {
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": "multipart/form-data" },
-      body: Buffer.from("dummy", "utf8"),
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for stt-audio with malformed multipart (missing header separator)", async () => {
-    const boundary = "testboundary";
-    const body = Buffer.from(
-      [
-        `--${boundary}\r\n`,
-        `Content-Disposition: form-data; name="stt_request_id"\r\n`,
-        `stt-1\r\n`,
-        `--${boundary}--\r\n`,
-      ].join(""),
-      "utf8",
-    );
-
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-      body,
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for stt-audio with malformed multipart (missing closing boundary)", async () => {
-    const boundary = "testboundary";
-    const body = Buffer.from(
-      [
-        `--${boundary}\r\n`,
-        `Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`,
-        `stt-1`,
-      ].join(""),
-      "utf8",
-    );
-
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-      body,
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for stt-audio missing audio part", async () => {
-    const boundary = "testboundary";
-    const body = Buffer.from(
-      [
-        `--${boundary}\r\n`,
-        `Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`,
-        `stt-1\r\n`,
-        `--${boundary}--\r\n`,
-      ].join(""),
-      "utf8",
-    );
-
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-      body,
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for stt-audio missing stt_request_id", async () => {
-    const boundary = "testboundary";
-    const body = Buffer.from(
-      [
-        `--${boundary}\r\n`,
-        `Content-Disposition: form-data; name="audio"; filename="audio.webm"\r\n`,
-        `Content-Type: audio/webm\r\n\r\n`,
-        `dummy\r\n`,
-        `--${boundary}--\r\n`,
-      ].join(""),
-      "utf8",
-    );
-
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-      body,
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("returns 400 for stt-audio when request id is not pending", async () => {
-    const multipart = buildMultipartBody({
-      stt_request_id: "stt-999",
-      audio: Buffer.from("dummy", "utf8"),
-    });
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": multipart.contentType },
-      body: multipart.body,
-    });
-
-    expect(response.status).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "invalid_request", message: "Invalid request" },
-    });
-  });
-
-  it("streams kiosk record_start command on PTT down", async () => {
-    const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
+    it("returns 413 for staff event with too large body", async () => {
+      const big = "a".repeat(128_001);
       const response = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+        body: JSON.stringify({ type: big }),
       });
+
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "payload_too_large", message: "Payload Too Large" },
+      });
+    });
+
+    it("returns 405 for staff event with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/event");
+
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+  });
+
+  describe("stt-audio validation", () => {
+    it("returns 400 for stt-audio with non-multipart content-type", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": "application/octet-stream" },
+        body: Buffer.from("dummy", "utf8"),
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 400 for stt-audio without content-type", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        body: Buffer.from("dummy", "utf8"),
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("ignores querystring in routes", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/pending?x=1", {
+        headers: withStaffCookie(),
+      });
+
       expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ items: [] });
     });
 
-    expect(messages[0]?.type).toBe("kiosk.snapshot");
-    expect(messages[1]?.type).toBe("kiosk.snapshot");
-    expect(messages[2]?.type).toBe("kiosk.command.record_start");
-  });
-
-  it("streams kiosk record_start command on kiosk PTT down", async () => {
-    const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
-      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+    it("returns 400 for stt-audio without boundary", async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": "multipart/form-data" },
+        body: Buffer.from("dummy", "utf8"),
       });
-      expect(response.status).toBe(200);
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
     });
 
-    expect(messages[0]?.type).toBe("kiosk.snapshot");
-    expect(messages[1]?.type).toBe("kiosk.snapshot");
-    expect(messages[2]?.type).toBe("kiosk.command.record_start");
-  });
+    it("returns 400 for stt-audio with malformed multipart (missing header separator)", async () => {
+      const boundary = "testboundary";
+      const body = Buffer.from(
+        [
+          `--${boundary}\r\n`,
+          `Content-Disposition: form-data; name="stt_request_id"\r\n`,
+          `stt-1\r\n`,
+          `--${boundary}--\r\n`,
+        ].join(""),
+        "utf8",
+      );
 
-  it("streams kiosk record_stop command on kiosk PTT up", async () => {
-    const messages = await readSseDataMessages("/api/v1/kiosk/stream", 5, async () => {
-      const down = await sendRequest("POST", "/api/v1/kiosk/event", {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
       });
-      expect(down.status).toBe(200);
 
-      const up = await sendRequest("POST", "/api/v1/kiosk/event", {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
       });
-      expect(up.status).toBe(200);
     });
 
-    expect(messages[0]?.type).toBe("kiosk.snapshot");
-    expect(messages[1]?.type).toBe("kiosk.snapshot");
-    expect(messages[2]?.type).toBe("kiosk.command.record_start");
-    expect(messages[3]?.type).toBe("kiosk.snapshot");
-    expect(messages[4]?.type).toBe("kiosk.command.record_stop");
-    expect((messages[4]?.data as { stt_request_id?: unknown } | undefined)?.stt_request_id).toBe(
-      "stt-1",
-    );
-  });
+    it("returns 400 for stt-audio with malformed multipart (missing closing boundary)", async () => {
+      const boundary = "testboundary";
+      const body = Buffer.from(
+        [
+          `--${boundary}\r\n`,
+          `Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`,
+          `stt-1`,
+        ].join(""),
+        "utf8",
+      );
 
-  it("speaks fallback text when stt provider throws", async () => {
-    process.env.TEST_STT_THROW = "1";
-
-    const messages = await readSseDataMessages("/api/v1/kiosk/stream", 7, async () => {
-      const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
       });
-      expect(down.status).toBe(200);
 
-      const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
       });
-      expect(up.status).toBe(200);
+    });
 
+    it("returns 400 for stt-audio missing audio part", async () => {
+      const boundary = "testboundary";
+      const body = Buffer.from(
+        [
+          `--${boundary}\r\n`,
+          `Content-Disposition: form-data; name="stt_request_id"\r\n\r\n`,
+          `stt-1\r\n`,
+          `--${boundary}--\r\n`,
+        ].join(""),
+        "utf8",
+      );
+
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 400 for stt-audio missing stt_request_id", async () => {
+      const boundary = "testboundary";
+      const body = Buffer.from(
+        [
+          `--${boundary}\r\n`,
+          `Content-Disposition: form-data; name="audio"; filename="audio.webm"\r\n`,
+          `Content-Type: audio/webm\r\n\r\n`,
+          `dummy\r\n`,
+          `--${boundary}--\r\n`,
+        ].join(""),
+        "utf8",
+      );
+
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
+    });
+
+    it("returns 400 for stt-audio when request id is not pending", async () => {
       const multipart = buildMultipartBody({
-        stt_request_id: "stt-1",
+        stt_request_id: "stt-999",
         audio: Buffer.from("dummy", "utf8"),
       });
-      const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
         headers: { "content-type": multipart.contentType },
         body: multipart.body,
       });
-      expect(audio.status).toBe(202);
-    });
 
-    expect(messages.some((m) => m.type === "kiosk.command.speak")).toBe(true);
-
-    const health = await sendRequest("GET", "/health");
-    expect(health.status).toBe(200);
-  });
-
-  it("does not block /health while stt transcription is in flight", async () => {
-    process.env.TEST_STT_DELAY_MS = "500";
-
-    const down = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
-    });
-    expect(down.status).toBe(200);
-
-    const up = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: JSON.stringify({ type: "STAFF_PTT_UP" }),
-    });
-    expect(up.status).toBe(200);
-
-    const multipart = buildMultipartBody({
-      stt_request_id: "stt-1",
-      audio: Buffer.from("dummy", "utf8"),
-    });
-    const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": multipart.contentType },
-      body: multipart.body,
-    });
-    expect(audio.status).toBe(202);
-
-    const start = Date.now();
-    const health = await sendRequest("GET", "/health");
-    const elapsed = Date.now() - start;
-    expect(health.status).toBe(200);
-    expect(elapsed).toBeLessThan(250);
-
-    // Avoid in-flight promise resolving after teardown.
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 550);
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
+      });
     });
   });
 
-  it("supports staff pending deny endpoint", async () => {
-    const id = store.createPending({
-      personal_name: "taro",
-      kind: "likes",
-      value: "apples",
-    });
-    const deny = await sendRequest("POST", `/api/v1/staff/pending/${id}/deny`, {
-      headers: withStaffCookie(),
-    });
-    expect(deny.status).toBe(200);
-    expect(JSON.parse(deny.body)).toEqual({ ok: true });
-
-    const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: withStaffCookie(),
-    });
-    expect(listAfter.status).toBe(200);
-    expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
-  });
-
-  it("returns 404 for staff pending deny when id not found", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny", {
-      headers: withStaffCookie(),
-    });
-    expect(response.status).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "not_found", message: "Not Found" },
-    });
-  });
-
-  it("returns 405 for stt-audio with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/kiosk/stt-audio");
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("returns 405 for staff pending list with non-GET", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/pending");
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
-    });
-  });
-
-  it("returns 413 for stt-audio with too large body", async () => {
-    const body = Buffer.alloc(2_500_001);
-    const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-      headers: { "content-type": "multipart/form-data; boundary=testboundary" },
-      body,
-    });
-
-    expect(response.status).toBe(413);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "payload_too_large", message: "Payload Too Large" },
-    });
-  });
-
-  it("runs tick timer", async () => {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 1100);
-    });
-    expect(true).toBe(true);
-  });
-
-  it("skips snapshot broadcast when unchanged", async () => {
-    const first = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: JSON.stringify({ type: "STAFF_RESUME" }),
-    });
-    expect(first.status).toBe(200);
-
-    const second = await sendRequest("POST", "/api/v1/staff/event", {
-      headers: withStaffCookie({ "content-type": "application/json" }),
-      body: JSON.stringify({ type: "STAFF_RESUME" }),
-    });
-    expect(second.status).toBe(200);
-  });
-
-  it("omits source_quote when null", async () => {
-    store.createPending({ personal_name: "taro", kind: "likes", value: "apples" });
-    const list = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: withStaffCookie(),
-    });
-    expect(list.status).toBe(200);
-    const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
-    expect(parsed.items.length).toBe(1);
-    expect(parsed.items[0]).not.toHaveProperty("source_quote");
-  });
-
-  it("broadcasts staff snapshot after staff event", async () => {
-    const messages = await readSseDataMessages(
-      "/api/v1/staff/stream",
-      2,
-      async () => {
+  describe("orchestrator and snapshot flows", () => {
+    it("streams kiosk record_start command on PTT down", async () => {
+      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
         const response = await sendRequest("POST", "/api/v1/staff/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
           body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
         });
         expect(response.status).toBe(200);
-        expect(JSON.parse(response.body)).toEqual({ ok: true });
-      },
-      { headers: withStaffCookie() },
-    );
+      });
 
-    expect(messages[0]?.type).toBe("staff.snapshot");
-    expect(messages[0]?.data).toEqual({
-      state: { mode: "ROOM", personal_name: null, phase: "idle" },
-      pending: { count: 0 },
+      expect(messages[0]?.type).toBe("kiosk.snapshot");
+      expect(messages[1]?.type).toBe("kiosk.snapshot");
+      expect(messages[2]?.type).toBe("kiosk.command.record_start");
     });
-    expect(messages[1]?.type).toBe("staff.snapshot");
-    expect(messages[1]?.data).toEqual({
-      state: { mode: "ROOM", personal_name: null, phase: "listening" },
-      pending: { count: 0 },
-    });
-  });
 
-  it("creates pending via orchestrator consent and confirms it", async () => {
-    // 1st utterance: enter PERSONAL
-    {
+    it("streams kiosk record_start command on kiosk PTT down", async () => {
+      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
+        const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+        });
+        expect(response.status).toBe(200);
+      });
+
+      expect(messages[0]?.type).toBe("kiosk.snapshot");
+      expect(messages[1]?.type).toBe("kiosk.snapshot");
+      expect(messages[2]?.type).toBe("kiosk.command.record_start");
+    });
+
+    it("streams kiosk record_stop command on kiosk PTT up", async () => {
+      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 5, async () => {
+        const down = await sendRequest("POST", "/api/v1/kiosk/event", {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+        });
+        expect(down.status).toBe(200);
+
+        const up = await sendRequest("POST", "/api/v1/kiosk/event", {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
+        });
+        expect(up.status).toBe(200);
+      });
+
+      expect(messages[0]?.type).toBe("kiosk.snapshot");
+      expect(messages[1]?.type).toBe("kiosk.snapshot");
+      expect(messages[2]?.type).toBe("kiosk.command.record_start");
+      expect(messages[3]?.type).toBe("kiosk.snapshot");
+      expect(messages[4]?.type).toBe("kiosk.command.record_stop");
+      expect((messages[4]?.data as { stt_request_id?: unknown } | undefined)?.stt_request_id).toBe(
+        "stt-1",
+      );
+    });
+
+    it("speaks fallback text when stt provider throws", async () => {
+      process.env.TEST_STT_THROW = "1";
+
+      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 7, async () => {
+        const down = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+        });
+        expect(down.status).toBe(200);
+
+        const up = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+        });
+        expect(up.status).toBe(200);
+
+        const multipart = buildMultipartBody({
+          stt_request_id: "stt-1",
+          audio: Buffer.from("dummy", "utf8"),
+        });
+        const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+          headers: { "content-type": multipart.contentType },
+          body: multipart.body,
+        });
+        expect(audio.status).toBe(202);
+      });
+
+      expect(messages.some((m) => m.type === "kiosk.command.speak")).toBe(true);
+
+      const health = await sendRequest("GET", "/health");
+      expect(health.status).toBe(200);
+    });
+
+    it("does not block /health while stt transcription is in flight", async () => {
+      process.env.TEST_STT_DELAY_MS = "500";
+
       const down = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
       });
       expect(down.status).toBe(200);
+
       const up = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_PTT_UP" }),
       });
       expect(up.status).toBe(200);
+
       const multipart = buildMultipartBody({
         stt_request_id: "stt-1",
         audio: Buffer.from("dummy", "utf8"),
@@ -1440,127 +1306,282 @@ describe("http-server", () => {
         body: multipart.body,
       });
       expect(audio.status).toBe(202);
-    }
 
-    // 2nd utterance: triggers memory_extract stub -> consent UI visible
-    {
-      const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
-      });
-      expect(down.status).toBe(200);
-      const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
-      });
-      expect(up.status).toBe(200);
-      const multipart = buildMultipartBody({
-        stt_request_id: "stt-2",
-        audio: Buffer.from("dummy", "utf8"),
-      });
-      const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-        headers: { "content-type": multipart.contentType },
-        body: multipart.body,
-      });
-      expect(audio.status).toBe(202);
-    }
+      const start = Date.now();
+      const health = await sendRequest("GET", "/health");
+      const elapsed = Date.now() - start;
+      expect(health.status).toBe(200);
+      expect(elapsed).toBeLessThan(250);
 
-    // 3rd utterance while waiting for consent: triggers consent_decision inner task
-    {
-      const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+      // Avoid in-flight promise resolving after teardown.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 550);
       });
-      expect(down.status).toBe(200);
-      const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
-      });
-      expect(up.status).toBe(200);
-      const multipart = buildMultipartBody({
-        stt_request_id: "stt-5",
-        audio: Buffer.from("dummy", "utf8"),
-      });
-      const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-        headers: { "content-type": multipart.contentType },
-        body: multipart.body,
-      });
-      expect(audio.status).toBe(202);
-    }
-
-    // Consent
-    {
-      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
-      });
-      expect(response.status).toBe(200);
-      expect(JSON.parse(response.body)).toEqual({ ok: true });
-    }
-
-    const list = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: withStaffCookie(),
     });
-    expect(list.status).toBe(200);
-    const listBody = JSON.parse(list.body) as { items: Array<{ id: string }> };
-    expect(listBody.items.length).toBe(1);
-    const pendingId = listBody.items[0]?.id;
-    expect(typeof pendingId).toBe("string");
 
-    const confirm = await sendRequest("POST", `/api/v1/staff/pending/${pendingId}/confirm`, {
-      headers: withStaffCookie(),
-    });
-    expect(confirm.status).toBe(200);
-    expect(JSON.parse(confirm.body)).toEqual({ ok: true });
+    it("supports staff pending deny endpoint", async () => {
+      const id = store.createPending({
+        personal_name: "taro",
+        kind: "likes",
+        value: "apples",
+      });
+      const deny = await sendRequest("POST", `/api/v1/staff/pending/${id}/deny`, {
+        headers: withStaffCookie(),
+      });
+      expect(deny.status).toBe(200);
+      expect(JSON.parse(deny.body)).toEqual({ ok: true });
 
-    const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
-      headers: withStaffCookie(),
+      const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(listAfter.status).toBe(200);
+      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
     });
-    expect(listAfter.status).toBe(200);
-    expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
+
+    it("returns 404 for staff pending deny when id not found", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny", {
+        headers: withStaffCookie(),
+      });
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
   });
 
-  it("swallows event processing errors to keep server alive", async () => {
-    const originalListPending = store.listPending;
-    try {
-      store.listPending = () => {
-        throw new Error("boom");
-      };
+  describe("route guards and lifecycle", () => {
+    it("returns 405 for stt-audio with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/kiosk/stt-audio");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
 
-      const response = await sendRequest("POST", "/api/v1/staff/event", {
+    it("returns 405 for staff pending list with non-GET", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/pending");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 413 for stt-audio with too large body", async () => {
+      const body = Buffer.alloc(2_500_001);
+      const response = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+        headers: { "content-type": "multipart/form-data; boundary=testboundary" },
+        body,
+      });
+
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "payload_too_large", message: "Payload Too Large" },
+      });
+    });
+
+    it("runs tick timer", async () => {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 1100);
+      });
+      expect(true).toBe(true);
+    });
+
+    it("skips snapshot broadcast when unchanged", async () => {
+      const first = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
         body: JSON.stringify({ type: "STAFF_RESUME" }),
       });
-      expect(response.status).toBe(200);
-      expect(JSON.parse(response.body)).toEqual({ ok: true });
-    } finally {
-      store.listPending = originalListPending;
-    }
-  });
+      expect(first.status).toBe(200);
 
-  it("returns 404 for staff pending confirm when id not found", async () => {
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm", {
-      headers: withStaffCookie(),
+      const second = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_RESUME" }),
+      });
+      expect(second.status).toBe(200);
     });
-    expect(response.status).toBe(404);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "not_found", message: "Not Found" },
-    });
-  });
 
-  it("returns 405 for staff pending confirm with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/staff/pending/nope/confirm");
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
+    it("omits source_quote when null", async () => {
+      store.createPending({ personal_name: "taro", kind: "likes", value: "apples" });
+      const list = await sendRequest("GET", "/api/v1/staff/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(list.status).toBe(200);
+      const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
+      expect(parsed.items.length).toBe(1);
+      expect(parsed.items[0]).not.toHaveProperty("source_quote");
     });
-  });
 
-  it("returns 405 for staff pending deny with non-POST", async () => {
-    const response = await sendRequest("GET", "/api/v1/staff/pending/nope/deny");
-    expect(response.status).toBe(405);
-    expect(JSON.parse(response.body)).toEqual({
-      error: { code: "method_not_allowed", message: "Method Not Allowed" },
+    it("broadcasts staff snapshot after staff event", async () => {
+      const messages = await readSseDataMessages(
+        "/api/v1/staff/stream",
+        2,
+        async () => {
+          const response = await sendRequest("POST", "/api/v1/staff/event", {
+            headers: withStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+          });
+          expect(response.status).toBe(200);
+          expect(JSON.parse(response.body)).toEqual({ ok: true });
+        },
+        { headers: withStaffCookie() },
+      );
+
+      expect(messages[0]?.type).toBe("staff.snapshot");
+      expect(messages[0]?.data).toEqual({
+        state: { mode: "ROOM", personal_name: null, phase: "idle" },
+        pending: { count: 0 },
+      });
+      expect(messages[1]?.type).toBe("staff.snapshot");
+      expect(messages[1]?.data).toEqual({
+        state: { mode: "ROOM", personal_name: null, phase: "listening" },
+        pending: { count: 0 },
+      });
+    });
+
+    it("creates pending via orchestrator consent and confirms it", async () => {
+      // 1st utterance: enter PERSONAL
+      {
+        const down = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+        });
+        expect(down.status).toBe(200);
+        const up = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+        });
+        expect(up.status).toBe(200);
+        const multipart = buildMultipartBody({
+          stt_request_id: "stt-1",
+          audio: Buffer.from("dummy", "utf8"),
+        });
+        const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+          headers: { "content-type": multipart.contentType },
+          body: multipart.body,
+        });
+        expect(audio.status).toBe(202);
+      }
+
+      // 2nd utterance: triggers memory_extract stub -> consent UI visible
+      {
+        const down = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+        });
+        expect(down.status).toBe(200);
+        const up = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+        });
+        expect(up.status).toBe(200);
+        const multipart = buildMultipartBody({
+          stt_request_id: "stt-2",
+          audio: Buffer.from("dummy", "utf8"),
+        });
+        const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+          headers: { "content-type": multipart.contentType },
+          body: multipart.body,
+        });
+        expect(audio.status).toBe(202);
+      }
+
+      // 3rd utterance while waiting for consent: triggers consent_decision inner task
+      {
+        const down = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+        });
+        expect(down.status).toBe(200);
+        const up = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+        });
+        expect(up.status).toBe(200);
+        const multipart = buildMultipartBody({
+          stt_request_id: "stt-5",
+          audio: Buffer.from("dummy", "utf8"),
+        });
+        const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
+          headers: { "content-type": multipart.contentType },
+          body: multipart.body,
+        });
+        expect(audio.status).toBe(202);
+      }
+
+      // Consent
+      {
+        const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
+        });
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body)).toEqual({ ok: true });
+      }
+
+      const list = await sendRequest("GET", "/api/v1/staff/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(list.status).toBe(200);
+      const listBody = JSON.parse(list.body) as { items: Array<{ id: string }> };
+      expect(listBody.items.length).toBe(1);
+      const pendingId = listBody.items[0]?.id;
+      expect(typeof pendingId).toBe("string");
+
+      const confirm = await sendRequest("POST", `/api/v1/staff/pending/${pendingId}/confirm`, {
+        headers: withStaffCookie(),
+      });
+      expect(confirm.status).toBe(200);
+      expect(JSON.parse(confirm.body)).toEqual({ ok: true });
+
+      const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(listAfter.status).toBe(200);
+      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
+    });
+
+    it("swallows event processing errors to keep server alive", async () => {
+      const originalListPending = store.listPending;
+      try {
+        store.listPending = () => {
+          throw new Error("boom");
+        };
+
+        const response = await sendRequest("POST", "/api/v1/staff/event", {
+          headers: withStaffCookie({ "content-type": "application/json" }),
+          body: JSON.stringify({ type: "STAFF_RESUME" }),
+        });
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body)).toEqual({ ok: true });
+      } finally {
+        store.listPending = originalListPending;
+      }
+    });
+
+    it("returns 404 for staff pending confirm when id not found", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm", {
+        headers: withStaffCookie(),
+      });
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
+    it("returns 405 for staff pending confirm with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/pending/nope/confirm");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 405 for staff pending deny with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/pending/nope/deny");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
     });
   });
 });

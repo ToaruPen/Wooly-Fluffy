@@ -1,6 +1,6 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import { parseSttAudioUploadMultipart } from "./multipart.js";
 import {
@@ -21,6 +21,8 @@ import { createWhisperCppSttProvider } from "./providers/stt-provider.js";
 import { createVoiceVoxTtsProvider } from "./providers/tts-provider.js";
 import { createLlmProviderFromEnv } from "./providers/llm-provider.js";
 import { readEnvInt } from "./env.js";
+import { createStaffSessionStore, getStaffSessionToken } from "./http/staff-session.js";
+import { handleStaffRoutes } from "./http/routes/staff.js";
 
 const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
@@ -59,46 +61,9 @@ type CreateHttpServerOptions = {
   stt_provider?: Providers["stt"];
 };
 
-type StaffSession = {
-  expires_at_ms: number;
-};
-
-const STAFF_SESSION_COOKIE_NAME = "wf_staff_session";
 const STAFF_SESSION_TTL_MS_DEFAULT = 180_000;
 const SSE_KEEPALIVE_INTERVAL_MS_DEFAULT = 25_000;
 const TICK_INTERVAL_MS_DEFAULT = 1_000;
-
-const parseCookies = (cookieHeader: string): Record<string, string> => {
-  const result: Record<string, string> = {};
-  for (const part of cookieHeader.split(";")) {
-    const trimmed = part.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) {
-      continue;
-    }
-    const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim();
-    if (!key) {
-      continue;
-    }
-    result[key] = value;
-  }
-  return result;
-};
-
-const getStaffSessionToken = (req: IncomingMessage): string | null => {
-  const cookieHeader = req.headers.cookie;
-  const text = (typeof cookieHeader === "string" ? cookieHeader : "").trim();
-  if (!text) {
-    return null;
-  }
-  const cookies = parseCookies(text);
-  const token = cookies[STAFF_SESSION_COOKIE_NAME];
-  return token ? token : null;
-};
 
 const isPasscodeMatch = (actual: string, expected: string): boolean => {
   const a = Buffer.from(actual, "utf8");
@@ -107,11 +72,6 @@ const isPasscodeMatch = (actual: string, expected: string): boolean => {
     return false;
   }
   return timingSafeEqual(a, b);
-};
-
-const createSessionCookie = (token: string, sessionTtlMs: number): string => {
-  const maxAge = Math.floor(sessionTtlMs / 1000);
-  return `${STAFF_SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 };
 
 const writeSseHeaders = (res: ServerResponse) => {
@@ -300,33 +260,13 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }),
   };
 
-  const staffSessions = new Map<string, StaffSession>();
-
-  const validateStaffSession = (token: string): boolean => {
-    const session = staffSessions.get(token);
-    if (!session) {
-      return false;
-    }
-    if (session.expires_at_ms <= nowMs()) {
-      staffSessions.delete(token);
-      return false;
-    }
-    return true;
-  };
-
-  const createStaffSession = (): string => {
-    const token = randomUUID();
-    staffSessions.set(token, { expires_at_ms: nowMs() + staffSessionTtlMs });
-    return token;
-  };
-
-  const keepaliveStaffSession = (token: string): boolean => {
-    if (!validateStaffSession(token)) {
-      return false;
-    }
-    staffSessions.set(token, { expires_at_ms: nowMs() + staffSessionTtlMs });
-    return true;
-  };
+  const staffSessionStore = createStaffSessionStore({
+    now_ms: nowMs,
+    session_ttl_ms: staffSessionTtlMs,
+  });
+  const validateStaffSession = staffSessionStore.validate;
+  const createStaffSession = staffSessionStore.create;
+  const keepaliveStaffSession = staffSessionStore.keepalive;
 
   let state: OrchestratorState = createInitialState(nowMs());
   const pendingStt = new Set<string>();
@@ -485,63 +425,50 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       return token;
     };
 
-    if (path === "/api/v1/staff/auth/login") {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "POST") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
+    const openStaffStream = (token: string) => {
+      openSse(
+        req,
+        res,
+        "staff.snapshot",
+        createStaffSnapshot(state, store.listPending().length),
+        sseKeepAliveIntervalMs,
+        (client) => {
+          staffClients.add(client);
+          staffSseSessions.set(client, token);
+        },
+        (client) => {
+          staffClients.delete(client);
+          staffSseSessions.delete(client);
+        },
+      );
+    };
 
-      readJson(req, 128_000)
-        .then((body) => {
-          const parsed = body as { passcode?: unknown };
-          if (typeof parsed.passcode !== "string") {
-            sendError(res, 400, "invalid_request", "Invalid request");
-            return;
-          }
-          const expected = process.env.STAFF_PASSCODE;
-          if (typeof expected !== "string" || expected.length === 0) {
-            sendError(res, 500, "misconfigured", "Server misconfigured");
-            return;
-          }
-          if (!isPasscodeMatch(parsed.passcode, expected)) {
-            sendError(res, 401, "unauthorized", "Unauthorized");
-            return;
-          }
-
-          const token = createStaffSession();
-          res.setHeader("set-cookie", createSessionCookie(token, staffSessionTtlMs));
-          sendJson(res, 200, okBody);
-        })
-        .catch((err: unknown) => {
-          if (err instanceof Error && err.message === "body_too_large") {
-            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
-            return;
-          }
-          safeSendError(res, 400, "invalid_json", "Invalid JSON");
-        });
-      return;
-    }
-
-    if (path === "/api/v1/staff/auth/keepalive") {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "POST") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
-
-      const token = getStaffSessionToken(req);
-      if (!token || !keepaliveStaffSession(token)) {
-        sendError(res, 401, "unauthorized", "Unauthorized");
-        return;
-      }
-
-      res.setHeader("set-cookie", createSessionCookie(token, staffSessionTtlMs));
-      sendJson(res, 200, okBody);
+    if (
+      handleStaffRoutes({
+        req,
+        res,
+        path,
+        now_ms: nowMs,
+        store,
+        staff_session_ttl_ms: staffSessionTtlMs,
+        ok_body: okBody,
+        not_found_body: notFoundBody,
+        readJson,
+        mapPendingToDto,
+        sendJson,
+        sendError,
+        safeSendError,
+        isPasscodeMatch,
+        getStaffSessionToken,
+        createStaffSession,
+        keepaliveStaffSession,
+        requireStaffLan,
+        requireStaffSession,
+        openStaffStream,
+        enqueueEvent,
+        broadcastStaffSnapshotIfChanged,
+      })
+    ) {
       return;
     }
 
@@ -561,36 +488,6 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         },
         (client) => {
           kioskClients.delete(client);
-        },
-      );
-      return;
-    }
-
-    if (path === "/api/v1/staff/stream") {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "GET") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
-      const token = requireStaffSession();
-      if (!token) {
-        return;
-      }
-      openSse(
-        req,
-        res,
-        "staff.snapshot",
-        createStaffSnapshot(state, store.listPending().length),
-        sseKeepAliveIntervalMs,
-        (client) => {
-          staffClients.add(client);
-          staffSseSessions.set(client, token);
-        },
-        (client) => {
-          staffClients.delete(client);
-          staffSseSessions.delete(client);
         },
       );
       return;
@@ -677,104 +574,6 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           }
           safeSendError(res, 503, "unavailable", "Unavailable");
         });
-      return;
-    }
-
-    if (path === "/api/v1/staff/event") {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "POST") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
-      if (!requireStaffSession()) {
-        return;
-      }
-      readJson(req, 128_000)
-        .then((body) => {
-          const parsed = body as { type?: unknown };
-          const type = parsed.type;
-          if (
-            type !== "STAFF_PTT_DOWN" &&
-            type !== "STAFF_PTT_UP" &&
-            type !== "STAFF_FORCE_ROOM" &&
-            type !== "STAFF_EMERGENCY_STOP" &&
-            type !== "STAFF_RESUME"
-          ) {
-            sendError(res, 400, "invalid_request", "Invalid request");
-            return;
-          }
-          enqueueEvent({ type } as OrchestratorEvent, nowMs());
-          sendJson(res, 200, okBody);
-        })
-        .catch((err: unknown) => {
-          if (err instanceof Error && err.message === "body_too_large") {
-            safeSendError(res, 413, "payload_too_large", "Payload Too Large");
-            return;
-          }
-          safeSendError(res, 400, "invalid_json", "Invalid JSON");
-        });
-      return;
-    }
-
-    if (path === "/api/v1/staff/pending") {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "GET") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
-      if (!requireStaffSession()) {
-        return;
-      }
-      const items = store.listPending().map(mapPendingToDto);
-      sendJson(res, 200, JSON.stringify({ items }));
-      return;
-    }
-
-    if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/confirm")) {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "POST") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
-      if (!requireStaffSession()) {
-        return;
-      }
-      const id = path.slice("/api/v1/staff/pending/".length, -"/confirm".length);
-      const didConfirm = store.confirmById(id);
-      if (!didConfirm) {
-        sendJson(res, 404, notFoundBody);
-        return;
-      }
-      broadcastStaffSnapshotIfChanged();
-      sendJson(res, 200, okBody);
-      return;
-    }
-
-    if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/deny")) {
-      if (!requireStaffLan()) {
-        return;
-      }
-      if (req.method !== "POST") {
-        sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-        return;
-      }
-      if (!requireStaffSession()) {
-        return;
-      }
-      const id = path.slice("/api/v1/staff/pending/".length, -"/deny".length);
-      const didDeny = store.denyById(id);
-      if (!didDeny) {
-        sendJson(res, 404, notFoundBody);
-        return;
-      }
-      broadcastStaffSnapshotIfChanged();
-      sendJson(res, 200, okBody);
       return;
     }
 
