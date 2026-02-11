@@ -19,6 +19,7 @@ const postJson = vi.fn(async (_path: string, _body: unknown) => {
 
 vi.mock("./api", () => ({
   postJson,
+  postJsonWithTimeout: postJson,
   postFormData: vi.fn(async () => ({ ok: true, status: 202 })),
 }));
 

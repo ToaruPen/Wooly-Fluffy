@@ -597,6 +597,11 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     }
 
     if (path === "/api/v1/kiosk/event") {
+      const remoteAddress = getRemoteAddress(req);
+      if (!isLanAddress(remoteAddress)) {
+        sendError(res, 403, "forbidden", "Forbidden");
+        return;
+      }
       if (req.method !== "POST") {
         sendError(res, 405, "method_not_allowed", "Method Not Allowed");
         return;
@@ -604,16 +609,29 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       readJson(req, 128_000)
         .then((body) => {
           const parsed = body as { type?: unknown; answer?: unknown };
-          if (parsed.type !== "UI_CONSENT_BUTTON") {
-            sendError(res, 400, "invalid_request", "Invalid request");
+          if (parsed.type === "UI_CONSENT_BUTTON") {
+            if (parsed.answer !== "yes" && parsed.answer !== "no") {
+              sendError(res, 400, "invalid_request", "Invalid request");
+              return;
+            }
+            enqueueEvent({ type: "UI_CONSENT_BUTTON", answer: parsed.answer }, nowMs());
+            sendJson(res, 200, okBody);
             return;
           }
-          if (parsed.answer !== "yes" && parsed.answer !== "no") {
-            sendError(res, 400, "invalid_request", "Invalid request");
+
+          if (parsed.type === "KIOSK_PTT_DOWN") {
+            enqueueEvent({ type: "KIOSK_PTT_DOWN" }, nowMs());
+            sendJson(res, 200, okBody);
             return;
           }
-          enqueueEvent({ type: "UI_CONSENT_BUTTON", answer: parsed.answer }, nowMs());
-          sendJson(res, 200, okBody);
+
+          if (parsed.type === "KIOSK_PTT_UP") {
+            enqueueEvent({ type: "KIOSK_PTT_UP" }, nowMs());
+            sendJson(res, 200, okBody);
+            return;
+          }
+
+          sendError(res, 400, "invalid_request", "Invalid request");
         })
         .catch((err: unknown) => {
           if (err instanceof Error && err.message === "body_too_large") {

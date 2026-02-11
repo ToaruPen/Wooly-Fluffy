@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { postFormData, postJson } from "./api";
+import { postFormData, postJson, postJsonWithTimeout } from "./api";
 import { convertRecordingBlobToWavFile } from "./kiosk-audio";
 import { startPttSession, type PttSession } from "./kiosk-ptt";
 import { connectSse, type ServerMessage } from "./sse-client";
@@ -16,6 +16,20 @@ import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 import { DevDebugLink } from "./dev-debug-link";
 import { performGestureAudioUnlock } from "./audio-unlock";
+
+const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
+
+const KIOSK_PTT_EVENT_TIMEOUT_MS = 3_000;
+
+const isInteractiveElement = (el: Element | null): boolean => {
+  if (!el) return false;
+  const tag = el.tagName.toLowerCase();
+  if (INTERACTIVE_TAGS.has(tag)) return true;
+  if (el.getAttribute("role") === "button") return true;
+  const ce = el.getAttribute("contenteditable");
+  if (ce !== null && ce !== "false") return true;
+  return false;
+};
 
 const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string => {
   if (prefix === "stream") {
@@ -77,6 +91,18 @@ export const KioskPage = () => {
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const [isAudioUnlockNeeded, setIsAudioUnlockNeeded] = useState(false);
   const isAudioUnlockedRef = useRef(false);
+
+  const [pttError, setPttError] = useState<string | null>(null);
+  const [isKioskPttDown, setIsKioskPttDown] = useState(false);
+  const [isKioskPttButtonHeld, setIsKioskPttButtonHeld] = useState(false);
+  const isMountedRef = useRef(false);
+  const isKioskPttSpaceHeldRef = useRef(false);
+  const isKioskPttButtonHeldRef = useRef(false);
+  const isKioskPttDownRef = useRef(false);
+  const isKioskPttStateUncertainRef = useRef(false);
+  const isKioskPttSendingRef = useRef(false);
+  const kioskPttInFlightPromiseRef = useRef<Promise<boolean> | null>(null);
+  const kioskPttRetryTimeoutIdRef = useRef<number | null>(null);
   const [ttsWav, setTtsWav] = useState<ArrayBuffer | null>(null);
   const [ttsPlayId, setTtsPlayId] = useState(0);
   const ttsPlayIdRef = useRef(0);
@@ -96,6 +122,109 @@ export const KioskPage = () => {
   const pendingSayIdRef = useRef<string | null>(null);
   const lastSpokenTextRef = useRef<string | null>(null);
   const lastSpokenSayIdRef = useRef<string | null>(null);
+
+  const sendKioskEvent = useCallback(async (type: "KIOSK_PTT_DOWN" | "KIOSK_PTT_UP") => {
+    try {
+      const res = await postJsonWithTimeout(
+        "/api/v1/kiosk/event",
+        { type },
+        KIOSK_PTT_EVENT_TIMEOUT_MS,
+      );
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const flushKioskPtt = useCallback(() => {
+    if (!isMountedRef.current) {
+      return;
+    }
+    if (isKioskPttSendingRef.current) {
+      return;
+    }
+    const shouldBeDown = isKioskPttSpaceHeldRef.current || isKioskPttButtonHeldRef.current;
+    if (isKioskPttDownRef.current === shouldBeDown && !isKioskPttStateUncertainRef.current) {
+      return;
+    }
+
+    const type: "KIOSK_PTT_DOWN" | "KIOSK_PTT_UP" = shouldBeDown
+      ? "KIOSK_PTT_DOWN"
+      : "KIOSK_PTT_UP";
+    isKioskPttSendingRef.current = true;
+    let didSucceed = false;
+    const sendPromise = sendKioskEvent(type);
+    kioskPttInFlightPromiseRef.current = sendPromise;
+    void sendPromise
+      .then((isOk) => {
+        if (!isMountedRef.current) {
+          return;
+        }
+        if (!isOk) {
+          setPttError("Network error");
+          isKioskPttStateUncertainRef.current = true;
+          // Treat DOWN/UP failures as "state unknown" and retry to converge.
+          // Duplicate DOWN is safe (server ignores if already listening).
+          if (kioskPttRetryTimeoutIdRef.current === null) {
+            kioskPttRetryTimeoutIdRef.current = window.setTimeout(() => {
+              kioskPttRetryTimeoutIdRef.current = null;
+              if (isMountedRef.current) {
+                flushKioskPtt();
+              }
+            }, 250);
+          }
+          return;
+        }
+
+        didSucceed = true;
+        setPttError(null);
+        isKioskPttStateUncertainRef.current = false;
+        isKioskPttDownRef.current = shouldBeDown;
+        setIsKioskPttDown(shouldBeDown);
+      })
+      .finally(() => {
+        if (kioskPttInFlightPromiseRef.current === sendPromise) {
+          kioskPttInFlightPromiseRef.current = null;
+        }
+        isKioskPttSendingRef.current = false;
+
+        // If the desired state changed while sending (e.g. quick press+release), flush once more.
+        if (didSucceed && isMountedRef.current) {
+          flushKioskPtt();
+        }
+      });
+  }, [sendKioskEvent]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      const timeoutId = kioskPttRetryTimeoutIdRef.current;
+      kioskPttRetryTimeoutIdRef.current = null;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
+      const inFlight = kioskPttInFlightPromiseRef.current;
+      const isPttPossiblyDown =
+        isKioskPttSpaceHeldRef.current ||
+        isKioskPttButtonHeldRef.current ||
+        isKioskPttDownRef.current ||
+        isKioskPttStateUncertainRef.current;
+      const shouldSendFinalPttUpOnUnmount = isPttPossiblyDown || inFlight !== null;
+      if (shouldSendFinalPttUpOnUnmount) {
+        if (inFlight) {
+          void inFlight.finally(() => {
+            void sendKioskEvent("KIOSK_PTT_UP");
+          });
+        } else {
+          void sendKioskEvent("KIOSK_PTT_UP");
+        }
+      }
+
+      flushKioskPtt();
+    };
+  }, [flushKioskPtt, sendKioskEvent]);
 
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
@@ -150,6 +279,57 @@ export const KioskPage = () => {
     setIsAudioUnlockNeeded(false);
     performGestureAudioUnlock();
   }, []);
+
+  useEffect(() => {
+    const isSpaceKey = (e: KeyboardEvent) => e.code === "Space" || e.key === " ";
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isSpaceKey(e)) return;
+
+      const el = document.activeElement as HTMLElement | null;
+      if (isInteractiveElement(el)) return;
+
+      if (e.repeat) {
+        if (isKioskPttSpaceHeldRef.current) e.preventDefault();
+        return;
+      }
+
+      if (!isKioskPttSpaceHeldRef.current) {
+        e.preventDefault();
+        isKioskPttSpaceHeldRef.current = true;
+        flushKioskPtt();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!isSpaceKey(e)) return;
+      if (!isKioskPttSpaceHeldRef.current) return;
+      e.preventDefault();
+      isKioskPttSpaceHeldRef.current = false;
+      flushKioskPtt();
+    };
+
+    const handleBlurOrVisibility = () => {
+      if (!isKioskPttSpaceHeldRef.current && !isKioskPttButtonHeldRef.current) {
+        return;
+      }
+      isKioskPttSpaceHeldRef.current = false;
+      isKioskPttButtonHeldRef.current = false;
+      setIsKioskPttButtonHeld(false);
+      flushKioskPtt();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlurOrVisibility);
+    document.addEventListener("visibilitychange", handleBlurOrVisibility);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlurOrVisibility);
+      document.removeEventListener("visibilitychange", handleBlurOrVisibility);
+    };
+  }, [flushKioskPtt]);
 
   useEffect(() => {
     if (isAudioUnlocked) {
@@ -396,6 +576,7 @@ export const KioskPage = () => {
   const phase = snapshot?.state.phase ?? null;
   const isConsentVisible = snapshot?.state.consent_ui_visible ?? false;
   const shouldShowRecording = isRecording || phase === "listening";
+  const isLocalPttActive = isKioskPttDown || isKioskPttButtonHeld;
 
   const sendConsent = async (answer: "yes" | "no") => {
     setConsentError(null);
@@ -495,6 +676,34 @@ export const KioskPage = () => {
             </div>
           ) : null}
 
+          <button
+            type="button"
+            className={isLocalPttActive ? styles.pttButtonActive : styles.pttButton}
+            aria-pressed={isLocalPttActive}
+            onPointerDown={() => {
+              isKioskPttButtonHeldRef.current = true;
+              setIsKioskPttButtonHeld(true);
+              flushKioskPtt();
+            }}
+            onPointerUp={() => {
+              isKioskPttButtonHeldRef.current = false;
+              setIsKioskPttButtonHeld(false);
+              flushKioskPtt();
+            }}
+            onPointerCancel={() => {
+              isKioskPttButtonHeldRef.current = false;
+              setIsKioskPttButtonHeld(false);
+              flushKioskPtt();
+            }}
+            onPointerLeave={() => {
+              isKioskPttButtonHeldRef.current = false;
+              setIsKioskPttButtonHeld(false);
+              flushKioskPtt();
+            }}
+          >
+            {isLocalPttActive ? "はなして とめる" : "おして はなす"}
+          </button>
+
           {shouldShowRecording ? (
             <div className={styles.recordingPill} aria-live="polite">
               <span className={styles.recordingDot} aria-hidden="true" />
@@ -511,6 +720,11 @@ export const KioskPage = () => {
           {streamError ? (
             <div className={styles.errorText} role="alert">
               {toKidFriendlyError("stream", streamError)}
+            </div>
+          ) : null}
+          {pttError ? (
+            <div className={styles.errorText} role="alert">
+              {toKidFriendlyError("stream", pttError)}
             </div>
           ) : null}
           {audioError ? (

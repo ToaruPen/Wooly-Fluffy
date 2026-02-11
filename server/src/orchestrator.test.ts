@@ -72,6 +72,89 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("does not emit record_start on repeated STAFF_PTT_DOWN while listening", () => {
+    const initial = createInitialState(0);
+    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    expect(staffDown.next_state.phase).toBe("listening");
+
+    const staffDownAgain = reduceOrchestrator(
+      staffDown.next_state,
+      { type: "STAFF_PTT_DOWN" },
+      110,
+    );
+    expect(staffDownAgain.next_state.phase).toBe("listening");
+    expect(staffDownAgain.effects).toEqual([]);
+  });
+
+  it("handles PTT flow in room from kiosk events", () => {
+    const initial = createInitialState(0);
+    const pttDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 100);
+
+    expect(pttDown.next_state.phase).toBe("listening");
+    expect(pttDown.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
+
+    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "KIOSK_PTT_UP" }, 200);
+    const sttEffect = getEffect(pttUp.effects, "CALL_STT");
+
+    expect(pttUp.next_state.phase).toBe("waiting_stt");
+    expect(sttEffect?.request_id).toBe("stt-1");
+  });
+
+  it("ignores KIOSK_PTT_UP when not listening", () => {
+    const initial = createInitialState(0);
+    const result = reduceOrchestrator(initial, { type: "KIOSK_PTT_UP" }, 100);
+
+    expect(result.next_state).toEqual(initial);
+    expect(result.effects).toEqual([]);
+  });
+
+  it("does not stop listening when KIOSK releases while STAFF is still holding", () => {
+    const initial = createInitialState(0);
+
+    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    const kioskDown = reduceOrchestrator(staffDown.next_state, { type: "KIOSK_PTT_DOWN" }, 110);
+    const kioskUp = reduceOrchestrator(kioskDown.next_state, { type: "KIOSK_PTT_UP" }, 120);
+
+    expect(kioskUp.next_state.phase).toBe("listening");
+    expect(kioskUp.effects).toEqual([]);
+  });
+
+  it("does not stop listening until both STAFF/KIOSK PTT are released", () => {
+    const initial = createInitialState(0);
+
+    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    expect(staffDown.next_state.phase).toBe("listening");
+    expect(staffDown.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
+
+    const kioskDown = reduceOrchestrator(staffDown.next_state, { type: "KIOSK_PTT_DOWN" }, 110);
+    expect(kioskDown.next_state.phase).toBe("listening");
+    expect(kioskDown.effects).toEqual([]);
+
+    const staffUp = reduceOrchestrator(kioskDown.next_state, { type: "STAFF_PTT_UP" }, 120);
+    expect(staffUp.next_state.phase).toBe("listening");
+    expect(staffUp.effects).toEqual([]);
+
+    const kioskUp = reduceOrchestrator(staffUp.next_state, { type: "KIOSK_PTT_UP" }, 130);
+    const sttEffect = getEffect(kioskUp.effects, "CALL_STT");
+
+    expect(kioskUp.next_state.phase).toBe("waiting_stt");
+    expect(sttEffect?.request_id).toBe("stt-1");
+  });
+
+  it("ignores KIOSK_PTT_DOWN while waiting for STT", () => {
+    const base = createInitialState(0);
+    const waiting: OrchestratorState = {
+      ...base,
+      phase: "waiting_stt",
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
+      request_seq: 1,
+    };
+
+    const result = reduceOrchestrator(waiting, { type: "KIOSK_PTT_DOWN" }, 100);
+    expect(result.next_state).toEqual(waiting);
+    expect(result.effects).toEqual([]);
+  });
+
   it("emits kiosk tool_calls effect from CHAT_RESULT", () => {
     const base = createInitialState(0);
     const waitingChat: OrchestratorState = {
@@ -341,6 +424,69 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("ignores UI consent button while listening from consent PTT", () => {
+    const base = createInitialState(0);
+    const asking: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "asking_consent",
+      consent_deadline_at_ms: 4000,
+      memory_candidate: { kind: "food", value: "カレー" },
+    };
+
+    const pttDown = reduceOrchestrator(asking, { type: "STAFF_PTT_DOWN" }, 100);
+    expect(pttDown.next_state.phase).toBe("listening");
+
+    const consentButton = reduceOrchestrator(
+      pttDown.next_state,
+      { type: "UI_CONSENT_BUTTON", answer: "yes" },
+      110,
+    );
+    expect(consentButton.next_state).toEqual(pttDown.next_state);
+    expect(consentButton.effects).toEqual([]);
+
+    const pttUp = reduceOrchestrator(consentButton.next_state, { type: "STAFF_PTT_UP" }, 120);
+    const sttEffect = getEffect(pttUp.effects, "CALL_STT");
+    expect(pttUp.next_state.phase).toBe("waiting_stt");
+    expect(sttEffect?.request_id).toBe("stt-1");
+  });
+
+  it("accepts UI consent button while waiting inner consent decision", () => {
+    const base = createInitialState(0);
+    const waitingInner: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "waiting_inner_task",
+      consent_deadline_at_ms: 4000,
+      memory_candidate: { kind: "food", value: "カレー" },
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingInner,
+      { type: "UI_CONSENT_BUTTON", answer: "yes" },
+      100,
+    );
+
+    expect(result.next_state.phase).toBe("idle");
+    expect(result.next_state.memory_candidate).toBeNull();
+    expect(result.next_state.consent_deadline_at_ms).toBeNull();
+    expect(result.next_state.in_flight.consent_inner_task_request_id).toBeNull();
+    expect(result.effects).toEqual([
+      {
+        type: "STORE_WRITE_PENDING",
+        input: {
+          personal_name: "たろう",
+          kind: "food",
+          value: "カレー",
+        },
+      },
+      { type: "SHOW_CONSENT_UI", visible: false },
+    ]);
+  });
+
   it("times out consent after 30s", () => {
     const base = createInitialState(0);
     const asking: OrchestratorState = {
@@ -355,6 +501,47 @@ describe("orchestrator", () => {
     const result = reduceOrchestrator(asking, { type: "TICK" }, 1000);
 
     expect(result.next_state.memory_candidate).toBeNull();
+    expect(result.effects).toEqual([
+      { type: "SAY", text: "さっきのことは忘れるね" },
+      { type: "SHOW_CONSENT_UI", visible: false },
+    ]);
+  });
+
+  it("does not timeout consent while listening", () => {
+    const base = createInitialState(0);
+    const listening: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "listening",
+      consent_deadline_at_ms: 1000,
+      memory_candidate: { kind: "play", value: "サッカー" },
+      is_staff_ptt_held: true,
+    };
+
+    const result = reduceOrchestrator(listening, { type: "TICK" }, 1000);
+
+    expect(result.next_state).toEqual(listening);
+    expect(result.effects).toEqual([]);
+  });
+
+  it("times out consent while waiting inner consent decision", () => {
+    const base = createInitialState(0);
+    const waitingInner: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "waiting_inner_task",
+      consent_deadline_at_ms: 1000,
+      memory_candidate: { kind: "play", value: "サッカー" },
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" },
+    };
+
+    const result = reduceOrchestrator(waitingInner, { type: "TICK" }, 1000);
+
+    expect(result.next_state.phase).toBe("idle");
+    expect(result.next_state.memory_candidate).toBeNull();
+    expect(result.next_state.consent_deadline_at_ms).toBeNull();
     expect(result.effects).toEqual([
       { type: "SAY", text: "さっきのことは忘れるね" },
       { type: "SHOW_CONSENT_UI", visible: false },

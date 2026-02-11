@@ -16,8 +16,10 @@ const fetchWithOptionalTimeout = (
     body?: BodyInit | null;
     credentials?: RequestCredentials;
   },
+  timeoutMsOverride: number | null,
 ) => {
-  const timeoutMs = getFetchTimeoutMs();
+  const envTimeoutMs = getFetchTimeoutMs();
+  const timeoutMs = timeoutMsOverride ?? envTimeoutMs;
   if (timeoutMs <= 0) {
     return fetch(path, init);
   }
@@ -30,43 +32,74 @@ const fetchWithOptionalTimeout = (
 };
 
 export const getJson = (path: string) =>
-  fetchWithOptionalTimeout(path, {
-    method: "GET",
-    headers: {
-      accept: "application/json",
+  fetchWithOptionalTimeout(
+    path,
+    {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+      },
+      credentials: "include",
     },
-    credentials: "include",
-  });
+    null,
+  );
 
 export const postJson = (path: string, body: unknown) =>
-  fetchWithOptionalTimeout(path, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
+  fetchWithOptionalTimeout(
+    path,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      credentials: "include",
     },
-    body: JSON.stringify(body),
-    credentials: "include",
-  });
+    null,
+  );
+
+export const postJsonWithTimeout = (path: string, body: unknown, timeoutMs: number) =>
+  fetchWithOptionalTimeout(
+    path,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      credentials: "include",
+    },
+    timeoutMs,
+  );
 
 export const postFormData = (path: string, body: FormData) =>
-  fetchWithOptionalTimeout(path, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
+  fetchWithOptionalTimeout(
+    path,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+      },
+      body,
+      credentials: "include",
     },
-    body,
-    credentials: "include",
-  });
+    null,
+  );
 
 export const postEmpty = (path: string) =>
-  fetchWithOptionalTimeout(path, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
+  fetchWithOptionalTimeout(
+    path,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+      },
+      credentials: "include",
     },
-    credentials: "include",
-  });
+    null,
+  );
 
 export const readJson = async <T>(res: Response): Promise<T> => {
   const timeoutMs = getFetchTimeoutMs();
