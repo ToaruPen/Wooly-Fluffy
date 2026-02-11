@@ -211,6 +211,40 @@ describe("llm-provider (OpenAI-compatible)", () => {
     );
   });
 
+  it("parses allowlisted motion_id thinking", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  assistant_text: "Hello",
+                  expression: "neutral",
+                  motion_id: "thinking",
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).resolves.toEqual(
+      {
+        assistant_text: "Hello",
+        expression: "neutral",
+        motion_id: "thinking",
+        tool_calls: [],
+      },
+    );
+  });
+
   it("coerces non-string motion_id to null", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
       kind: "local",

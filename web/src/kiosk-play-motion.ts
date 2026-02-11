@@ -1,4 +1,4 @@
-export type MotionId = "idle" | "greeting" | "cheer";
+export type MotionId = "idle" | "greeting" | "cheer" | "thinking";
 
 export type PlayMotionCommand = {
   motionId: MotionId;
@@ -9,10 +9,11 @@ const motionIdAllowlist: Record<MotionId, true> = {
   idle: true,
   greeting: true,
   cheer: true,
+  thinking: true,
 };
 
 const isMotionId = (value: string): value is MotionId => {
-  return value in motionIdAllowlist;
+  return Object.hasOwn(motionIdAllowlist, value);
 };
 
 export const parseKioskPlayMotionData = (value: unknown): PlayMotionCommand | null => {

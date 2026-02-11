@@ -585,6 +585,60 @@ describe("VrmAvatar (coverage)", () => {
     document.body.removeChild(container);
   });
 
+  it("does not register oneshot finished handler for thinking motion", async () => {
+    HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
+      if (contextId === "webgl" || contextId === "experimental-webgl") {
+        return {} as unknown as WebGLRenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext;
+
+    loadAsyncImpl = async (url: string) => {
+      if (url.endsWith(".vrm")) {
+        return {
+          userData: {
+            vrm: {
+              scene: { tag: "vrm-scene" },
+              humanoid: { resetNormalizedPose: vi.fn() },
+              lookAt: undefined,
+              expressionManager: { setValue: vi.fn() },
+              update: vi.fn(),
+            },
+          },
+        };
+      }
+      if (url.endsWith("/thinking.vrma")) {
+        return { userData: { vrmAnimations: [{ lookAtTrack: null }] } };
+      }
+      throw new Error(`unexpected url: ${url}`);
+    };
+
+    const { VrmAvatar } = await import("./vrm-avatar");
+    const container = document.createElement("div");
+    container.getBoundingClientRect = () => ({ width: 320, height: 240 }) as DOMRect;
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <VrmAvatar
+          vrmUrl="/x.vrm"
+          expression="neutral"
+          mouthOpen={0}
+          motion={{ motionId: "thinking", motionInstanceId: "thinking-1" }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(actionCalls.includes("addEventListener:finished")).toBe(false);
+
+    act(() => root.unmount());
+    document.body.removeChild(container);
+  });
+
   it("covers allowlist motion behaviors (lookAt, traverse, cache, dedupe, missing vrma)", async () => {
     HTMLCanvasElement.prototype.getContext = ((contextId: string) => {
       if (contextId === "webgl" || contextId === "experimental-webgl") {

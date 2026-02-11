@@ -190,14 +190,15 @@ ls -lah web/public/assets/vrm/*.vrm
 
 #### 5) VRMA Motions (local-only)
 
-Issue #38 adds local-only motion playback in `/kiosk` via SSE `kiosk.command.play_motion`.
+Issue #38 and #82 add local-only motion playback in `/kiosk` via SSE `kiosk.command.play_motion`.
 
-1. Prepare 3 VRMA files (do not commit/distribute raw assets)
+1. Prepare 4 VRMA files (do not commit/distribute raw assets)
 2. Place them under `web/public/assets/motions/` with these exact filenames:
 
 - `idle.vrma`
 - `greeting.vrma`
 - `cheer.vrma`
+- `thinking.vrma`
 
 These files are ignored by git via `.gitignore`.
 
@@ -211,6 +212,7 @@ These files are ignored by git via `.gitignore`.
 window.__wfPlayMotion?.("idle");
 window.__wfPlayMotion?.("greeting");
 window.__wfPlayMotion?.("cheer");
+window.__wfPlayMotion?.("thinking");
 ```
 
 If the VRMA files are present and valid, the avatar should start playing the requested motion.

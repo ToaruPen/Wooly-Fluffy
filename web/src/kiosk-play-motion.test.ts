@@ -11,6 +11,14 @@ describe("parseKioskPlayMotionData", () => {
     expect(parsed).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
   });
 
+  it("accepts thinking motion_id", () => {
+    const parsed = parseKioskPlayMotionData({
+      motion_id: "thinking",
+      motion_instance_id: "m-thinking-1",
+    });
+    expect(parsed).toEqual({ motionId: "thinking", motionInstanceId: "m-thinking-1" });
+  });
+
   it("returns null for non-allowlisted motion_id", () => {
     expect(parseKioskPlayMotionData({ motion_id: "dance", motion_instance_id: "m-1" })).toBeNull();
   });

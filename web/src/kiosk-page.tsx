@@ -378,7 +378,12 @@ export const KioskPage = () => {
         __wfPlayMotion?: (motionId: MotionId) => void;
       };
       w.__wfPlayMotion = (motionId) => {
-        if (motionId !== "idle" && motionId !== "greeting" && motionId !== "cheer") {
+        if (
+          motionId !== "idle" &&
+          motionId !== "greeting" &&
+          motionId !== "cheer" &&
+          motionId !== "thinking"
+        ) {
           return;
         }
         devMotionSeqRef.current += 1;

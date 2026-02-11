@@ -12,7 +12,7 @@ export type LlmExpression = Expression;
 
 export type LlmToolCall = ToolCall;
 
-export type LlmMotionId = "idle" | "greeting" | "cheer";
+export type LlmMotionId = "idle" | "greeting" | "cheer" | "thinking";
 
 export type Providers = {
   stt: {
