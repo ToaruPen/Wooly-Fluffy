@@ -277,7 +277,10 @@ SSEエンドポイント:
 #### 3.4.2 KIOSK -> Server（HTTP）
 
 - `POST /api/v1/kiosk/event`
-  - body: `{ "type": "UI_CONSENT_BUTTON", "answer": "yes" | "no" }`
+  - body:
+    - `{ "type": "UI_CONSENT_BUTTON", "answer": "yes" | "no" }`
+    - `{ "type": "KIOSK_PTT_DOWN" }`
+    - `{ "type": "KIOSK_PTT_UP" }`
   - response: `200 { "ok": true }`
 
 - `POST /api/v1/kiosk/stt-audio`
@@ -416,6 +419,8 @@ Provider方針:
   - 入力（STAFF/UI）
     - `STAFF_PTT_DOWN`
     - `STAFF_PTT_UP`
+    - `KIOSK_PTT_DOWN`
+    - `KIOSK_PTT_UP`
     - `UI_CONSENT_BUTTON(answer: "yes" | "no")`
     - `STAFF_FORCE_ROOM`
     - `STAFF_EMERGENCY_STOP`

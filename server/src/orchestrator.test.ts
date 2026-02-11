@@ -72,6 +72,89 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("does not emit record_start on repeated STAFF_PTT_DOWN while listening", () => {
+    const initial = createInitialState(0);
+    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    expect(staffDown.next_state.phase).toBe("listening");
+
+    const staffDownAgain = reduceOrchestrator(
+      staffDown.next_state,
+      { type: "STAFF_PTT_DOWN" },
+      110,
+    );
+    expect(staffDownAgain.next_state.phase).toBe("listening");
+    expect(staffDownAgain.effects).toEqual([]);
+  });
+
+  it("handles PTT flow in room from kiosk events", () => {
+    const initial = createInitialState(0);
+    const pttDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 100);
+
+    expect(pttDown.next_state.phase).toBe("listening");
+    expect(pttDown.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
+
+    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "KIOSK_PTT_UP" }, 200);
+    const sttEffect = getEffect(pttUp.effects, "CALL_STT");
+
+    expect(pttUp.next_state.phase).toBe("waiting_stt");
+    expect(sttEffect?.request_id).toBe("stt-1");
+  });
+
+  it("ignores KIOSK_PTT_UP when not listening", () => {
+    const initial = createInitialState(0);
+    const result = reduceOrchestrator(initial, { type: "KIOSK_PTT_UP" }, 100);
+
+    expect(result.next_state).toEqual(initial);
+    expect(result.effects).toEqual([]);
+  });
+
+  it("does not stop listening when KIOSK releases while STAFF is still holding", () => {
+    const initial = createInitialState(0);
+
+    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    const kioskDown = reduceOrchestrator(staffDown.next_state, { type: "KIOSK_PTT_DOWN" }, 110);
+    const kioskUp = reduceOrchestrator(kioskDown.next_state, { type: "KIOSK_PTT_UP" }, 120);
+
+    expect(kioskUp.next_state.phase).toBe("listening");
+    expect(kioskUp.effects).toEqual([]);
+  });
+
+  it("does not stop listening until both STAFF/KIOSK PTT are released", () => {
+    const initial = createInitialState(0);
+
+    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    expect(staffDown.next_state.phase).toBe("listening");
+    expect(staffDown.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
+
+    const kioskDown = reduceOrchestrator(staffDown.next_state, { type: "KIOSK_PTT_DOWN" }, 110);
+    expect(kioskDown.next_state.phase).toBe("listening");
+    expect(kioskDown.effects).toEqual([]);
+
+    const staffUp = reduceOrchestrator(kioskDown.next_state, { type: "STAFF_PTT_UP" }, 120);
+    expect(staffUp.next_state.phase).toBe("listening");
+    expect(staffUp.effects).toEqual([]);
+
+    const kioskUp = reduceOrchestrator(staffUp.next_state, { type: "KIOSK_PTT_UP" }, 130);
+    const sttEffect = getEffect(kioskUp.effects, "CALL_STT");
+
+    expect(kioskUp.next_state.phase).toBe("waiting_stt");
+    expect(sttEffect?.request_id).toBe("stt-1");
+  });
+
+  it("ignores KIOSK_PTT_DOWN while waiting for STT", () => {
+    const base = createInitialState(0);
+    const waiting: OrchestratorState = {
+      ...base,
+      phase: "waiting_stt",
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
+      request_seq: 1,
+    };
+
+    const result = reduceOrchestrator(waiting, { type: "KIOSK_PTT_DOWN" }, 100);
+    expect(result.next_state).toEqual(waiting);
+    expect(result.effects).toEqual([]);
+  });
+
   it("emits kiosk tool_calls effect from CHAT_RESULT", () => {
     const base = createInitialState(0);
     const waitingChat: OrchestratorState = {

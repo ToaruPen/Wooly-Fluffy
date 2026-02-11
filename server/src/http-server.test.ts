@@ -1192,6 +1192,45 @@ describe("http-server", () => {
     expect(messages[2]?.type).toBe("kiosk.command.record_start");
   });
 
+  it("streams kiosk record_start command on kiosk PTT down", async () => {
+    const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
+      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+      });
+      expect(response.status).toBe(200);
+    });
+
+    expect(messages[0]?.type).toBe("kiosk.snapshot");
+    expect(messages[1]?.type).toBe("kiosk.snapshot");
+    expect(messages[2]?.type).toBe("kiosk.command.record_start");
+  });
+
+  it("streams kiosk record_stop command on kiosk PTT up", async () => {
+    const messages = await readSseDataMessages("/api/v1/kiosk/stream", 5, async () => {
+      const down = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
+      });
+      expect(down.status).toBe(200);
+
+      const up = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
+      });
+      expect(up.status).toBe(200);
+    });
+
+    expect(messages[0]?.type).toBe("kiosk.snapshot");
+    expect(messages[1]?.type).toBe("kiosk.snapshot");
+    expect(messages[2]?.type).toBe("kiosk.command.record_start");
+    expect(messages[3]?.type).toBe("kiosk.snapshot");
+    expect(messages[4]?.type).toBe("kiosk.command.record_stop");
+    expect((messages[4]?.data as { stt_request_id?: unknown } | undefined)?.stt_request_id).toBe(
+      "stt-1",
+    );
+  });
+
   it("speaks fallback text when stt provider throws", async () => {
     process.env.TEST_STT_THROW = "1";
 
