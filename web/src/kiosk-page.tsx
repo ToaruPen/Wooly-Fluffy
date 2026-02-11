@@ -15,9 +15,7 @@ import {
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 import { DevDebugLink } from "./dev-debug-link";
-
-const SILENT_WAV_DATA_URI =
-  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+import { performGestureAudioUnlock } from "./audio-unlock";
 
 const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string => {
   if (prefix === "stream") {
@@ -99,66 +97,6 @@ export const KioskPage = () => {
   const lastSpokenTextRef = useRef<string | null>(null);
   const lastSpokenSayIdRef = useRef<string | null>(null);
 
-  const performGestureAudioUnlock = useCallback(() => {
-    // Best-effort: perform an actual unlock action in the user-gesture call stack.
-    // Different browsers gate either HTMLAudioElement.play() or AudioContext.resume().
-    const isJsdom =
-      typeof navigator !== "undefined" && typeof navigator.userAgent === "string"
-        ? navigator.userAgent.toLowerCase().includes("jsdom")
-        : false;
-    try {
-      // Avoid creating extra Audio instances in jsdom tests (HTMLMediaElement.play is not implemented).
-      if (!isJsdom && typeof Audio === "function") {
-        const a = new Audio(SILENT_WAV_DATA_URI);
-        a.volume = 0;
-        void a
-          .play()
-          .then(() => {
-            try {
-              a.pause();
-            } catch {
-              // ignore
-            }
-          })
-          .catch(() => {
-            // ignore
-          });
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      const AudioContextCtor = (window as unknown as { AudioContext?: typeof AudioContext })
-        .AudioContext;
-      const WebkitAudioContextCtor = (
-        window as unknown as { webkitAudioContext?: typeof AudioContext }
-      ).webkitAudioContext;
-      const Ctor = AudioContextCtor ?? WebkitAudioContextCtor;
-      if (Ctor) {
-        const ctx = new Ctor();
-        void ctx
-          .resume()
-          .then(async () => {
-            try {
-              await ctx.close();
-            } catch {
-              // ignore
-            }
-          })
-          .catch(async () => {
-            try {
-              await ctx.close();
-            } catch {
-              // ignore
-            }
-          });
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
     setTtsWav(null);
@@ -211,7 +149,8 @@ export const KioskPage = () => {
     setIsAudioUnlocked(true);
     setIsAudioUnlockNeeded(false);
     performGestureAudioUnlock();
-  }, [performGestureAudioUnlock]);
+    performGestureAudioUnlock();
+  }, []);
 
   useEffect(() => {
     if (isAudioUnlocked) {
@@ -487,7 +426,7 @@ export const KioskPage = () => {
       return defaultStageBgUrl;
     }
     // Avoid runtime loading of external assets; keep the kiosk self-contained.
-    if (/^https?:\/\//i.test(stageBgEnv)) {
+    if (/^https?:\/\//i.test(stageBgEnv) || /^\/\//.test(stageBgEnv)) {
       return defaultStageBgUrl;
     }
     return stageBgEnv;

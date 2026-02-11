@@ -224,6 +224,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
     let isBlinking = false;
     let blinkProgressS = 0;
     let lastBlinkValue = 0;
+    let blinkSetValueErrorCount = 0;
 
     const scheduleNextBlink = () => {
       nextBlinkAtS = elapsedS + 3.0 + Math.random() * 4.0;
@@ -504,7 +505,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
               try {
                 vrm.expressionManager.setValue(name, clamped);
               } catch {
-                // ignore
+                blinkSetValueErrorCount += 1;
               }
             }
             lastBlinkValue = clamped;
@@ -558,4 +559,6 @@ export const __test__ = {
   applyExpression,
   applyMouthOpen,
   isWebGlAvailable,
+  prefersReducedMotion,
+  pickBlinkExpressionNames,
 };

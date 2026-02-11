@@ -1,7 +1,12 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AUDIO_ERROR_PLAY_BLOCKED, AUDIO_ERROR_UNSUPPORTED, AudioPlayer } from "./audio-player";
+import {
+  AUDIO_ERROR_PLAY_BLOCKED,
+  AUDIO_ERROR_PLAY_FAILED,
+  AUDIO_ERROR_UNSUPPORTED,
+  AudioPlayer,
+} from "./audio-player";
 
 type FakeAudioInstance = {
   src: string;
@@ -166,6 +171,48 @@ describe("AudioPlayer (component)", () => {
 
     expect(onError).toHaveBeenCalledWith(2, AUDIO_ERROR_PLAY_BLOCKED);
     expect(onLevel).toHaveBeenCalledWith(2, 0);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:tts");
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("classifies unknown play rejections as AUDIO_ERROR_PLAY_FAILED", async () => {
+    const createObjectURL = vi.fn(() => "blob:tts");
+    const revokeObjectURL = vi.fn(() => undefined);
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL } as unknown as typeof URL);
+
+    class FakeAudio {
+      src: string;
+      onended: (() => void) | null = null;
+      play = vi.fn(async () => {
+        // Reject with a non-object to cover the error-name extraction fallback.
+        throw "nope";
+      });
+      pause = vi.fn(() => undefined);
+      constructor(src: string) {
+        this.src = src;
+      }
+    }
+    vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+    const onError = vi.fn();
+    const onLevel = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <AudioPlayer wav={new ArrayBuffer(1)} playId={3} onError={onError} onLevel={onLevel} />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(onError).toHaveBeenCalledWith(3, AUDIO_ERROR_PLAY_FAILED);
+    expect(onLevel).toHaveBeenCalledWith(3, 0);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:tts");
 
     await act(async () => {

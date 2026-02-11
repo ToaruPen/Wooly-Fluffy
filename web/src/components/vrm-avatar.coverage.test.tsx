@@ -94,6 +94,12 @@ vi.mock("three", () => {
       rendererPixelRatios.push(_ratio);
       return undefined;
     }
+    setClearColor(_color: number, _alpha: number) {
+      void _color;
+      void _alpha;
+      actionCalls.push("setClearColor");
+      return undefined;
+    }
     setSize(_w: number, _h: number, shouldUpdateStyle: boolean) {
       void shouldUpdateStyle;
       return undefined;
@@ -297,7 +303,12 @@ describe("VrmAvatar (coverage)", () => {
     const mod = await import("./vrm-avatar");
     const { __test__ } = mod;
 
-    const setValue = vi.fn();
+    const setValue = vi.fn((name: string) => {
+      if (name === "blink") {
+        throw new Error("blink boom");
+      }
+      return undefined;
+    });
     const vrmWithManager = {
       expressionManager: { setValue },
     };
@@ -334,6 +345,66 @@ describe("VrmAvatar (coverage)", () => {
     expect(setValue).toHaveBeenCalledWith("surprised", 0);
     expect(setValue).toHaveBeenCalledWith("happy", 1);
     expect(setValue).toHaveBeenCalledWith("aa", 1);
+
+    const originalMatchMedia = window.matchMedia;
+    try {
+      // prefersReducedMotion: matchMedia missing
+      delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+      expect(__test__.prefersReducedMotion()).toBe(false);
+
+      // prefersReducedMotion: matches true/false
+      window.matchMedia = vi.fn(() => ({ matches: true }) as unknown as MediaQueryList);
+      expect(__test__.prefersReducedMotion()).toBe(true);
+
+      window.matchMedia = vi.fn(() => ({ matches: false }) as unknown as MediaQueryList);
+      expect(__test__.prefersReducedMotion()).toBe(false);
+
+      // prefersReducedMotion: matchMedia throws
+      window.matchMedia = vi.fn(() => {
+        throw new Error("boom");
+      });
+      expect(__test__.prefersReducedMotion()).toBe(false);
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+
+    const makeVrmWithExpressions = (names: string[], shouldThrow = false) => {
+      const available = new Set(names);
+      return {
+        expressionManager: {
+          getExpression: (name: string) => {
+            if (shouldThrow) {
+              throw new Error("getExpression boom");
+            }
+            return available.has(name) ? {} : null;
+          },
+        },
+      };
+    };
+
+    expect(__test__.pickBlinkExpressionNames(makeVrmWithExpressions(["blink"]) as never)).toEqual([
+      "blink",
+    ]);
+    expect(__test__.pickBlinkExpressionNames(makeVrmWithExpressions(["Blink"]) as never)).toEqual([
+      "Blink",
+    ]);
+    expect(
+      __test__.pickBlinkExpressionNames(makeVrmWithExpressions(["eyeBlink"]) as never),
+    ).toEqual(["eyeBlink"]);
+    expect(
+      __test__.pickBlinkExpressionNames(
+        makeVrmWithExpressions(["blinkLeft", "blinkRight"]) as never,
+      ),
+    ).toEqual(["blinkLeft", "blinkRight"]);
+    expect(
+      __test__.pickBlinkExpressionNames(makeVrmWithExpressions(["blinkLeft"]) as never),
+    ).toEqual(["blinkLeft"]);
+    expect(
+      __test__.pickBlinkExpressionNames(makeVrmWithExpressions(["blinkRight"]) as never),
+    ).toEqual(["blinkRight"]);
+    expect(__test__.pickBlinkExpressionNames(makeVrmWithExpressions([], true) as never)).toEqual([
+      "blink",
+    ]);
   });
 
   it("renders fallback when WebGL is not available", async () => {
@@ -384,7 +455,14 @@ describe("VrmAvatar (coverage)", () => {
 
     registerImpl = vi.fn();
 
-    const setValue = vi.fn();
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    const setValue = vi.fn((name: string) => {
+      if (name === "blink") {
+        throw new Error("blink boom");
+      }
+      return undefined;
+    });
     const fakeVrm = {
       scene: { tag: "vrm-scene" },
       expressionManager: { setValue },
@@ -410,34 +488,41 @@ describe("VrmAvatar (coverage)", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    await act(async () => {
-      root.render(<VrmAvatar vrmUrl="/x.vrm" expression="happy" mouthOpen={0.4} />);
-      await Promise.resolve();
-    });
+    try {
+      await act(async () => {
+        root.render(<VrmAvatar vrmUrl="/x.vrm" expression="happy" mouthOpen={0.4} />);
+        await Promise.resolve();
+      });
 
-    if (rafHolder.cb) {
-      rafHolder.cb(0);
+      // Drive enough RAF ticks to cover blink timing branches.
+      for (let i = 0; i < 160; i += 1) {
+        rafHolder.cb?.(0);
+        await Promise.resolve();
+      }
+
+      window.dispatchEvent(new Event("resize"));
+
+      expect(registerImpl).toHaveBeenCalledTimes(2);
+      expect(removeVerticesCalls.length).toBe(1);
+      expect(removeJointsCalls.length).toBe(1);
+      expect(rotateCalls.length).toBe(1);
+      expect(sceneAdds).toContain(fakeVrm.scene);
+
+      expect(rendererPixelRatios).toEqual([2]);
+
+      // Expression + mouth updates happen in the animation loop.
+      expect(setValue).toHaveBeenCalledWith("happy", 1);
+      expect(setValue).toHaveBeenCalledWith("aa", 0.4);
+      expect(setValue.mock.calls.some((call) => call[0] === "blink")).toBe(true);
+      expect(fakeVrm.update).toHaveBeenCalled();
+      expect(rendererRenders.length).toBeGreaterThan(0);
+
+      act(() => root.unmount());
+      expect(deepDisposes).toContain(fakeVrm.scene);
+      document.body.removeChild(container);
+    } finally {
+      randomSpy.mockRestore();
     }
-
-    window.dispatchEvent(new Event("resize"));
-
-    expect(registerImpl).toHaveBeenCalledTimes(2);
-    expect(removeVerticesCalls.length).toBe(1);
-    expect(removeJointsCalls.length).toBe(1);
-    expect(rotateCalls.length).toBe(1);
-    expect(sceneAdds).toContain(fakeVrm.scene);
-
-    expect(rendererPixelRatios).toEqual([2]);
-
-    // Expression + mouth updates happen in the animation loop.
-    expect(setValue).toHaveBeenCalledWith("happy", 1);
-    expect(setValue).toHaveBeenCalledWith("aa", 0.4);
-    expect(fakeVrm.update).toHaveBeenCalled();
-    expect(rendererRenders.length).toBeGreaterThan(0);
-
-    act(() => root.unmount());
-    expect(deepDisposes).toContain(fakeVrm.scene);
-    document.body.removeChild(container);
   });
 
   it("loads and plays VRMA when motion is requested", async () => {
