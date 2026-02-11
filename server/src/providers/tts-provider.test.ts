@@ -208,7 +208,7 @@ describe("tts-provider (VOICEVOX)", () => {
 
   it("falls back to speaker=2 when env is empty or non-integer", async () => {
     const prev = process.env.VOICEVOX_SPEAKER_ID;
-    const invalidValues = ["", "   ", "abc", "1.5"];
+    const invalidValues = ["", "   ", "abc", "1.5", "-1"];
 
     try {
       for (const value of invalidValues) {
