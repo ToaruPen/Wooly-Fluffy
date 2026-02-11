@@ -452,6 +452,41 @@ describe("orchestrator", () => {
     expect(sttEffect?.request_id).toBe("stt-1");
   });
 
+  it("accepts UI consent button while waiting inner consent decision", () => {
+    const base = createInitialState(0);
+    const waitingInner: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "waiting_inner_task",
+      consent_deadline_at_ms: 4000,
+      memory_candidate: { kind: "food", value: "カレー" },
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingInner,
+      { type: "UI_CONSENT_BUTTON", answer: "yes" },
+      100,
+    );
+
+    expect(result.next_state.phase).toBe("idle");
+    expect(result.next_state.memory_candidate).toBeNull();
+    expect(result.next_state.consent_deadline_at_ms).toBeNull();
+    expect(result.next_state.in_flight.consent_inner_task_request_id).toBeNull();
+    expect(result.effects).toEqual([
+      {
+        type: "STORE_WRITE_PENDING",
+        input: {
+          personal_name: "たろう",
+          kind: "food",
+          value: "カレー",
+        },
+      },
+      { type: "SHOW_CONSENT_UI", visible: false },
+    ]);
+  });
+
   it("times out consent after 30s", () => {
     const base = createInitialState(0);
     const asking: OrchestratorState = {
@@ -488,6 +523,29 @@ describe("orchestrator", () => {
 
     expect(result.next_state).toEqual(listening);
     expect(result.effects).toEqual([]);
+  });
+
+  it("times out consent while waiting inner consent decision", () => {
+    const base = createInitialState(0);
+    const waitingInner: OrchestratorState = {
+      ...base,
+      mode: "PERSONAL",
+      personal_name: "たろう",
+      phase: "waiting_inner_task",
+      consent_deadline_at_ms: 1000,
+      memory_candidate: { kind: "play", value: "サッカー" },
+      in_flight: { ...base.in_flight, consent_inner_task_request_id: "inner-1" },
+    };
+
+    const result = reduceOrchestrator(waitingInner, { type: "TICK" }, 1000);
+
+    expect(result.next_state.phase).toBe("idle");
+    expect(result.next_state.memory_candidate).toBeNull();
+    expect(result.next_state.consent_deadline_at_ms).toBeNull();
+    expect(result.effects).toEqual([
+      { type: "SAY", text: "さっきのことは忘れるね" },
+      { type: "SHOW_CONSENT_UI", visible: false },
+    ]);
   });
 
   it("uses consent_timeout_ms from config when entering asking_consent", () => {
