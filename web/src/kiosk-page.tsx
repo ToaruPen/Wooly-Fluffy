@@ -149,7 +149,6 @@ export const KioskPage = () => {
     setIsAudioUnlocked(true);
     setIsAudioUnlockNeeded(false);
     performGestureAudioUnlock();
-    performGestureAudioUnlock();
   }, []);
 
   useEffect(() => {

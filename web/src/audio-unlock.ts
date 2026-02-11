@@ -1,7 +1,7 @@
 const SILENT_WAV_DATA_URI =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
-export type GestureAudioUnlockDeps = {
+type GestureAudioUnlockDeps = {
   userAgent?: string;
   AudioCtor?: typeof Audio | null;
   AudioContextCtor?: typeof AudioContext | null;

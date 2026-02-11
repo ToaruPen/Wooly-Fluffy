@@ -12,7 +12,7 @@ export const AUDIO_ERROR_UNSUPPORTED = "audio_unsupported";
 export const AUDIO_ERROR_PLAY_BLOCKED = "audio_play_blocked";
 export const AUDIO_ERROR_PLAY_FAILED = "audio_play_failed";
 
-export type AudioErrorCode =
+type AudioErrorCode =
   | typeof AUDIO_ERROR_UNSUPPORTED
   | typeof AUDIO_ERROR_PLAY_BLOCKED
   | typeof AUDIO_ERROR_PLAY_FAILED;
