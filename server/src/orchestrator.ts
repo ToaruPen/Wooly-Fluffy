@@ -2,15 +2,16 @@ export type Mode = "ROOM" | "PERSONAL";
 
 export type Expression = "neutral" | "happy" | "sad" | "surprised";
 
-type MotionId = "idle" | "greeting" | "cheer";
+type ReplyMotionId = "idle" | "greeting" | "cheer";
 
-const motionIdAllowlist: Record<MotionId, true> = {
+const replyMotionIdAllowlist: Record<ReplyMotionId, true> = {
   idle: true,
   greeting: true,
   cheer: true,
 };
 
-const isMotionId = (value: string): value is MotionId => Object.hasOwn(motionIdAllowlist, value);
+const isReplyMotionId = (value: string): value is ReplyMotionId =>
+  Object.hasOwn(replyMotionIdAllowlist, value);
 
 export type ToolCall = {
   id: string;
@@ -333,6 +334,7 @@ export const reduceOrchestrator = (
     return {
       next_state: nextState,
       effects: [
+        { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-force-room" },
         { type: "SET_MODE", mode: "ROOM" },
         { type: "SHOW_CONSENT_UI", visible: false },
       ],
@@ -345,6 +347,11 @@ export const reduceOrchestrator = (
       is_emergency_stopped: true,
     };
     const effects: OrchestratorEffect[] = [
+      {
+        type: "PLAY_MOTION",
+        motion_id: "idle",
+        motion_instance_id: "motion-emergency-stop",
+      },
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ];
@@ -504,6 +511,11 @@ export const reduceOrchestrator = (
           },
           effects: [
             {
+              type: "PLAY_MOTION",
+              motion_id: "thinking",
+              motion_instance_id: `motion-${id}-thinking`,
+            },
+            {
               type: "CALL_CHAT",
               request_id: id,
               input: {
@@ -546,13 +558,13 @@ export const reduceOrchestrator = (
       ];
 
       const motionIdRaw = event.motion_id;
-      if (typeof motionIdRaw === "string" && isMotionId(motionIdRaw)) {
-        effects.push({
-          type: "PLAY_MOTION",
-          motion_id: motionIdRaw,
-          motion_instance_id: `motion-${event.request_id}`,
-        });
-      }
+      const nextMotionId: ReplyMotionId =
+        typeof motionIdRaw === "string" && isReplyMotionId(motionIdRaw) ? motionIdRaw : "idle";
+      effects.push({
+        type: "PLAY_MOTION",
+        motion_id: nextMotionId,
+        motion_instance_id: `motion-${event.request_id}`,
+      });
       if (event.tool_calls.length > 0) {
         effects.push({
           type: "KIOSK_TOOL_CALLS",
@@ -597,7 +609,14 @@ export const reduceOrchestrator = (
           phase: "idle",
           in_flight: { ...state.in_flight, chat_request_id: null },
         },
-        effects: [{ type: "SAY", text: CHAT_FALLBACK_TEXT }],
+        effects: [
+          {
+            type: "PLAY_MOTION",
+            motion_id: "idle",
+            motion_instance_id: `motion-${event.request_id}`,
+          },
+          { type: "SAY", text: CHAT_FALLBACK_TEXT },
+        ],
       };
     }
     case "INNER_TASK_RESULT": {
@@ -776,6 +795,11 @@ export const reduceOrchestrator = (
         return {
           next_state: nextState,
           effects: [
+            {
+              type: "PLAY_MOTION",
+              motion_id: "idle",
+              motion_instance_id: "motion-inactivity-timeout",
+            },
             { type: "SET_MODE", mode: "ROOM" },
             { type: "SHOW_CONSENT_UI", visible: false },
           ],

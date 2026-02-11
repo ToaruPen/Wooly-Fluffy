@@ -344,7 +344,8 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
         const clip = createVRMAnimationClip(animation, vrm);
         const nextAction = mixer.clipAction(clip);
         nextAction.enabled = true;
-        if (cmd.motionId === "idle") {
+        const isLoopMotion = cmd.motionId === "idle" || cmd.motionId === "thinking";
+        if (isLoopMotion) {
           nextAction.setLoop(THREE.LoopRepeat, Infinity);
         } else {
           nextAction.setLoop(THREE.LoopOnce, 1);
@@ -359,7 +360,7 @@ export const VrmAvatar = ({ vrmUrl, expression, mouthOpen, motion }: VrmAvatarPr
         nextAction.play();
         currentAction = nextAction;
 
-        if (cmd.motionId !== "idle") {
+        if (!isLoopMotion) {
           const activeMixer = mixer;
           const expectedAction = nextAction;
           const handler = (event: unknown) => {

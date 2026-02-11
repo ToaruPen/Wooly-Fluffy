@@ -170,6 +170,7 @@ const motionIdAllowlist: Record<LlmMotionId, true> = {
   idle: true,
   greeting: true,
   cheer: true,
+  thinking: true,
 };
 
 const isMotionId = (value: unknown): value is LlmMotionId =>
@@ -265,7 +266,7 @@ const CHAT_JSON_SCHEMA = {
     expression: { type: "string", enum: ["neutral", "happy", "sad", "surprised"] },
     motion_id: {
       type: ["string", "null"],
-      enum: ["idle", "greeting", "cheer", null],
+      enum: ["idle", "greeting", "cheer", "thinking", null],
     },
   },
   required: ["assistant_text", "expression"],
@@ -415,7 +416,7 @@ export const createOpenAiCompatibleLlmProvider = (
         {
           role: "system",
           content:
-            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; otherwise null. Never output any other motion ids.',
+            'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"|"thinking" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; deliberation/waiting -> "thinking"; otherwise "idle" or null. Never output any other motion ids.',
         },
         userMessage,
       ],
@@ -460,7 +461,7 @@ export const createOpenAiCompatibleLlmProvider = (
           {
             role: "system",
             content:
-              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; otherwise null. Never output any other motion ids.',
+              'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"|"thinking" }. Choose motion_id by intent: greetings/hello -> "greeting"; cheering/celebrating or explicit dance request -> "cheer"; deliberation/waiting -> "thinking"; otherwise "idle" or null. Never output any other motion ids.',
           },
           userMessage,
           {
@@ -630,7 +631,7 @@ export const createGeminiNativeLlmProvider = (
             config: {
               abortSignal: signal,
               systemInstruction:
-                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"}.',
+                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"|"thinking"}.',
               responseMimeType: "application/json",
               responseJsonSchema: CHAT_JSON_SCHEMA,
               tools: GEMINI_CHAT_TOOLS,
@@ -722,7 +723,7 @@ export const createGeminiNativeLlmProvider = (
             config: {
               abortSignal: signal,
               systemInstruction:
-                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"}.',
+                'Return JSON only: {"assistant_text": string, "expression": "neutral"|"happy"|"sad"|"surprised", "motion_id": null|"idle"|"greeting"|"cheer"|"thinking"}.',
               responseMimeType: "application/json",
               responseJsonSchema: CHAT_JSON_SCHEMA,
               tools: GEMINI_CHAT_TOOLS,

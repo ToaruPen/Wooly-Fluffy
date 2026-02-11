@@ -68,6 +68,7 @@ describe("orchestrator", () => {
     expect(chatResult.next_state.phase).toBe("idle");
     expect(chatResult.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-2" },
       { type: "SAY", text: "やあ" },
     ]);
   });
@@ -184,12 +185,37 @@ describe("orchestrator", () => {
 
     expect(result.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
       {
         type: "KIOSK_TOOL_CALLS",
         tool_calls: [{ id: "call-1", function: { name: "get_weather" } }],
       },
       { type: "SAY", text: "ok" },
     ]);
+  });
+
+  it("starts thinking motion while waiting_chat", () => {
+    const base = createInitialState(0);
+    const waitingStt: OrchestratorState = {
+      ...base,
+      phase: "waiting_stt",
+      in_flight: { ...base.in_flight, stt_request_id: "stt-1" },
+      request_seq: 1,
+    };
+
+    const result = reduceOrchestrator(
+      waitingStt,
+      { type: "STT_RESULT", text: "こんにちは", request_id: "stt-1" },
+      1000,
+    );
+
+    expect(result.next_state.phase).toBe("waiting_chat");
+    expect(getEffect(result.effects, "PLAY_MOTION")).toEqual({
+      type: "PLAY_MOTION",
+      motion_id: "thinking",
+      motion_instance_id: "motion-chat-2-thinking",
+    });
+    expect(getEffect(result.effects, "CALL_CHAT")?.request_id).toBe("chat-2");
   });
 
   it("emits PLAY_MOTION effect from CHAT_RESULT when motion_id is allowlisted", () => {
@@ -221,7 +247,35 @@ describe("orchestrator", () => {
     ]);
   });
 
-  it("ignores invalid motion_id in CHAT_RESULT (including prototype keys)", () => {
+  it("falls back to idle motion on CHAT_RESULT without motion_id", () => {
+    const base = createInitialState(0);
+    const waitingChat: OrchestratorState = {
+      ...base,
+      phase: "waiting_chat",
+      request_seq: 1,
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingChat,
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "了解",
+        request_id: "chat-1",
+        expression: "neutral",
+        tool_calls: [],
+      },
+      1000,
+    );
+
+    expect(result.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
+      { type: "SAY", text: "了解" },
+    ]);
+  });
+
+  it("falls back to idle motion when CHAT_RESULT motion_id is invalid", () => {
     const base = createInitialState(0);
     const waitingChat: OrchestratorState = {
       ...base,
@@ -245,6 +299,36 @@ describe("orchestrator", () => {
 
     expect(result.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
+      { type: "SAY", text: "ok" },
+    ]);
+  });
+
+  it("does not allow thinking motion on CHAT_RESULT", () => {
+    const base = createInitialState(0);
+    const waitingChat: OrchestratorState = {
+      ...base,
+      phase: "waiting_chat",
+      request_seq: 1,
+      in_flight: { ...base.in_flight, chat_request_id: "chat-1" },
+    };
+
+    const result = reduceOrchestrator(
+      waitingChat,
+      {
+        type: "CHAT_RESULT",
+        assistant_text: "ok",
+        request_id: "chat-1",
+        expression: "neutral",
+        motion_id: "thinking",
+        tool_calls: [],
+      },
+      1000,
+    );
+
+    expect(result.effects).toEqual([
+      { type: "SET_EXPRESSION", expression: "neutral" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
       { type: "SAY", text: "ok" },
     ]);
   });
@@ -586,6 +670,7 @@ describe("orchestrator", () => {
 
     expect(result.next_state.mode).toBe("ROOM");
     expect(result.effects).toEqual([
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-inactivity-timeout" },
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);
@@ -639,6 +724,11 @@ describe("orchestrator", () => {
 
     expect(stopped.next_state.is_emergency_stopped).toBe(true);
     expect(stopped.effects[0]).toEqual({ type: "KIOSK_RECORD_STOP" });
+    expect(getEffect(stopped.effects, "PLAY_MOTION")).toEqual({
+      type: "PLAY_MOTION",
+      motion_id: "idle",
+      motion_instance_id: "motion-emergency-stop",
+    });
 
     const ignored = reduceOrchestrator(stopped.next_state, { type: "STAFF_PTT_DOWN" }, 60);
 
@@ -682,7 +772,10 @@ describe("orchestrator", () => {
       30,
     );
 
-    expect(chatFailed.effects).toEqual([{ type: "SAY", text: "ごめんね、もう一回言ってね" }]);
+    expect(chatFailed.effects).toEqual([
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
+      { type: "SAY", text: "ごめんね、もう一回言ってね" },
+    ]);
   });
 
   it("handles inner task failure and invalid payloads", () => {
@@ -743,6 +836,7 @@ describe("orchestrator", () => {
     expect(forced.next_state.memory_candidate).toBeNull();
     expect(forced.next_state.in_flight.chat_request_id).toBeNull();
     expect(forced.effects).toEqual([
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-force-room" },
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);
@@ -755,6 +849,7 @@ describe("orchestrator", () => {
 
     expect(stopped.next_state.is_emergency_stopped).toBe(true);
     expect(stopped.effects).toEqual([
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-emergency-stop" },
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);
@@ -854,6 +949,7 @@ describe("orchestrator", () => {
     expect(getEffect(ok.effects, "CALL_INNER_TASK")).toBeUndefined();
     expect(ok.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "happy" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
       { type: "SAY", text: "ok" },
     ]);
     expect(ok.next_state.phase).toBe("idle");

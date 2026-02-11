@@ -94,6 +94,17 @@ describe("KioskPage play_motion", () => {
     });
     expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
 
+    // thinking should be accepted.
+    await act(async () => {
+      latestSseHandlers?.onMessage?.({
+        type: "kiosk.command.play_motion",
+        seq: 5,
+        data: { motion_id: "thinking", motion_instance_id: "m-4" },
+      });
+      await Promise.resolve();
+    });
+    expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
+
     // Dev helper (if enabled): should ignore unknown and accept allowlisted.
     const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
     await act(async () => {
