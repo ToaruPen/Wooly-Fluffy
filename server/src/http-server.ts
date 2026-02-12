@@ -18,7 +18,7 @@ import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
 import type { Providers } from "./providers/types.js";
 import { createWhisperCppSttProvider } from "./providers/stt-provider.js";
-import { createVoiceVoxTtsProvider } from "./providers/tts-provider.js";
+import { createVoicevoxCompatibleTtsProvider } from "./providers/tts-provider.js";
 import { createLlmProviderFromEnv } from "./providers/llm-provider.js";
 import { readEnvInt } from "./env.js";
 import { createStaffSessionStore, getStaffSessionToken } from "./http/staff-session.js";
@@ -340,7 +340,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
   const providers: Providers = {
     stt: options.stt_provider ?? createWhisperCppSttProvider(),
-    tts: createVoiceVoxTtsProvider(),
+    tts: createVoicevoxCompatibleTtsProvider(),
     llm: createLlmProviderFromEnv(),
   };
 

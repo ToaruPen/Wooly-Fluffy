@@ -25,9 +25,41 @@ type VoiceVoxTtsProviderOptions = {
   fetch?: FetchFn;
 };
 
-const DEFAULT_SPEAKER_ID = 2;
+const DEFAULT_ENGINE_URL = "http://127.0.0.1:10101";
+const DEFAULT_TIMEOUT_MS = 2_000;
+const INT32_MIN = -2_147_483_648;
+const INT32_MAX = 2_147_483_647;
 
 const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
+
+const toInt32OrNull = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+  if (!Number.isSafeInteger(parsed)) {
+    return null;
+  }
+  if (parsed < INT32_MIN || parsed > INT32_MAX) {
+    return null;
+  }
+  return parsed;
+};
+
+const readEnvOptionalInt32 = (
+  env: Record<string, string | undefined>,
+  name: string,
+): number | null => {
+  const raw = env[name];
+  if (raw === undefined) {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return toInt32OrNull(trimmed);
+};
 
 const withTimeout = async <T>(
   timeoutMs: number,
@@ -96,6 +128,58 @@ const healthFromVoiceVox = async (input: {
   }
 };
 
+const speakerIdFromSpeakersJson = (speakers: unknown): number => {
+  if (!Array.isArray(speakers) || speakers.length === 0) {
+    throw new Error("no_speakers");
+  }
+
+  let fallbackSpeakerId: number | null = null;
+  for (const speaker of speakers) {
+    const styles = Array.isArray((speaker as { styles?: unknown })?.styles)
+      ? ((speaker as { styles?: unknown }).styles as unknown[])
+      : [];
+    for (const style of styles) {
+      const styleId = toInt32OrNull((style as { id?: unknown })?.id);
+      if (styleId === null) {
+        continue;
+      }
+      const rawType = (style as { type?: unknown })?.type;
+      const styleType = typeof rawType === "string" ? rawType.trim().toLowerCase() : null;
+      if (styleType === "talk") {
+        return styleId;
+      }
+      if (styleType === null || styleType === "") {
+        fallbackSpeakerId ??= styleId;
+      }
+    }
+  }
+
+  if (fallbackSpeakerId !== null) {
+    return fallbackSpeakerId;
+  }
+  throw new Error("no_talk_style");
+};
+
+const defaultSpeakerIdFromEngine = async (input: {
+  baseUrl: string;
+  timeoutMs: number;
+  fetch: FetchFn;
+}): Promise<number> => {
+  return await withOneRetry(
+    async () => {
+      const res = await withTimeout(input.timeoutMs, (signal) =>
+        input.fetch(`${input.baseUrl}/speakers`, { method: "GET", signal }),
+      );
+      if (!res.ok) {
+        throw new Error(`TTS engine speakers failed: HTTP ${res.status}`);
+      }
+      const speakers = await res.json();
+      return speakerIdFromSpeakersJson(speakers);
+    },
+    { backoff_ms: 100 },
+  );
+};
+
 const synthesizeFromVoiceVox = async (input: {
   baseUrl: string;
   timeoutMs: number;
@@ -116,7 +200,7 @@ const synthesizeFromVoiceVox = async (input: {
         }),
       );
       if (!audioQueryRes.ok) {
-        throw new Error(`VOICEVOX audio_query failed: HTTP ${audioQueryRes.status}`);
+        throw new Error(`TTS engine audio_query failed: HTTP ${audioQueryRes.status}`);
       }
 
       const audioQuery = await audioQueryRes.json();
@@ -131,7 +215,7 @@ const synthesizeFromVoiceVox = async (input: {
         }),
       );
       if (!synthesisRes.ok) {
-        throw new Error(`VOICEVOX synthesis failed: HTTP ${synthesisRes.status}`);
+        throw new Error(`TTS engine synthesis failed: HTTP ${synthesisRes.status}`);
       }
       const wavArrayBuffer = await synthesisRes.arrayBuffer();
       return { wav: Buffer.from(wavArrayBuffer) };
@@ -140,25 +224,33 @@ const synthesizeFromVoiceVox = async (input: {
   );
 };
 
-export const createVoiceVoxTtsProvider = (
+export const createVoicevoxCompatibleTtsProvider = (
   options: VoiceVoxTtsProviderOptions = {},
 ): Providers["tts"] => {
   const baseUrl = normalizeBaseUrl(
-    options.engine_url ?? process.env.VOICEVOX_ENGINE_URL ?? "http://127.0.0.1:50021",
+    options.engine_url ??
+      process.env.TTS_ENGINE_URL ??
+      process.env.VOICEVOX_ENGINE_URL ??
+      DEFAULT_ENGINE_URL,
   );
   const timeoutMs =
     options.timeout_ms ??
     readEnvInt(process.env, {
-      name: "VOICEVOX_TIMEOUT_MS",
-      defaultValue: 2_000,
+      name: "TTS_TIMEOUT_MS",
+      defaultValue: readEnvInt(process.env, {
+        name: "VOICEVOX_TIMEOUT_MS",
+        defaultValue: DEFAULT_TIMEOUT_MS,
+        min: 200,
+        max: 60_000,
+      }),
       min: 200,
       max: 60_000,
     });
-  const rawSpeakerId = readEnvInt(process.env, {
-    name: "VOICEVOX_SPEAKER_ID",
-    defaultValue: DEFAULT_SPEAKER_ID,
-  });
-  const speakerId = rawSpeakerId >= 0 ? rawSpeakerId : DEFAULT_SPEAKER_ID;
+
+  const configuredSpeakerId =
+    readEnvOptionalInt32(process.env, "TTS_SPEAKER_ID") ??
+    readEnvOptionalInt32(process.env, "VOICEVOX_SPEAKER_ID");
+  let cachedSpeakerId: number | null = configuredSpeakerId;
 
   const fetchFn: FetchFn =
     options.fetch ??
@@ -176,14 +268,34 @@ export const createVoiceVoxTtsProvider = (
       })));
 
   return {
-    health: () => healthFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn }),
-    synthesize: (input) =>
-      synthesizeFromVoiceVox({
+    health: async () => {
+      const health = await healthFromVoiceVox({ baseUrl, timeoutMs, fetch: fetchFn });
+      if (health.status !== "ok") {
+        return health;
+      }
+      if (cachedSpeakerId !== null) {
+        return health;
+      }
+      try {
+        cachedSpeakerId = await defaultSpeakerIdFromEngine({ baseUrl, timeoutMs, fetch: fetchFn });
+        return health;
+      } catch {
+        return { status: "unavailable" };
+      }
+    },
+    synthesize: async (input) => {
+      if (cachedSpeakerId === null) {
+        cachedSpeakerId = await defaultSpeakerIdFromEngine({ baseUrl, timeoutMs, fetch: fetchFn });
+      }
+      return await synthesizeFromVoiceVox({
         baseUrl,
         timeoutMs,
         fetch: fetchFn,
         text: input.text,
-        speakerId,
-      }),
+        speakerId: cachedSpeakerId,
+      });
+    },
   };
 };
+
+export const createVoiceVoxTtsProvider = createVoicevoxCompatibleTtsProvider;

@@ -23,10 +23,16 @@ WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-large-v3-turbo.bin"
 # PORT="3000"
 # DB_PATH="/ABS/PATH/TO/var/wooly-fluffy.sqlite3"
 
-## Optional: TTS (VOICEVOX)
+## Optional: TTS (VOICEVOX-compatible engine; default: AivisSpeech Engine)
 
+# TTS_ENGINE_URL="http://127.0.0.1:10101"
+# TTS_SPEAKER_ID="888753760"  # example (style id). Get actual ids from: GET $TTS_ENGINE_URL/speakers
+# TTS_TIMEOUT_MS="2000"
+
+# Legacy (still supported as fallback; prefer TTS_* going forward)
 # VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
 # VOICEVOX_SPEAKER_ID="2"
+# VOICEVOX_TIMEOUT_MS="2000"
 
 ## Optional: LLM
 
@@ -52,7 +58,8 @@ WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-large-v3-turbo.bin"
 
 # Provider timeouts
 # WHISPER_CPP_TIMEOUT_MS="15000"
-# VOICEVOX_TIMEOUT_MS="2000"
+# TTS_TIMEOUT_MS="2000"
+# VOICEVOX_TIMEOUT_MS="2000"  # legacy fallback
 # LLM_TIMEOUT_CHAT_MS="12000"
 # LLM_TIMEOUT_INNER_TASK_MS="4000"
 # LLM_TIMEOUT_HEALTH_MS="1500"

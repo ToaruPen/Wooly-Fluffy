@@ -544,9 +544,12 @@ STT:
 
 TTS:
 
-- VOICEVOX engine LICENSE: https://raw.githubusercontent.com/VOICEVOX/voicevox_engine/master/LICENSE
-- VOICEVOX terms: https://voicevox.hiroshiba.jp/term/
-- VOICEVOX Nemo terms: https://voicevox.hiroshiba.jp/nemo/term/
+- AivisSpeech Engine LICENSE: https://raw.githubusercontent.com/Aivis-Project/AivisSpeech-Engine/master/LICENSE
+- AivisSpeech Engine docs: https://github.com/Aivis-Project/AivisSpeech-Engine
+- AivisHub Terms of Service（モデル配布/利用条件）: https://hub.aivis-project.com/terms-of-service
+- VOICEVOX engine LICENSE（代替エンジン）: https://raw.githubusercontent.com/VOICEVOX/voicevox_engine/master/LICENSE
+- VOICEVOX terms（代替エンジン）: https://voicevox.hiroshiba.jp/term/
+- VOICEVOX Nemo terms（代替エンジン）: https://voicevox.hiroshiba.jp/nemo/term/
 
 Local LLM:
 
@@ -578,8 +581,8 @@ External LLM (Gemini native SDK):
 
 ### コンテキスト
 
-Provider Layer で利用する外部アセット（VRM モデル、whisper.cpp、VOICEVOX）について、ライセンス条件と帰属表記要件を明確にする必要がある。
-特に VOICEVOX は利用規約でクレジット表記が必須となっており、運用前に確認・遵守する必要がある。
+Provider Layer で利用する外部アセット（VRM モデル、whisper.cpp、TTS Engine（VOICEVOX互換）および音声モデル）について、ライセンス条件と帰属表記要件を明確にする必要がある。
+TTS はエンジン/モデルの組み合わせで条件が変わり得るため、運用前に一次情報URLを再確認し、最新の規約に従う必要がある。
 
 ### 選択肢
 
@@ -607,8 +610,7 @@ Provider Layer で利用する外部アセット（VRM モデル、whisper.cpp�
 
 ### 影響
 
-- VRM、whisper.cpp、VOICEVOX の一次情報URLを記録する
-- VOICEVOX のクレジット表記要件を明記する
+- VRM、whisper.cpp、TTS Engine（VOICEVOX互換）および音声モデル配布/利用規約の一次情報URLを記録する
 - 運用前にこれらのURLを再確認し、最新の規約に従う必要がある
 
 ### 一次情報URL
@@ -626,10 +628,12 @@ whisper.cpp:
 
 - whisper.cpp LICENSE: https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE
 
-VOICEVOX:
+TTS（VOICEVOX互換）:
 
-- VOICEVOX 利用規約: https://voicevox.hiroshiba.jp/term/
-- 帰属表記要件: VOICEVOX を利用したことがわかるクレジット表記が必要
+- AivisSpeech Engine LICENSE: https://raw.githubusercontent.com/Aivis-Project/AivisSpeech-Engine/master/LICENSE
+- AivisSpeech Engine docs: https://github.com/Aivis-Project/AivisSpeech-Engine
+- AivisHub Terms of Service（モデル配布/利用条件）: https://hub.aivis-project.com/terms-of-service
+- VOICEVOX 利用規約（代替エンジン）: https://voicevox.hiroshiba.jp/term/
 
 ### 参照
 

@@ -238,7 +238,6 @@
 /* ===== Global: focus-visible ===== */
 
 :global(button:focus-visible),
-:global(input:focus-visible),
 :global([role="dialog"]:focus-visible) {
   outline: 3px solid var(--color-focus-ring);
   outline-offset: 2px;
@@ -841,8 +840,11 @@
 
 .textInput:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
   outline: none;
+}
+
+.textInput:focus-visible {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
 /* ===== KIOSK responsive ===== */
@@ -1051,9 +1053,17 @@
   box-shadow: var(--shadow-primary, 0 4px 14px rgba(59, 130, 246, 0.35));
 }
 
-.pttButton:hover {
+.pttButton:enabled:hover {
   filter: brightness(1.08);
   box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+}
+
+.pttButton:disabled,
+.pttButtonActive:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: none;
+  box-shadow: none;
 }
 
 .pttButton:active {
@@ -1108,9 +1118,15 @@
     box-shadow 0.1s ease;
 }
 
-.staffDangerButton:hover {
+.staffDangerButton:enabled:hover {
   background: linear-gradient(180deg, #dc2626, #b91c1c);
   box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+}
+
+.staffDangerButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
 }
 
 .staffDangerButton:active {
@@ -1136,8 +1152,13 @@
     transform 0.1s ease;
 }
 
-.staffSecondaryButton:hover {
+.staffSecondaryButton:enabled:hover {
   background: var(--color-secondary-hover, #e2e8f0);
+}
+
+.staffSecondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .staffSecondaryButton:active {
@@ -1163,8 +1184,14 @@
     transform 0.1s ease;
 }
 
-.staffPrimaryButton:hover {
+.staffPrimaryButton:enabled:hover {
   filter: brightness(1.08);
+}
+
+.staffPrimaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: none;
 }
 
 .staffPrimaryButton:active {
@@ -1190,8 +1217,14 @@
     transform 0.1s ease;
 }
 
-.staffConfirmButton:hover {
+.staffConfirmButton:enabled:hover {
   filter: brightness(1.08);
+}
+
+.staffConfirmButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: none;
 }
 
 .staffConfirmButton:active {
@@ -1217,8 +1250,13 @@
     transform 0.1s ease;
 }
 
-.denyButton:hover {
+.denyButton:enabled:hover {
   background: rgba(239, 68, 68, 0.08);
+}
+
+.denyButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .denyButton:active {
@@ -1342,8 +1380,11 @@
 
 .staffTextInput:focus {
   border-color: var(--color-staff-primary, #3b82f6);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   outline: none;
+}
+
+.staffTextInput:focus-visible {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
 /* ===== Staff responsive ===== */
@@ -1388,15 +1429,15 @@
 }
 
 .debugSection {
-  background: var(--color-surface-70);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 14px;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .debugSectionTitle {
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1409,7 +1450,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 16px;
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   font-size: 14px;
   color: var(--color-text-primary);
   margin: 0;

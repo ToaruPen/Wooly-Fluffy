@@ -33,9 +33,9 @@
   - `/assets/*`（Vite build成果物）配信
   - SPAルーティング（`/kiosk` `/staff` の `index.html` フォールバック）
 - 本番起動用の preflight と health gate
-  - preflight: 必須環境変数、ファイル存在/権限、外部依存（VOICEVOX / LLM）到達性
+- preflight: 必須環境変数、ファイル存在/権限、外部依存（TTS Engine（VOICEVOX互換） / LLM）到達性
   - health gate: `GET /health` の provider 状態が **stt/tts/llm 全て ok** にならなければ起動失敗
-- 外部依存（VOICEVOX / LLMサーバ等）は **本Epicのスクリプトで起動しない**
+- 外部依存（TTS Engine（VOICEVOX互換） / LLMサーバ等）は **本Epicのスクリプトで起動しない**
   - 期待: 外部依存は別手段で起動済みである
   - 未起動/到達不可の場合: preflight/health gate により fail-fast する
 - 起動/更新の標準コマンド（`npm run ...` / `scripts/...`）整備
@@ -51,8 +51,8 @@
 
 **含まない（PRDのスコープ外を継承 + 本Epicの対象外）:**
 
-- whisper.cpp / VOICEVOX / LM Studio 等の **導入手順の詳細整備**（既存READMEの「外部依存セットアップ」を参照。必要なら別Issue）
-- VOICEVOX / LLM サーバの **起動・常駐管理**（Docker起動/監視やLM Studio自動起動の設計は本Epicでは扱わない）
+- whisper.cpp / TTS Engine（VOICEVOX互換）/ LM Studio 等の **導入手順の詳細整備**（既存READMEの「外部依存セットアップ」を参照。必要なら別Issue）
+- TTS Engine（VOICEVOX互換）/ LLM サーバの **起動・常駐管理**（Docker起動/監視やLM Studio自動起動の設計は本Epicでは扱わない）
 - インターネット公開（TLS/認証基盤/公開ホスティング）
 - 新しい監査ログ要件（PRD Q6-6 は No）
 - 会話本文/音声/STT全文の保存（PRDの非機能と矛盾するため）
@@ -82,11 +82,11 @@ Epic対応: `HOST=0.0.0.0` で待ち受け、LAN内ブラウザから単一ポ�
 ### 2.1 外部サービス一覧
 
 外部サービス-1
-名称: VOICEVOX Engine
+名称: TTS Engine（VOICEVOX互換）
 用途: TTS（Serverが `/api/v1/kiosk/tts` の裏で呼び出す）
 必須理由: 本番は「STT/TTS/LLMが揃っていないなら起動しない」の方針のため
 代替案: 本番方針を緩めて「起動はするが音声出力は無効」とする（本Epicでは採用しない）
-補足: VOICEVOX Engine の起動は別手段（Docker等）で行い、本Epicは到達性チェックと fail-fast を提供する
+補足: TTS Engine の起動は別手段（アプリ/バイナリ/Docker等）で行い、本Epicは到達性チェックと fail-fast を提供する（既定: AivisSpeech Engine）
 
 外部サービス-2
 名称: LLM（OpenAI互換 API: LM Studio local または external provider）
@@ -141,7 +141,7 @@ to: API Server
 
 主要データフロー-2
 from: API Server
-to: VOICEVOX Engine
+to: TTS Engine（VOICEVOX互換）
 用途: TTS生成
 プロトコル: HTTP（localhost）
 
@@ -328,7 +328,7 @@ N/A（SLA/SLOなし。単機ローカル運用を前提）
 ## 6. リスクと対策
 
 リスク-1
-リスク: 外部依存（VOICEVOX/LLM/whisper.cpp）が落ちていて起動できない
+リスク: 外部依存（TTS Engine（VOICEVOX互換）/LLM/whisper.cpp）が落ちていて起動できない
 影響度: 高
 対策: preflight と `/health` ゲートで即時検知し、Runbook で復旧手順を固定する（launchd の過剰再起動を避ける設定も行う）
 

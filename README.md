@@ -107,15 +107,31 @@ Current adoption in this repository: `ggml-large-v3-turbo.bin`.
 
 **Fallback**: If Core ML build fails, the CPU backend will be used automatically.
 
-#### 2) VOICEVOX (Text-to-Speech)
+#### 2) AivisSpeech Engine (Text-to-Speech) (Default)
 
-Run VOICEVOX engine via Docker (requires a Docker-compatible runtime):
+Run AivisSpeech Engine (VOICEVOX-compatible HTTP API) locally.
+
+- Default port: `10101`
+- Official docs: https://github.com/Aivis-Project/AivisSpeech-Engine
+
+**Verification**:
+
+```bash
+curl -s http://127.0.0.1:10101/version
+curl -s http://127.0.0.1:10101/speakers | head -c 200
+```
+
+**Expected output**: `"1.0.0"` (for `/version`)
+
+#### 2b) VOICEVOX Engine (Text-to-Speech) (Alternative)
+
+Run VOICEVOX Engine via Docker (requires a Docker-compatible runtime):
 
 ```bash
 # Pull VOICEVOX Docker image
 docker pull voicevox/voicevox_engine:cpu-0.25.1
 
-# Run VOICEVOX engine (port 50021)
+# Run VOICEVOX Engine (port 50021)
 docker run -d --name voicevox -p 50021:50021 voicevox/voicevox_engine:cpu-0.25.1
 
 # Wait 45-60 seconds for startup, then verify
@@ -222,6 +238,8 @@ If the VRMA files are present and valid, the avatar should start playing the req
 ### License References
 
 - whisper.cpp: [MIT License](https://github.com/ggml-org/whisper.cpp/blob/master/LICENSE)
+- AivisSpeech Engine: [LICENSE](https://github.com/Aivis-Project/AivisSpeech-Engine/blob/master/LICENSE) / [Docs](https://github.com/Aivis-Project/AivisSpeech-Engine)
+- AivisHub: [Terms of Service](https://hub.aivis-project.com/terms-of-service)
 - VOICEVOX: [利用規約](https://voicevox.hiroshiba.jp/term/)
 - VRM: [CC0 License](https://vroid.pixiv.help/hc/en-us/articles/4402614652569)
 - Google GenAI SDK (`@google/genai`): [Apache-2.0](https://github.com/googleapis/js-genai/blob/main/LICENSE)
@@ -235,8 +253,9 @@ Server (required unless noted):
 
 - `STAFF_PASSCODE` (required): passcode for `/staff` login (STAFF APIs are LAN-only)
 - `DB_PATH` (optional): defaults to `var/wooly-fluffy.sqlite3`
-- `VOICEVOX_ENGINE_URL` (optional): defaults to `http://127.0.0.1:50021`
-- `VOICEVOX_SPEAKER_ID` (optional): VOICEVOX speaker id (default: `2`; empty/non-integer falls back to `2`)
+- `TTS_ENGINE_URL` (optional): VOICEVOX-compatible engine base URL (default: `http://127.0.0.1:10101`)
+- `TTS_SPEAKER_ID` (optional): style id (int32). If unset, the server picks the first style from `GET /speakers`.
+- Legacy (fallback; prefer `TTS_*`): `VOICEVOX_ENGINE_URL`, `VOICEVOX_SPEAKER_ID`
 - `LLM_PROVIDER_KIND` (required for non-stub): `local` / `external` / `gemini_native` (default: `stub`)
 - `LLM_BASE_URL` (required for `local`/`external`): OpenAI-compatible base URL (include `/v1`)
 - `LLM_MODEL` (required for `local`/`external`/`gemini_native`): model id string
@@ -253,7 +272,8 @@ Server (optional tuning):
 - `WF_CONSENT_TIMEOUT_MS` (optional): consent wait timeout in ms (default: 30000; clamp: 1000..600000)
 - `WF_INACTIVITY_TIMEOUT_MS` (optional): inactivity timeout in ms (default: 300000; clamp: 10000..3600000)
 - `WHISPER_CPP_TIMEOUT_MS` (optional): whisper.cpp process timeout in ms (default: 15000; clamp: 1000..120000)
-- `VOICEVOX_TIMEOUT_MS` (optional): VOICEVOX request timeout in ms (default: 2000; clamp: 200..60000)
+- `TTS_TIMEOUT_MS` (optional): TTS request timeout in ms (default: 2000; clamp: 200..60000)
+- Legacy (fallback; prefer `TTS_*`): `VOICEVOX_TIMEOUT_MS`
 - `LLM_TIMEOUT_CHAT_MS` (optional): LLM chat timeout in ms (default: 12000; clamp: 1000..120000)
 - `LLM_TIMEOUT_INNER_TASK_MS` (optional): LLM inner task timeout in ms (default: 4000; clamp: 500..120000)
 - `LLM_TIMEOUT_HEALTH_MS` (optional): LLM health timeout in ms (default: 1500; clamp: 200..30000)
@@ -318,8 +338,8 @@ export LLM_MODEL="<lm-studio-model-id>"
 # export LLM_API_KEY="<ai-studio-api-key>"
 
 # Optional overrides
-# export VOICEVOX_ENGINE_URL="http://127.0.0.1:50021"
-# export VOICEVOX_SPEAKER_ID="2"
+# export TTS_ENGINE_URL="http://127.0.0.1:10101"
+# export TTS_SPEAKER_ID="888753760"  # example; get ids from: GET $TTS_ENGINE_URL/speakers
 # export DB_PATH="$(pwd)/var/wooly-fluffy.sqlite3"
 ```
 
@@ -364,14 +384,35 @@ Expected shape:
 - `status: ok`
 - `providers.stt/tts/llm.status` should be `ok` when configured
 
+### TTS evaluation script (local)
+
+You can generate WAV samples and a JSON report with:
+
+```bash
+# 1) List available styles from a VOICEVOX-compatible engine (Aivis included)
+node scripts/tts-eval.mjs --list-speakers --engine-url http://127.0.0.1:10101
+
+# 2) Generate samples by calling the engine directly
+node scripts/tts-eval.mjs --engine-url http://127.0.0.1:10101 --speaker-ids 888753760
+
+# 3) Generate samples through Wooly-Fluffy /api/v1/kiosk/tts
+node scripts/tts-eval.mjs --server-url http://127.0.0.1:3000
+```
+
+Outputs are written under `var/tts-eval/<timestamp>/`:
+
+- `*.wav`: synthesized samples
+- `report.json`: latency and output metadata per utterance
+
 ### Common failure modes (what to check)
 
 - `/health` shows `providers.stt.status: unavailable`
   - `WHISPER_CPP_CLI_PATH` / `WHISPER_CPP_MODEL_PATH` are missing or wrong
   - Verify locally: `"$WHISPER_CPP_CLI_PATH" --help`
 - `/health` shows `providers.tts.status: unavailable`
-  - VOICEVOX engine is not running or not reachable
-  - Verify: `curl -s http://127.0.0.1:50021/version`
+  - TTS engine (VOICEVOX-compatible) is not running or not reachable
+  - Verify (default AivisSpeech Engine): `curl -s http://127.0.0.1:10101/version`
+  - Verify (VOICEVOX Engine alternative): `curl -s http://127.0.0.1:50021/version`
 - `/health` shows `providers.llm.status: unavailable` (when `LLM_PROVIDER_KIND=local|external`)
   - `LLM_BASE_URL` is wrong (must include `/v1`) or the server is not running
   - Verify: `curl -s "$LLM_BASE_URL/models"`
