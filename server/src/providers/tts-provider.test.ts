@@ -497,6 +497,95 @@ describe("tts-provider (VOICEVOX-compatible)", () => {
     }
   });
 
+  it("falls back to first style id when style type is missing", async () => {
+    const prev = process.env.TTS_SPEAKER_ID;
+    try {
+      delete process.env.TTS_SPEAKER_ID;
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: async (input, init) => {
+          const url = new URL(input);
+          if (url.pathname === "/speakers") {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                {
+                  name: "x",
+                  styles: [{ name: "normal", id: 203 }],
+                },
+              ],
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          if (url.pathname === "/audio_query") {
+            expect(url.searchParams.get("speaker")).toBe("203");
+            expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ query: true }),
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          if (url.pathname === "/synthesis") {
+            expect(url.searchParams.get("speaker")).toBe("203");
+            expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({}),
+              arrayBuffer: async () => new Uint8Array([9]).buffer,
+            };
+          }
+          throw new Error(`unexpected url: ${input}`);
+        },
+      });
+
+      await expect(tts.synthesize({ text: "Hello" })).resolves.toEqual({
+        wav: Buffer.from(new Uint8Array([9]).buffer),
+      });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prev;
+      }
+    }
+  });
+
+  it("throws when /speakers returns non-2xx while resolving default speaker", async () => {
+    const prev = process.env.TTS_SPEAKER_ID;
+    try {
+      delete process.env.TTS_SPEAKER_ID;
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: async (input) => {
+          const url = new URL(input);
+          if (url.pathname === "/speakers") {
+            return {
+              ok: false,
+              status: 503,
+              json: async () => ({}),
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          throw new Error(`unexpected url: ${input}`);
+        },
+      });
+
+      await expect(tts.synthesize({ text: "Hello" })).rejects.toThrow(/speakers failed: HTTP 503/);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prev;
+      }
+    }
+  });
+
   it("falls back to legacy speaker env when TTS_SPEAKER_ID is not set", async () => {
     const prevLegacy = process.env.VOICEVOX_SPEAKER_ID;
     const prevNew = process.env.TTS_SPEAKER_ID;
@@ -545,6 +634,197 @@ describe("tts-provider (VOICEVOX-compatible)", () => {
         delete process.env.TTS_SPEAKER_ID;
       } else {
         process.env.TTS_SPEAKER_ID = prevNew;
+      }
+    }
+  });
+
+  it("falls back to legacy speaker env when TTS_SPEAKER_ID is blank", async () => {
+    const prevLegacy = process.env.VOICEVOX_SPEAKER_ID;
+    const prevNew = process.env.TTS_SPEAKER_ID;
+    try {
+      process.env.TTS_SPEAKER_ID = "   ";
+      process.env.VOICEVOX_SPEAKER_ID = "11";
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: async (input, init) => {
+          const url = new URL(input);
+          if (url.pathname === "/audio_query") {
+            expect(url.searchParams.get("speaker")).toBe("11");
+            expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ query: true }),
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          if (url.pathname === "/synthesis") {
+            expect(url.searchParams.get("speaker")).toBe("11");
+            expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({}),
+              arrayBuffer: async () => new Uint8Array([9]).buffer,
+            };
+          }
+          throw new Error(`unexpected url: ${input}`);
+        },
+      });
+
+      await expect(tts.synthesize({ text: "Hello" })).resolves.toEqual({
+        wav: Buffer.from(new Uint8Array([9]).buffer),
+      });
+    } finally {
+      if (prevLegacy === undefined) {
+        delete process.env.VOICEVOX_SPEAKER_ID;
+      } else {
+        process.env.VOICEVOX_SPEAKER_ID = prevLegacy;
+      }
+      if (prevNew === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prevNew;
+      }
+    }
+  });
+
+  it.each(["1.5", "9007199254740992", "2147483648"])(
+    "ignores invalid TTS_SPEAKER_ID (%s) and resolves from speakers",
+    async (invalidSpeakerId) => {
+      const prev = process.env.TTS_SPEAKER_ID;
+      try {
+        process.env.TTS_SPEAKER_ID = invalidSpeakerId;
+
+        const tts = createVoicevoxCompatibleTtsProvider({
+          engine_url: "http://voicevox.local",
+          fetch: async (input, init) => {
+            const url = new URL(input);
+            if (url.pathname === "/speakers") {
+              return {
+                ok: true,
+                status: 200,
+                json: async () => [
+                  { name: "x", styles: [{ name: "normal", id: 12, type: "talk" }] },
+                ],
+                arrayBuffer: async () => new ArrayBuffer(0),
+              };
+            }
+            if (url.pathname === "/audio_query") {
+              expect(url.searchParams.get("speaker")).toBe("12");
+              expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({ query: true }),
+                arrayBuffer: async () => new ArrayBuffer(0),
+              };
+            }
+            if (url.pathname === "/synthesis") {
+              expect(url.searchParams.get("speaker")).toBe("12");
+              expect((init as { method?: unknown } | undefined)?.method).toBe("POST");
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({}),
+                arrayBuffer: async () => new Uint8Array([9]).buffer,
+              };
+            }
+            throw new Error(`unexpected url: ${input}`);
+          },
+        });
+
+        await expect(tts.synthesize({ text: "Hello" })).resolves.toEqual({
+          wav: Buffer.from(new Uint8Array([9]).buffer),
+        });
+      } finally {
+        if (prev === undefined) {
+          delete process.env.TTS_SPEAKER_ID;
+        } else {
+          process.env.TTS_SPEAKER_ID = prev;
+        }
+      }
+    },
+  );
+
+  it("reports unavailable health when /speakers shape is invalid", async () => {
+    const prev = process.env.TTS_SPEAKER_ID;
+    try {
+      delete process.env.TTS_SPEAKER_ID;
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: async (input) => {
+          const url = new URL(input);
+          if (url.pathname === "/version") {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({}),
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          if (url.pathname === "/speakers") {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [
+                { name: "x", styles: { id: 1 } },
+                { name: "y", styles: [{ id: "bad", type: "talk" }] },
+              ],
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          throw new Error(`unexpected url: ${input}`);
+        },
+      });
+
+      await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prev;
+      }
+    }
+  });
+
+  it("reports unavailable health when /speakers is empty", async () => {
+    const prev = process.env.TTS_SPEAKER_ID;
+    try {
+      delete process.env.TTS_SPEAKER_ID;
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        engine_url: "http://voicevox.local",
+        fetch: async (input) => {
+          const url = new URL(input);
+          if (url.pathname === "/version") {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({}),
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          if (url.pathname === "/speakers") {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => [],
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+          }
+          throw new Error(`unexpected url: ${input}`);
+        },
+      });
+
+      await expect(tts.health()).resolves.toEqual({ status: "unavailable" });
+    } finally {
+      if (prev === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prev;
       }
     }
   });
