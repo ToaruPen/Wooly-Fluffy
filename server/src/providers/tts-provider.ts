@@ -323,5 +323,3 @@ export const createVoicevoxCompatibleTtsProvider = (
     },
   };
 };
-
-export const createVoiceVoxTtsProvider = createVoicevoxCompatibleTtsProvider;

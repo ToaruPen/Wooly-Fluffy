@@ -389,6 +389,11 @@ Expected shape:
 You can generate WAV samples and a JSON report with:
 
 ```bash
+# (optional) wrapper
+npm run tts:eval -- --help
+```
+
+```bash
 # 1) List available styles from a VOICEVOX-compatible engine (Aivis included)
 node scripts/tts-eval.mjs --list-speakers --engine-url http://127.0.0.1:10101
 
