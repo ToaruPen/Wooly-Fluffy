@@ -31,6 +31,82 @@ const createAbortableNeverFetch = () => {
 };
 
 describe("tts-provider (VOICEVOX-compatible)", () => {
+  it("treats blank TTS_ENGINE_URL as unset and falls back to legacy engine url", async () => {
+    const prevNew = process.env.TTS_ENGINE_URL;
+    const prevLegacy = process.env.VOICEVOX_ENGINE_URL;
+    const prevSpeaker = process.env.TTS_SPEAKER_ID;
+
+    try {
+      process.env.TTS_ENGINE_URL = "   ";
+      process.env.VOICEVOX_ENGINE_URL = "http://voicevox-legacy.local";
+      process.env.TTS_SPEAKER_ID = "2";
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        fetch: async (input) => {
+          expect(input).toBe("http://voicevox-legacy.local/version");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        },
+      });
+
+      await expect(tts.health()).resolves.toEqual({ status: "ok" });
+    } finally {
+      if (prevNew === undefined) {
+        delete process.env.TTS_ENGINE_URL;
+      } else {
+        process.env.TTS_ENGINE_URL = prevNew;
+      }
+      if (prevLegacy === undefined) {
+        delete process.env.VOICEVOX_ENGINE_URL;
+      } else {
+        process.env.VOICEVOX_ENGINE_URL = prevLegacy;
+      }
+      if (prevSpeaker === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prevSpeaker;
+      }
+    }
+  });
+
+  it("times out when /speakers body parse hangs", async () => {
+    const prev = process.env.TTS_SPEAKER_ID;
+    let calls = 0;
+    try {
+      delete process.env.TTS_SPEAKER_ID;
+
+      const tts = createVoicevoxCompatibleTtsProvider({
+        engine_url: "http://voicevox.local",
+        timeout_ms: 1,
+        fetch: async (input) => {
+          calls += 1;
+          expect(input).toBe("http://voicevox.local/speakers");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => await new Promise<unknown>(() => {}),
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        },
+      });
+
+      await expect(tts.synthesize({ text: "Hello" })).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      expect(calls).toBe(1);
+    } finally {
+      if (prev === undefined) {
+        delete process.env.TTS_SPEAKER_ID;
+      } else {
+        process.env.TTS_SPEAKER_ID = prev;
+      }
+    }
+  });
+
   it("reports ok health when /version returns 200 (speaker id configured)", async () => {
     const prev = process.env.TTS_SPEAKER_ID;
     try {

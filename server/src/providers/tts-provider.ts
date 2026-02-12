@@ -32,6 +32,21 @@ const INT32_MAX = 2_147_483_647;
 
 const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
 
+const readEnvOptionalString = (
+  env: Record<string, string | undefined>,
+  name: string,
+): string | null => {
+  const raw = env[name];
+  if (raw === undefined) {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed;
+};
+
 const toInt32OrNull = (value: unknown): number | null => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
@@ -66,11 +81,22 @@ const withTimeout = async <T>(
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      reject(err);
+    }, timeoutMs);
+  });
   try {
-    return await run(controller.signal);
+    return await Promise.race([run(controller.signal), timeout]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 };
 
@@ -167,14 +193,14 @@ const defaultSpeakerIdFromEngine = async (input: {
 }): Promise<number> => {
   return await withOneRetry(
     async () => {
-      const res = await withTimeout(input.timeoutMs, (signal) =>
-        input.fetch(`${input.baseUrl}/speakers`, { method: "GET", signal }),
-      );
-      if (!res.ok) {
-        throw new Error(`TTS engine speakers failed: HTTP ${res.status}`);
-      }
-      const speakers = await res.json();
-      return speakerIdFromSpeakersJson(speakers);
+      return await withTimeout(input.timeoutMs, async (signal) => {
+        const res = await input.fetch(`${input.baseUrl}/speakers`, { method: "GET", signal });
+        if (!res.ok) {
+          throw new Error(`TTS engine speakers failed: HTTP ${res.status}`);
+        }
+        const speakers = await res.json();
+        return speakerIdFromSpeakersJson(speakers);
+      });
     },
     { backoff_ms: 100 },
   );
@@ -229,8 +255,8 @@ export const createVoicevoxCompatibleTtsProvider = (
 ): Providers["tts"] => {
   const baseUrl = normalizeBaseUrl(
     options.engine_url ??
-      process.env.TTS_ENGINE_URL ??
-      process.env.VOICEVOX_ENGINE_URL ??
+      readEnvOptionalString(process.env, "TTS_ENGINE_URL") ??
+      readEnvOptionalString(process.env, "VOICEVOX_ENGINE_URL") ??
       DEFAULT_ENGINE_URL,
   );
   const timeoutMs =
