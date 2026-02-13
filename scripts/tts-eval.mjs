@@ -252,15 +252,36 @@ const defaultSpeakerId = async (engineUrl, timeoutMs) => {
   if (!Array.isArray(speakers) || speakers.length === 0) {
     throw new Error("No speakers found from engine");
   }
-  const firstStyles = Array.isArray(speakers[0]?.styles) ? speakers[0].styles : [];
-  if (firstStyles.length === 0) {
-    throw new Error("No styles found from engine");
+
+  let firstStyleId = null;
+  let fallbackStyleId = null;
+  for (const speaker of speakers) {
+    const styles = Array.isArray(speaker?.styles) ? speaker.styles : [];
+    for (const style of styles) {
+      const styleId = Number(style?.id ?? NaN);
+      if (!Number.isSafeInteger(styleId)) {
+        continue;
+      }
+      firstStyleId ??= styleId;
+
+      const rawType = style?.type;
+      const styleType = typeof rawType === "string" ? rawType.trim().toLowerCase() : null;
+      if (styleType === "talk") {
+        return styleId;
+      }
+      if (styleType === null || styleType === "") {
+        fallbackStyleId ??= styleId;
+      }
+    }
   }
-  const styleId = Number(firstStyles[0]?.id ?? NaN);
-  if (!Number.isFinite(styleId)) {
-    throw new Error("Invalid style id in /speakers response");
+
+  if (fallbackStyleId !== null) {
+    return fallbackStyleId;
   }
-  return styleId;
+  if (firstStyleId !== null) {
+    return firstStyleId;
+  }
+  throw new Error("No styles found from engine");
 };
 
 const synthesizeWithEngine = async ({ engineUrl, speakerId, text, timeoutMs }) => {
@@ -302,14 +323,15 @@ const ensureDir = async (targetPath) => {
 
 const main = async () => {
   const args = parseArgs();
-  const outDir = args.outDir || path.join("var", "tts-eval", timestampForPath());
-  const texts = await readTexts(args.textsFile);
 
   if (args.listSpeakers) {
     const engineUrl = args.engineUrl || DEFAULT_ENGINE_URL;
     await listSpeakers(engineUrl, args.timeoutMs);
     return;
   }
+
+  const outDir = args.outDir || path.join("var", "tts-eval", timestampForPath());
+  const texts = await readTexts(args.textsFile);
 
   const useEngineMode = Boolean(args.engineUrl);
   const speakerIds = [];
@@ -319,7 +341,7 @@ const main = async () => {
     } else {
       const selected = await defaultSpeakerId(args.engineUrl, args.timeoutMs);
       speakerIds.push(selected);
-      process.stdout.write(`speaker_ids not provided, using first style id: ${selected}\n`);
+      process.stdout.write(`speaker_ids not provided, using auto-selected style id: ${selected}\n`);
     }
   }
 
@@ -433,12 +455,12 @@ const main = async () => {
     okRows.length > 0
       ? Math.round(okRows.reduce((sum, row) => sum + row.elapsedMs, 0) / okRows.length)
       : null;
+  const durationRows = okRows.filter((row) => row.durationSec !== null);
   const avgDurationSec =
-    okRows.length > 0
+    durationRows.length > 0
       ? Number(
           (
-            okRows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0) /
-            okRows.filter((row) => row.durationSec !== null).length
+            durationRows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0) / durationRows.length
           ).toFixed(3),
         )
       : null;
