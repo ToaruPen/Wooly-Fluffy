@@ -24,7 +24,7 @@ PRDの主要フロー（PTT→録音→STT→会話→TTS）を、Provider層の
 **含む:**
 
 - STT（ローカル）: `whisper.cpp` + Core ML による音声→テキスト
-- TTS（ローカル）: VOICEVOX Engine によるテキスト→音声（四国めたん speaker_id:2）
+- TTS（ローカル）: VOICEVOX 互換の TTS エンジンによるテキスト→音声（既定: AivisSpeech Engine）
 - LLM（ローカル/外部）: ローカルはLM Studio（OpenAI互換API）をデフォルトとし、外部LLM APIは任意で切り替え可能（切り替えはサーバ再起動で行う）。外部の候補として Gemini Developer API（AI Studio API key）を想定する。
 - Effect Executor: OrchestratorのEffectを実行し、結果をEventとして戻す橋渡し
 - KIOSK: ブラウザ録音（PTT）と、16kHz mono WAV への変換
@@ -44,7 +44,7 @@ PRDの主要フロー（PTT→録音→STT→会話→TTS）を、Provider層の
 
 項目: 規模感
 PRDの値: 小規模
-Epic対応: Provider層はAPI Serverに内包し、追加の常駐コンポーネントは最小に抑える（VOICEVOX Engine。ローカルLLMはLM Studioを選択する場合は別プロセス）
+Epic対応: Provider層はAPI Serverに内包し、追加の常駐コンポーネントは最小に抑える（TTS Engine（VOICEVOX互換）。ローカルLLMはLM Studioを選択する場合は別プロセス）
 
 項目: 技術方針
 PRDの値: シンプル優先
@@ -95,9 +95,9 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 デプロイ形態: 常設PC上で配信（既存）
 
 コンポーネント-3
-名称: VOICEVOX Engine
+名称: TTS Engine（VOICEVOX互換）
 責務: 音声合成（TTS）
-デプロイ形態: 常設PC上の別プロセス（localhost:50021）
+デプロイ形態: 常設PC上の別プロセス（既定: localhost:10101; 代替: localhost:50021 等）
 
 コンポーネント-4
 名称: LM Studio Local Server（任意）
@@ -113,10 +113,10 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 導入理由: ローカル実行、高速（Mac M-series + Core ML）、音声データを外部に出さない
 
 新規技術-2
-名称: VOICEVOX
+名称: AivisSpeech Engine（VOICEVOX互換）
 カテゴリ: TTS
 既存との差: 新規導入
-導入理由: 日本語キャラクター声に適する。ローカル実行。
+導入理由: VOICEVOX 互換 HTTP API（/audio_query→/synthesis）でローカル実行でき、モデル追加が可能。
 
 新規技術-3
 名称: @pixiv/three-vrm + three
@@ -165,7 +165,7 @@ to: LLM Provider（ローカルLM Studio / 外部LLM API）
 
 主要データフロー-3
 from: API Server
-to: VOICEVOX Engine
+to: TTS Engine（VOICEVOX互換）
 用途: TTS生成
 プロトコル: HTTP（localhost）
 
@@ -190,8 +190,8 @@ to: 天気API（任意）
 
 技術選定-2
 カテゴリ: TTS
-選択: VOICEVOX（四国めたん speaker_id: 2）
-理由: 日本語キャラクター声に適する。ローカル実行。
+選択: AivisSpeech Engine（VOICEVOX互換）を既定とし、TTS Engine は差し替え可能にする
+理由: VOICEVOX互換APIのため実装を簡素に保てる。モデル追加により声質を調整できる。
 代替案（よりシンプル）: OpenAI TTS（外部サービス増はないが音声が外部に出る） / ブラウザのSpeechSynthesis（音質・声質の制御が難しい）
 
 技術選定-3
@@ -289,8 +289,8 @@ Issue名: STT Provider（whisper.cpp）
 
 Issue-9
 番号: 9
-Issue名: TTS Provider（VOICEVOX）
-概要: VOICEVOX HTTP APIクライアントと、ヘルスチェック、帰属表示文言のUI表示を実装する
+Issue名: TTS Provider（VOICEVOX互換）
+概要: VOICEVOX互換 HTTP API クライアントとヘルスチェックを実装する（既定: AivisSpeech Engine）。帰属表記は「エンジン/モデルの一次情報URL」を参照し、UI表示は運用方針に合わせて別Issueで扱う。
 推定行数: 150-250行
 依存: #6
 
@@ -333,7 +333,7 @@ Issue名: 主要ループ（外部依存）: STTを実行経路に接続（ス�
 Issue-15
 番号: 15
 Issue名: Runbook: 外部依存/環境変数セットアップ + 主要ループ手動スモーク
-概要: whisper.cpp / VOICEVOX / LLM（LM Studioまたは外部）/ VRMのセットアップと環境変数一覧、主要ループの手動スモーク手順をREADMEへ追記する
+概要: whisper.cpp / TTS Engine（VOICEVOX互換）/ LLM（LM Studioまたは外部）/ VRMのセットアップと環境変数一覧、主要ループの手動スモーク手順をREADMEへ追記する
 推定行数: 50-120行
 依存: #14
 
@@ -398,7 +398,7 @@ N/A（可用性要件なし）
 ## 6. リスクと対策
 
 リスク-1
-リスク: VOICEVOX Engineが起動していない
+リスク: TTS Engine（VOICEVOX互換）が起動していない
 影響度: 中
 対策: /healthでunavailableを返し、UIは音声なしで継続できる設計
 

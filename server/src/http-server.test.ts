@@ -301,7 +301,7 @@ beforeEach(async () => {
   delete process.env.WF_TICK_INTERVAL_MS;
   delete process.env.WF_CONSENT_TIMEOUT_MS;
   delete process.env.WF_INACTIVITY_TIMEOUT_MS;
-  delete process.env.VOICEVOX_SPEAKER_ID;
+  process.env.TTS_SPEAKER_ID = "2";
 
   store = createStore({ db_path: ":memory:" });
   server = createHttpServer({
@@ -362,7 +362,7 @@ afterEach(async () => {
   delete process.env.WF_TICK_INTERVAL_MS;
   delete process.env.WF_CONSENT_TIMEOUT_MS;
   delete process.env.WF_INACTIVITY_TIMEOUT_MS;
-  delete process.env.VOICEVOX_SPEAKER_ID;
+  delete process.env.TTS_SPEAKER_ID;
   staffCookie = "";
 
   vi.unstubAllGlobals();
@@ -517,7 +517,7 @@ describe("http-server", () => {
         });
       });
 
-      process.env.VOICEVOX_SPEAKER_ID = "9";
+      process.env.TTS_SPEAKER_ID = "9";
 
       server = createHttpServer({
         store,
