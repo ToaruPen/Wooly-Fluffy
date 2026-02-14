@@ -1,6 +1,17 @@
 # Wooly-Fluffy
 
-M0 bootstrap with a minimal HTTP server, SSE endpoints, and a web skeleton.
+Local-first mascot LLM project for an after-school program.
+
+- `server/`: Node.js HTTP API + orchestrator + SQLite (includes SSE + `/health`)
+- `web/`: React (Vite) UI for KIOSK/STAFF flows
+
+## Source of Truth
+
+- Requirements (PRD): `docs/prd/wooly-fluffy.md`
+- Implementation plan (Epic): `docs/epics/wooly-fluffy-mvp-epic.md`
+- Decisions (ADR): `docs/decisions.md`
+
+Safety note (data minimization): do not persist or log conversation text/audio/STT transcripts. See ADR-1.
 
 ## Requirements
 
@@ -21,6 +32,9 @@ Note:
 ## Checks
 
 ```
+npm run format:check
+npm run check:filenames
+npm run lint:naming
 npm run typecheck
 npm run lint
 npm run test
@@ -32,9 +46,13 @@ npm run deadcode
 
 - `.github/workflows/ci.yml`: runs on pull requests and pushes to `main`.
   - `npm ci`
+  - `npm run format:check`
+  - `npm run check:filenames`
+  - `npm run lint:naming`
   - `npm audit --audit-level=high --omit=dev` (prod deps only)
   - `npm run typecheck`, `npm run lint`
   - `npm run -w server build`, `npm run -w web build`
+  - `npm run -w web e2e:install:ci`, `npm run -w web e2e`
   - `npm run coverage`, `npm run deadcode`
 - `.github/workflows/security-audit.yml`: runs weekly (Mon 03:00 UTC) and via manual trigger.
   - `npm audit --audit-level=high` (including dev deps)
@@ -55,10 +73,24 @@ npm run -w web dev
 
 Open:
 
+- `http://127.0.0.1:5173/` (KIOSK)
 - `http://127.0.0.1:5173/kiosk`
 - `http://127.0.0.1:5173/staff`
 
 The dev server proxies `/api` to `http://127.0.0.1:3000`.
+
+## Run server + web (macOS convenience)
+
+If you are on macOS, this repo also includes a small launcher that starts both processes:
+
+```bash
+./WoolyFluffy.command
+```
+
+Notes:
+
+- Expects `npm install` to be done.
+- Uses `~/Library/Application Support/wooly-fluffy/server.env` for `STAFF_PASSCODE` etc (see `server-env.example`).
 
 ## Main loop setup (external deps + env vars + manual smoke)
 
