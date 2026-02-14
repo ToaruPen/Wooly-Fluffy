@@ -72,7 +72,7 @@ Epic対応: 常設PC（Mac mini想定）上のローカル稼働 + 同一LAN内�
 
 外部サービス-2
 名称: 外部LLM API（例: OpenAI / GLM など）
-用途: LLM（会話生成）+ 内側タスク（memory_extract / consent_decision）+ ツール呼び出し結果の統合
+用途: LLM（会話生成）+ 内側タスク（session_summary 等）+ ツール呼び出し結果の統合
 必須理由: ローカルLLMの品質/遅延が要件を満たさない場合の代替。
 代替案: ローカルLLM（LM Studio等）
 

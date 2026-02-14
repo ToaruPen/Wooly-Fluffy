@@ -6,8 +6,10 @@
 
 - 作成日: 2026-02-07
 - 作成者: -
-- ステータス: Draft
+- ステータス: 廃止（`docs/epics/wooly-fluffy-mvp-epic.md` に統合）
 - 参照PRD: `docs/prd/wooly-fluffy.md`
+
+NOTE: このEpicは過去の設計（`PERSONAL(name)` や同意フロー等）を含みます。最新の実装計画は `docs/epics/wooly-fluffy-mvp-epic.md` と Issue #114-#119 を参照してください。
 
 ---
 
@@ -35,7 +37,6 @@
 - バイオメトリクス（声紋等）による本人確認
 - 録音ファイルの保存
 - 会話全文ログ（`ROOM` / `PERSONAL` ともに）の永続保存
-- NFCによる識別（`PERSONAL(child)`）
 - 施設外からの遠隔アクセス（インターネット公開）
 - 子どもの指示で任意の外部サイトへアクセス/ブラウズ/検索する機能
 - Webカメラの常時稼働、映像/画像の保存、個人識別（顔認証）
