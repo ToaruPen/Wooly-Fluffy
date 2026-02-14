@@ -15,15 +15,17 @@
 
 ### 1.1 目的
 
-学童の現場で破綻しない運用（職員見守り・責任分界）を前提に、`ROOM` 雑談と `PERSONAL(name)`（低センシティブ記憶）を最小の形で成立させる。
+学童の現場で破綻しない運用（職員見守り・責任分界）を前提に、「モード表示なし」「ROOM一本の会話セッション」「アイドル5分でセッション終了→セッション要約をpendingとして保存→職員Confirm/Deny」を最小の形で成立させる。
 
 ### 1.2 スコープ
 
 **含む:**
 
-- `ROOM` / `PERSONAL(name)` のモード遷移とタイムアウト
+- モード表示なし（子ども側に `ROOM/PERSONAL` の表示や切り替え操作を出さない）
+- 会話はroomセッションとして扱い、最後の会話からアイドル5分でセッション終了
+- セッション終了時にセッション要約（短いタイトル + 構造化JSON）を生成し、`pending` として保存
+- pendingは7日で自動失効し、職員がConfirm/Denyできる（Confirmは永続、Denyは削除）
 - Push-to-talk（KIOSK/職員操作。KIOSK/STAFFとも hold-to-talk を前提）
-- 低センシティブの記憶候補（最大1件） + 子どもの同意 + 職員Confirm/Deny + `pending/confirmed` 永続
 - KIOSK/STAFFのRealtime（SSE）と最小UI
 - STAFF最小アクセス制御（LAN内限定/共有パスコード/自動ロック）
 - 「芸事」（例: ダンス/手をふる等）の最小対応（許可リストのモーションIDのみ）
@@ -33,7 +35,6 @@
 
 - バイオメトリクス（声紋等）による本人確認
 - 録音ファイル/会話全文/STT全文の永続保存
-- NFC識別
 - 施設外からの遠隔アクセス（インターネット公開）
 - Webカメラの常時稼働/保存/個人識別
 - タッチゲーム
@@ -89,7 +90,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 
 コンポーネント-2
 名称: Web Frontend（KIOSK/STAFF）
-責務: KIOSK表示・入力（PTT/同意UI/モーション実行）、STAFF操作（PTT/Confirm/Deny/緊急操作）、SSE受信
+責務: KIOSK表示・入力（PTT/モーション実行）、STAFF操作（PTT/セッション要約Confirm/Deny/緊急操作）、SSE受信
 デプロイ形態: 常設PC上で配信（または静的ホスティング）
 
 ### 2.3 新規技術一覧
@@ -101,7 +102,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 導入理由: Polling前提にせず、KIOSK/STAFFへ状態とコマンドを配信する
 
 新規技術-2
-名称: SQLite（`memory_items`）
+名称: SQLite（`session_summary_items`）
 カテゴリ: Database
 既存との差: 新規導入
 導入理由: `pending/confirmed` を単機ローカルで永続でき、TTL掃除を含め運用が軽い
@@ -161,50 +162,43 @@ DBファイル:
 - 未指定の場合の既定値: `var/wooly-fluffy.sqlite3`
 
 エンティティ-1
-名前: memory_items
-主要属性: id, personal_name, kind, value, source_quote, status, created_at_ms, updated_at_ms, expires_at_ms
+名前: session_summary_items
+主要属性: id, status, title, summary_json, trigger, schema_version, created_at_ms, updated_at_ms, expires_at_ms
 関連: -
 
-#### 3.3.1 `memory_items`（DDL要約）
+#### 3.3.1 `session_summary_items`（DDL要約）
 
-MVPでは `pending/confirmed/rejected/deleted` を同一テーブルで表現する。
+MVPではセッション要約を `pending/confirmed` の2状態で扱う（Denyは物理削除し本文を残さない）。
 
 - `id` TEXT (UUID) PRIMARY KEY
-- `personal_name` TEXT NOT NULL
-- `kind` TEXT NOT NULL（値: `likes|food|play|hobby`）
-- `value` TEXT NOT NULL
-- `source_quote` TEXT NULL
-- `status` TEXT NOT NULL（値: `pending|confirmed|rejected|deleted`）
+- `status` TEXT NOT NULL（値: `pending|confirmed`）
+- `title` TEXT NOT NULL
+- `summary_json` TEXT NOT NULL（構造化JSON。スキーマ固定 + 保存前バリデーション/簡易マスク）
+- `trigger` TEXT NOT NULL（値: `idle`）
+- `schema_version` INTEGER NOT NULL
 - `created_at_ms` INTEGER NOT NULL
 - `updated_at_ms` INTEGER NOT NULL
 - `expires_at_ms` INTEGER NULL
 
 インデックス:
 
-- `idx_memory_items_status_created_at` on (`status`, `created_at_ms` DESC)
-- `idx_memory_items_status_expires_at` on (`status`, `expires_at_ms`)
-- `idx_memory_items_personal_status` on (`personal_name`, `status`)
+- `idx_session_summary_items_status_created_at` on (`status`, `created_at_ms` DESC)
+- `idx_session_summary_items_status_expires_at` on (`status`, `expires_at_ms`)
 
 #### 3.3.2 状態遷移（要約）
 
 - `pending` 作成
   - `status=pending`
-  - `expires_at_ms = now + 24h`
-  - `source_quote` は任意（確認補助の短い引用。会話全文は保存しない）
+  - `expires_at_ms = now + 7d`
 - STAFF Confirm
   - `pending -> confirmed`
   - `expires_at_ms = NULL`（自動忘却しない）
-  - `source_quote = NULL`（データ最小化）
 - STAFF Deny
-  - `pending -> rejected`
-  - `expires_at_ms = now + 24h`
-  - `source_quote = NULL`（データ最小化）
-- Delete（後続の枠）
-  - UI/運用からの削除は `status=deleted` とし、短期で物理削除できるよう `expires_at_ms` を設定する
+  - pending行を物理削除（本文保持しない）
 
 #### 3.3.3 Housekeeping（TTL掃除）
 
-- 対象: `expires_at_ms` が設定されており、`expires_at_ms <= now` の行
+- 対象: `status=pending` かつ `expires_at_ms <= now` の行
 - 実行: Server起動時に1回 + 定期（例: 10分間隔）
 
 ### 3.4 API設計（概要）
@@ -222,7 +216,7 @@ API-1
 API-2
 エンドポイント: /api/v1/staff/stream
 メソッド: GET
-説明: STAFF向けSSEストリーム（snapshot + pending_list）
+説明: STAFF向けSSEストリーム（snapshot + session_summaries_pending_list）
 
 API-3
 エンドポイント: /api/v1/staff/auth/login
@@ -232,27 +226,27 @@ API-3
 API-4
 エンドポイント: /api/v1/staff/event
 メソッド: POST
-説明: STAFFイベント（PTT/強制ROOM/緊急停止/復帰）
+説明: STAFFイベント（PTT/緊急停止/復帰）
 
 API-5
 エンドポイント: /api/v1/kiosk/event
 メソッド: POST
-説明: KIOSKイベント（同意ボタンなど）
+説明: KIOSKイベント（PTTなど）
 
 API-6
-エンドポイント: /api/v1/staff/pending
+エンドポイント: /api/v1/staff/session-summaries/pending
 メソッド: GET
-説明: pending一覧取得
+説明: セッション要約pending一覧取得
 
 API-7
-エンドポイント: /api/v1/staff/pending/:id/confirm
+エンドポイント: /api/v1/staff/session-summaries/:id/confirm
 メソッド: POST
 説明: pendingをconfirmedへ
 
 API-8
-エンドポイント: /api/v1/staff/pending/:id/deny
+エンドポイント: /api/v1/staff/session-summaries/:id/deny
 メソッド: POST
-説明: pendingをrejectedへ
+説明: pendingを削除（本文保持しない）
 
 #### 3.4.1 Realtime（SSE）契約（詳細）
 
@@ -278,7 +272,6 @@ SSEエンドポイント:
 
 - `POST /api/v1/kiosk/event`
   - body:
-    - `{ "type": "UI_CONSENT_BUTTON", "answer": "yes" | "no" }`
     - `{ "type": "KIOSK_PTT_DOWN" }`
     - `{ "type": "KIOSK_PTT_UP" }`
   - response: `200 { "ok": true }`
@@ -295,7 +288,7 @@ SSEエンドポイント:
 
 - `kiosk.snapshot`
   - `data`:
-    - `{ "state": { "mode": "ROOM" | "PERSONAL", "personal_name": string | null, "phase": string, "consent_ui_visible": boolean } }`
+    - `{ "state": { "phase": string } }`
 
 - `kiosk.command.record_start`
   - `data`: `{}`
@@ -340,34 +333,31 @@ SSEエンドポイント:
     - body例:
       - `{ "type": "STAFF_PTT_DOWN" }`
       - `{ "type": "STAFF_PTT_UP" }`
-      - `{ "type": "STAFF_FORCE_ROOM" }`
       - `{ "type": "STAFF_EMERGENCY_STOP" }`
       - `{ "type": "STAFF_RESUME" }`
     - response: `200 { "ok": true }`
 
-- Pending
-  - `GET /api/v1/staff/pending`
-    - response: `200 { "items": PendingItem[] }`
-  - `POST /api/v1/staff/pending/:id/confirm`
+- Session summary pending
+  - `GET /api/v1/staff/session-summaries/pending`
+    - response: `200 { "items": SessionSummaryItem[] }`
+  - `POST /api/v1/staff/session-summaries/:id/confirm`
     - response: `200 { "ok": true }`
-  - `POST /api/v1/staff/pending/:id/deny`
+  - `POST /api/v1/staff/session-summaries/:id/deny`
     - response: `200 { "ok": true }`
 
 - STAFF SSEメッセージ
   - `staff.snapshot`
     - `data`:
-      - `{ "state": { "mode": "ROOM" | "PERSONAL", "personal_name": string | null, "phase": string }, "pending": { "count": number } }`
-  - `staff.pending_list`
+      - `{ "state": { "phase": string }, "pending_session_summaries": { "count": number } }`
+  - `staff.session_summaries_pending_list`
     - `data`:
-      - `{ "items": PendingItem[] }`
+      - `{ "items": SessionSummaryItem[] }`
 
-- `PendingItem` DTO
+- `SessionSummaryItem` DTO
   - `id: string`
-  - `personal_name: string`
-  - `kind: "likes" | "food" | "play" | "hobby"`
-  - `value: string`
-  - `source_quote?: string`（任意。`pending` の確認補助のみ）
-  - `status: "pending" | "confirmed" | "rejected" | "deleted"`
+  - `title: string`
+  - `summary_json: object`
+  - `status: "pending" | "confirmed"`
   - `created_at_ms: number`
   - `expires_at_ms: number | null`
 
@@ -380,18 +370,12 @@ Orchestrator は純粋ロジック（副作用なし）として実装する:
 
 決定性ルール:
 
-- モード切替、同意判定、allowlistチェックは外側LLMの自由文に依存させない
+- セッション終了判定、要約生成、allowlistチェックは外側LLMの自由文に依存させない
 - 非決定的な処理は、スキーマ固定JSON（InnerTask）を返し、コード側で validate して採用する
 
 コマンド解釈ルール（正規化後テキスト）:
 
-- `PERSONAL(name)` の開始条件
-  - `パーソナル` で始まり、区切り（`、` / `,` / 空白）の直後に `name`（1トークン）がある
-  - `name` が欠けている場合は不成立
-  - `name` の後ろに余計な語があっても無視してよい
-- `ROOM` 戻し条件
-  - 正規化後に完全一致で `ルーム` または `ルームに戻る`
-  - 追加語を含む場合は不成立
+- モード切替コマンドは扱わない（例: `パーソナル、...` / `ルームに戻る` 等は通常発話として扱う）
 
 リクエスト相関（`request_id`）:
 
@@ -400,13 +384,12 @@ Orchestrator は純粋ロジック（副作用なし）として実装する:
 
 優先順位:
 
-- `STAFF_FORCE_ROOM` を最優先とし、進行中のフローを中断する
-- `STAFF_FORCE_ROOM` / `STAFF_EMERGENCY_STOP` ではUI出力を停止する（`kiosk.command.stop_output` を使用）
+- `STAFF_EMERGENCY_STOP` を最優先とし、進行中のフローを中断する
+- `STAFF_EMERGENCY_STOP` ではUI出力を停止する（`kiosk.command.stop_output` を使用）
 
 タイムアウト:
 
-- PERSONAL 無操作: 300秒（明示アナウンス無しで ROOM に戻る）
-- 同意回答待ち: 30秒（候補を破棄し、定型フォールバックを発話する）
+- セッションアイドル: 300秒（5分）。最後の会話からアイドルが続いた場合、セッションを終了しセッション要約生成へ進む
 
 Provider方針:
 
@@ -422,8 +405,6 @@ Provider方針:
     - `STAFF_PTT_UP`
     - `KIOSK_PTT_DOWN`
     - `KIOSK_PTT_UP`
-    - `UI_CONSENT_BUTTON(answer: "yes" | "no")`
-    - `STAFF_FORCE_ROOM`
     - `STAFF_EMERGENCY_STOP`
     - `STAFF_RESUME`
   - Provider結果
@@ -443,20 +424,17 @@ Provider方針:
   - Provider呼び出し
     - `CALL_STT(request_id: string)`
     - `CALL_CHAT(request_id: string, input: object)`
-    - `CALL_INNER_TASK(request_id: string, task: "consent_decision" | "memory_extract", input: object)`
+    - `CALL_INNER_TASK(request_id: string, task: "session_summary", input: object)`
   - UI/出力
     - `SAY(text: string)`
     - `SET_EXPRESSION(expression: "neutral" | "happy" | "sad" | "surprised")`
     - `PLAY_MOTION(motion_id: string, motion_instance_id: string)`
-    - `SET_MODE(mode: "ROOM" | "PERSONAL", personal_name?: string)`
-    - `SHOW_CONSENT_UI(visible: boolean)`
   - 永続
-    - `STORE_WRITE_PENDING(input: { personal_name: string, kind: "likes" | "food" | "play" | "hobby", value: string, source_quote?: string })`
+    - `STORE_WRITE_SESSION_SUMMARY_PENDING(input: { title: string, summary_json: object })`
 
 InnerTask JSON（最小）:
 
-- `consent_decision`: `{ "task": "consent_decision", "answer": "yes" | "no" | "unknown" }`
-- `memory_extract`: `{ "task": "memory_extract", "candidate": null | { "kind": "likes" | "food" | "play" | "hobby", "value": string, "source_quote"?: string } }`
+- `session_summary`: `{ "task": "session_summary", "title": string, "summary_json": object }`
 
 ---
 
@@ -465,49 +443,58 @@ InnerTask JSON（最小）:
 ### 4.1 Issue一覧
 
 Issue-1
-番号: 1
-Issue名: Orchestrator（純粋ロジック）+ ユニットテスト
-概要: `ROOM/PERSONAL(name)`、同意フロー、タイマー、失敗時フォールバックをEvent/Effectで固定する
-推定行数: 200-400行
+番号: 114
+Issue名: PRD/Epic/ADR同期（モード撤廃・セッション要約pending）
+概要: SoT（PRD/Epic/ADR）を新設計に同期し、以降の実装Issueの前提を固定する
+推定行数: N/A（ドキュメント）
 依存: -
 
 Issue-2
-番号: 2
-Issue名: Store（SQLite）+ pending/confirmed + TTL Housekeeping
-概要: `memory_items` スキーマ、pending作成、Confirm/Deny、期限切れ物理削除を統合テストで固定する
+番号: 115
+Issue名: db: セッション要約pending用テーブル追加（confirm/deny/expiry）
+概要: `session_summary_items` スキーマ、pending作成、Confirm/Deny、pending 7日失効をテストで固定する
 推定行数: 200-400行
-依存: #1
+依存: #114
 
 Issue-3
-番号: 3
-Issue名: HTTP API v1 + SSE（KIOSK/STAFF）枠
-概要: `/api/v1` のエラー形式統一、KIOSK/STAFFのSSE配信、イベント入力を実装する（Providerはスタブ可）
-推定行数: 200-400行
-依存: #1
+番号: 116
+Issue名: llm: セッション要約タスク（構造化JSON + 注入/PIIガード）
+概要: `Providers["llm"]` の要約タスクを追加し、構造化JSONと安全要件をテストで固定する
+推定行数: 150-300行
+依存: #114
 
 Issue-4
-番号: 4
-Issue名: STAFFアクセス制御（LAN/パスコード/セッション/自動ロック）
-概要: LAN内限定、ログイン、keepalive、セッション必須化を実装する
-推定行数: 150-300行
-依存: #3
+番号: 117
+Issue名: server: ROOM一本でセッション管理 + アイドル5分で要約生成→pending保存
+概要: idle 5分でセッションを確定し、要約生成→pending保存までを実装し、ユニット/動的検証で固定する
+推定行数: 250-500行
+依存: #115, #116
 
 Issue-5
-番号: 5
-Issue名: Web（KIOSK/STAFF）最小UI + SSE接続
-概要: `/kiosk` `/staff` の画面枠、SSE購読、PTT操作、同意UI、pending一覧/Confirm/Denyを実装する
-推定行数: 250-500行
-依存: #3, #4
+番号: 118
+Issue名: api(staff): セッション要約pendingのlist/confirm/deny + SSE更新
+概要: セッション要約pendingを一覧/Confirm/Denyでき、SSEで更新が配信されるAPIを実装する
+推定行数: 200-400行
+依存: #115, #117
+
+Issue-6
+番号: 119
+Issue名: web(staff): セッション要約pending表示 + Mode表示削除
+概要: STAFF画面からMode表示を撤廃し、セッション要約pendingのレビューUIを実装する
+推定行数: 150-300行
+依存: #118
 
 ### 4.2 依存関係図
 
 依存関係（関係を1行ずつ列挙）:
 
-- Issue 2 depends_on Issue 1
-- Issue 3 depends_on Issue 1
-- Issue 4 depends_on Issue 3
-- Issue 5 depends_on Issue 3
-- Issue 5 depends_on Issue 4
+- Issue 115 depends_on Issue 114
+- Issue 116 depends_on Issue 114
+- Issue 117 depends_on Issue 115
+- Issue 117 depends_on Issue 116
+- Issue 118 depends_on Issue 115
+- Issue 118 depends_on Issue 117
+- Issue 119 depends_on Issue 118
 
 ---
 
@@ -524,9 +511,8 @@ PRD Q6-5: Yes
 
 扱うデータ:
 
-- 呼び名（`personal_name`）: 低リスクだが個人に紐づく可能性があるため最小化
-- 低センシティブ記憶（likes/food/play/hobby）: 職員Confirm後のみ保存
-- 音声/会話全文/STT全文: 永続保存しない
+- セッション要約（短文・抽象化・構造化JSON）: 職員Confirmの対象として扱う（pendingは7日失効、confirmedは永続）
+- 音声/会話全文/全文STT: 永続保存しない（ログ/トレース/例外にも出さない）
 
 認証/認可:
 
