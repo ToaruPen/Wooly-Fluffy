@@ -70,7 +70,7 @@ ADR-2
 
 ADR-3
 タイトル: モード設計（ROOM/PERSONAL）と同意フロー
-ステータス: 承認
+ステータス: 廃止（ADR-14により置換）
 日付: 2026-01-31
 
 ADR-4
@@ -89,9 +89,9 @@ ADR-6
 日付: 2026-01-31
 
 ADR-7
-タイトル: SQLiteスキーマ（memory_items）とTTL Housekeeping
+タイトル: SQLiteスキーマ（session_summary_items）とTTL Housekeeping
 ステータス: 承認
-日付: 2026-01-31
+日付: 2026-02-14
 
 ADR-8
 タイトル: 技術スタック（TS/React/Vite/SQLite）と一次情報URLの運用
@@ -123,13 +123,18 @@ ADR-13
 ステータス: 承認
 日付: 2026-02-08
 
+ADR-14
+タイトル: セッション設計（モード表示なし）とセッション要約（pending→職員Confirm/Deny）
+ステータス: 承認
+日付: 2026-02-14
+
 ---
 
 ## ADR-1: データ最小化（保存/ログ）方針
 
 ### ステータス
 
-承認
+廃止（ADR-14により置換）
 
 ### 日付
 
@@ -365,6 +370,58 @@ ADR-13
 - Issue: #18
 - busboy license: https://github.com/mscdex/busboy/blob/master/LICENSE
 
+---
+
+## ADR-14: セッション設計（モード表示なし）とセッション要約（pending→職員Confirm/Deny）
+
+### ステータス
+
+承認
+
+### 日付
+
+2026-02-14
+
+### コンテキスト
+
+- PERSONAL運用（`PERSONAL(name)` への遷移、同意UI、同意タイムアウト等）が現場運用として不要になった。
+- 子ども側の操作を減らしつつ、職員が現場の出来事を把握できる形（セッション要約）へ寄せたい。
+- ただし、未成年が主対象となり得るため、会話全文/音声/全文STTの永続保存やログ出力は避ける（ADR-1）。
+
+### 選択肢
+
+#### 案A: ROOM/PERSONAL + 同意フローを維持（ADR-3の維持）
+
+- 説明: 個人紐付けはPERSONALに限定し、子どもの「はい/いいえ」でpending作成
+- メリット: 個人メモリの体験を作りやすい
+- デメリット: 現場運用上の複雑さ（モード/同意/タイムアウト）が増え、破綻しやすい
+
+#### 案B: モード表示なし + ROOM一本のセッション + セッション要約を職員レビュー
+
+- 説明: モード切替を廃止し、最後の会話からアイドル5分でセッション終了→要約をpendingとして保存→職員Confirm/Deny
+- メリット: 子ども側の操作が減り、職員の責任分界（レビュー）が明確。データ最小化と両立しやすい
+- デメリット: 個人最適（名前ベース等）は後続の再設計が必要
+
+### 決定
+
+案Bを採用する。
+
+### 理由
+
+- PERSONAL運用が不要になり、モード/同意/タイムアウトの複雑さが運用リスクになっていた
+- セッション要約（短文・抽象化・構造化JSON）を職員がレビューする方が、現場での説明責任と安全性に合致する
+
+### 影響
+
+- PRD/Epic/ADRを新方針に同期する（Issue #114）
+- DB/LLM/Server/API/UIの実装は後続Issue（#115-#119）で進める
+
+### 参照
+
+- PRD: `docs/prd/wooly-fluffy.md`
+- Epic: `docs/epics/wooly-fluffy-mvp-epic.md`
+- Issue: #114, #115, #116, #117, #118, #119
+
 ## ADR-3: モード設計（ROOM/PERSONAL）と同意フロー
 
 ### ステータス
@@ -379,6 +436,8 @@ ADR-13
 
 個人紐付けの保存を行わない `ROOM` と、低センシティブな記憶を扱う `PERSONAL(name)` を分離し、誤爆や過剰保存を防ぎたい。
 また、子どもの意思表示を尊重しつつ、最終的な保存可否は職員が確定する必要がある。
+
+※ その後、PERSONAL運用自体が不要となり「モード表示なし + ROOM一本のセッション + idleでセッション要約→職員レビュー」へ方針変更したため、本ADRは ADR-14 により置換する。
 
 ### 決定
 
@@ -476,7 +535,7 @@ STAFF画面/操作を無保護にすると、誤操作・いたずら・偶発�
 
 ---
 
-## ADR-7: SQLiteスキーマ（memory_items）とTTL Housekeeping
+## ADR-7: SQLiteスキーマ（session_summary_items）とTTL Housekeeping
 
 ### ステータス
 
@@ -484,21 +543,26 @@ STAFF画面/操作を無保護にすると、誤操作・いたずら・偶発�
 
 ### 日付
 
-2026-01-31
+2026-02-14
 
 ### コンテキスト
 
 MVPでは `pending/confirmed` を最優先で成立させ、保存してよいものだけを保存できるようにしたい。
 単機ローカル運用のため、SQLiteを採用する。
 
+今回の方針変更により、保存対象は「個人メモリ候補」ではなく「セッション要約（短文・抽象化・構造化JSON）」となる。
+会話全文/音声/全文STTは保存しない（ADR-1）。
+
 ### 決定
 
-- `memory_items` で `pending/confirmed/rejected/deleted` を表現する
-- TTL掃除（Housekeeping）で `expires_at_ms <= now` を物理削除する
+- `session_summary_items` で `pending/confirmed` を表現する（Denyは物理削除し本文を残さない）
+- `pending` は `expires_at_ms = now + 7d` とし、TTL掃除（Housekeeping）で `status=pending` かつ `expires_at_ms <= now` を物理削除する
+- `confirmed` は `expires_at_ms = NULL` とし、自動忘却しない（永続）
 
 ### 参照
 
 - Epic: `docs/epics/wooly-fluffy-mvp-epic.md` セクション 3.3
+- Issue: #115
 
 ---
 
