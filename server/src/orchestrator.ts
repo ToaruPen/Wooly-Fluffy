@@ -98,7 +98,13 @@ export type ChatInput = {
 
 export type InnerTaskInput =
   | { task: "consent_decision"; input: { text: string } }
-  | { task: "memory_extract"; input: { assistant_text: string } };
+  | { task: "memory_extract"; input: { assistant_text: string } }
+  | {
+      task: "session_summary";
+      input: {
+        messages: Array<{ role: "user" | "assistant"; text: string }>;
+      };
+    };
 
 export type OrchestratorEffect =
   | { type: "KIOSK_RECORD_START" }
