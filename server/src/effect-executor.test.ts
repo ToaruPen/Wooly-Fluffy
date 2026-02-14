@@ -142,6 +142,57 @@ describe("effect-executor", () => {
     ]);
   });
 
+  it("forwards session_summary input for CALL_INNER_TASK", async () => {
+    const providers = createStubProviders({
+      innerTaskCall: async (input) => {
+        expect(input).toEqual({
+          task: "session_summary",
+          input: {
+            messages: [
+              { role: "user", text: "hi" },
+              { role: "assistant", text: "hello" },
+            ],
+          },
+        });
+        return { json_text: "{}" };
+      },
+    });
+
+    const queued: OrchestratorEvent[] = [];
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: (event) => queued.push(event),
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+    });
+
+    const events = executor.executeEffects([
+      {
+        type: "CALL_INNER_TASK",
+        request_id: "inner-ss-1",
+        task: "session_summary",
+        input: {
+          messages: [
+            { role: "user", text: "hi" },
+            { role: "assistant", text: "hello" },
+          ],
+        },
+      },
+    ]);
+
+    expect(events).toEqual([]);
+    await flushMicrotasks();
+    expect(queued).toEqual([
+      {
+        type: "INNER_TASK_RESULT",
+        request_id: "inner-ss-1",
+        json_text: "{}",
+      },
+    ]);
+  }, 5_000);
+
   it("enqueues INNER_TASK_FAILED when CALL_INNER_TASK provider throws", async () => {
     const providers = createStubProviders({
       innerTaskCall: async () => {

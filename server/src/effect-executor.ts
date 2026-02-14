@@ -81,11 +81,17 @@ export const createEffectExecutor = (deps: {
           break;
         }
         case "CALL_INNER_TASK": {
-          const input: InnerTaskInput =
-            effect.task === "consent_decision"
-              ? { task: "consent_decision", input: effect.input }
-              : { task: "memory_extract", input: effect.input };
           try {
+            const input: InnerTaskInput = (() => {
+              switch (effect.task) {
+                case "consent_decision":
+                  return { task: "consent_decision", input: effect.input };
+                case "memory_extract":
+                  return { task: "memory_extract", input: effect.input };
+                case "session_summary":
+                  return { task: "session_summary", input: effect.input };
+              }
+            })();
             const maybe = deps.providers.llm.inner_task.call(input);
             if (isThenable<LlmInnerTaskResult>(maybe)) {
               void maybe
