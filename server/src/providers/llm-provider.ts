@@ -155,27 +155,27 @@ const extractFirstJsonObjectText = (input: string): string => {
   }
 
   let depth = 0;
-  let inString = false;
-  let escaped = false;
+  let isInString = false;
+  let isEscaped = false;
   for (let i = start; i < text.length; i += 1) {
     const ch = text[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
+    if (isInString) {
+      if (isEscaped) {
+        isEscaped = false;
         continue;
       }
       if (ch === "\\") {
-        escaped = true;
+        isEscaped = true;
         continue;
       }
       if (ch === '"') {
-        inString = false;
+        isInString = false;
       }
       continue;
     }
 
     if (ch === '"') {
-      inString = true;
+      isInString = true;
       continue;
     }
     if (ch === "{") {
