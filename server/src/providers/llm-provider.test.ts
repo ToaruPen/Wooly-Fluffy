@@ -805,6 +805,50 @@ describe("llm-provider (OpenAI-compatible)", () => {
     expect(parsed.summary_json.summary).not.toContain("aaa@example.com");
   });
 
+  it("accepts pure code-fenced JSON for inner_task(session_summary)", async () => {
+    const payload = {
+      task: "session_summary",
+      title: "t",
+      summary_json: {
+        summary: "s",
+        topics: [],
+        staff_notes: [],
+      },
+    };
+
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: `\n\n\`\`\`json\n${JSON.stringify(payload)}\n\`\`\`\n`,
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).resolves.toEqual({
+      json_text: JSON.stringify({
+        task: "session_summary",
+        title: "t",
+        summary_json: { summary: "s", topics: [], staff_notes: [] },
+      }),
+    });
+  });
+
   it("executes inner_task for session_summary (fail-fast; no fallback)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
       kind: "local",
@@ -898,6 +942,418 @@ describe("llm-provider (OpenAI-compatible)", () => {
                   title: "t",
                   summary_json: { summary: "s", topics: [""], staff_notes: [] },
                 }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary staff_notes contains empty string (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: "s", topics: [], staff_notes: [""] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary title becomes empty after normalization (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "   ",
+                  summary_json: { summary: "s", topics: [], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary summary becomes empty after normalization (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: "   ", topics: [], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary topics contains non-string (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: "s", topics: [1], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary staff_notes contains non-string (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: "s", topics: [], staff_notes: [1] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary summary_json has unexpected keys (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: "s", topics: [], staff_notes: [], extra: "x" },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary summary is not a string (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: 1, topics: [], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary title is not a string (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: 1,
+                  summary_json: { summary: "s", topics: [], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary summary_json is not an object (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: null,
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary response JSON is not an object (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: "[]",
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("throws when session_summary response has wrong task (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "memory_extract",
+                  title: "t",
+                  summary_json: { summary: "s", topics: [], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    await expect(
+      llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [{ role: "user", text: "hi" }] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("parses session_summary when JSON contains escaped characters", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  task: "session_summary",
+                  title: "t",
+                  summary_json: { summary: "a\\b", topics: [], staff_notes: [] },
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+
+    const result = await llm.inner_task.call({
+      task: "session_summary",
+      input: { messages: [{ role: "user", text: "hi" }] },
+    });
+
+    expect(JSON.parse(result.json_text)).toMatchObject({
+      task: "session_summary",
+      title: "t",
+      summary_json: { summary: expect.any(String), topics: [], staff_notes: [] },
+    });
+  });
+
+  it("throws when session_summary response is truncated JSON (fail-fast)", async () => {
+    const llm = createOpenAiCompatibleLlmProvider({
+      kind: "local",
+      base_url: "http://lmstudio.local/v1",
+      model: "dummy-model",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"task":"session_summary"',
               },
             },
           ],
@@ -2091,7 +2547,7 @@ describe("llm-provider (Gemini native)", () => {
 });
 
 describe("llm-provider (env)", () => {
-  it("defaults to stub when LLM_PROVIDER_KIND is unset", () => {
+  it("defaults to stub when LLM_PROVIDER_KIND is unset", async () => {
     const saved = {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
       LLM_BASE_URL: process.env.LLM_BASE_URL,
@@ -2111,6 +2567,20 @@ describe("llm-provider (env)", () => {
         expression: "neutral",
         motion_id: null,
         tool_calls: [],
+      });
+
+      const sessionSummary = await llm.inner_task.call({
+        task: "session_summary",
+        input: { messages: [] },
+      });
+      expect(JSON.parse(sessionSummary.json_text)).toMatchObject({
+        task: "session_summary",
+        title: "要約",
+        summary_json: {
+          summary: expect.any(String),
+          topics: [],
+          staff_notes: [],
+        },
       });
     } finally {
       process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;

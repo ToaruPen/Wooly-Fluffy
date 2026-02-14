@@ -90,8 +90,6 @@ export const createEffectExecutor = (deps: {
                   return { task: "memory_extract", input: effect.input };
                 case "session_summary":
                   return { task: "session_summary", input: effect.input };
-                default:
-                  throw new Error("unknown_inner_task");
               }
             })();
             const maybe = deps.providers.llm.inner_task.call(input);

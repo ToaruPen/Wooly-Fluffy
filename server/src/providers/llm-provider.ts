@@ -608,8 +608,6 @@ export const createOpenAiCompatibleLlmProvider = (
             `Constraints: title 1..${SESSION_SUMMARY_LIMITS.title_max_len} chars; summary_json.summary 1..${SESSION_SUMMARY_LIMITS.summary_max_len} chars; topics 0..${SESSION_SUMMARY_LIMITS.topics_max} items (each 1..${SESSION_SUMMARY_LIMITS.topic_max_len}); staff_notes 0..${SESSION_SUMMARY_LIMITS.staff_notes_max} items (each 1..${SESSION_SUMMARY_LIMITS.staff_note_max_len}). No extra keys.`,
             "Do not quote verbatim. Generalize names/contacts. Avoid emails/phone numbers.",
           ].join(" ");
-        default:
-          throw new Error("unknown_inner_task");
       }
     })();
     const body = {
@@ -921,8 +919,6 @@ export const createGeminiNativeLlmProvider = (
               "Do not quote verbatim. Generalize names/contacts. Avoid emails/phone numbers.",
             ].join(" "),
           };
-        default:
-          throw new Error("unknown_inner_task");
       }
     })();
 
@@ -1082,8 +1078,6 @@ export const createLlmProviderFromEnv = (options?: {
                   },
                 }),
               };
-            default:
-              throw new Error("unknown_inner_task");
           }
         },
       },
