@@ -289,26 +289,14 @@ export const createStore = (options: CreateStoreOptions): Store => {
     WHERE status = 'pending' AND expires_at_ms IS NOT NULL AND expires_at_ms <= @now_ms`,
   );
 
-  const parseDbJson = (value: string): unknown => {
-    try {
-      return JSON.parse(value) as unknown;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new Error(`Invalid JSON in session_summary_items.summary_json: ${message}`);
-    }
-  };
+  const parseDbJson = (value: string): unknown => JSON.parse(value) as unknown;
 
   const serializeSummaryJson = (value: unknown): string => {
-    try {
-      const s = JSON.stringify(value);
-      if (typeof s !== "string") {
-        throw new Error("summary_json must be JSON-serializable");
-      }
-      return s;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new Error(`summary_json must be JSON-serializable: ${message}`);
+    const s = JSON.stringify(value);
+    if (typeof s !== "string") {
+      throw new Error("summary_json must be JSON-serializable");
     }
+    return s;
   };
 
   return {

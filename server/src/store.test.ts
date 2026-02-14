@@ -117,6 +117,25 @@ describe("store", () => {
     }
   });
 
+  it("rejects non-JSON-serializable session summary_json", () => {
+    const store = createStore({
+      db_path: ":memory:",
+      now_ms: () => 1_000,
+      id_factory: () => "sum-1",
+    });
+
+    try {
+      expect(() =>
+        store.createPendingSessionSummary({
+          title: "After school chat",
+          summary_json: undefined,
+        }),
+      ).toThrow(/summary_json must be JSON-serializable/);
+    } finally {
+      store.close();
+    }
+  });
+
   it("creates a pending item and lists it", () => {
     const store = createStore({
       db_path: ":memory:",
