@@ -757,7 +757,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
     expect(parsed.summary_json.topics.every((t) => t.length <= 40)).toBe(true);
     expect(parsed.summary_json.staff_notes.length).toBeLessThanOrEqual(5);
     expect(parsed.summary_json.staff_notes.every((t) => t.length <= 80)).toBe(true);
-  });
+  }, 5_000);
 
   it("accepts code-fenced JSON for inner_task(session_summary)", async () => {
     const payload = {
@@ -803,7 +803,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
     expect(parsed.title).toBe("t");
     expect(parsed.summary_json.summary).not.toContain("090-1234-5678");
     expect(parsed.summary_json.summary).not.toContain("aaa@example.com");
-  });
+  }, 5_000);
 
   it("accepts pure code-fenced JSON for inner_task(session_summary)", async () => {
     const payload = {
@@ -847,7 +847,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         summary_json: { summary: "s", topics: [], staff_notes: [] },
       }),
     });
-  });
+  }, 5_000);
 
   it("executes inner_task for session_summary (fail-fast; no fallback)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -895,7 +895,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         summary_json: { summary: "s", topics: [], staff_notes: [] },
       }),
     });
-  });
+  }, 5_000);
 
   it("throws when inner_task(session_summary) returns invalid schema (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -923,7 +923,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary topics contains empty string (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -955,7 +955,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary staff_notes contains empty string (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -987,7 +987,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary title becomes empty after normalization (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1019,7 +1019,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary summary becomes empty after normalization (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1051,7 +1051,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary topics contains non-string (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1083,7 +1083,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary staff_notes contains non-string (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1115,7 +1115,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary summary_json has unexpected keys (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1147,7 +1147,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary summary is not a string (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1179,7 +1179,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary title is not a string (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1211,7 +1211,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary summary_json is not an object (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1243,7 +1243,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary response JSON is not an object (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1271,7 +1271,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when session_summary response has wrong task (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1303,7 +1303,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("parses session_summary when JSON contains escaped characters", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1339,7 +1339,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
       title: "t",
       summary_json: { summary: expect.any(String), topics: [], staff_notes: [] },
     });
-  });
+  }, 5_000);
 
   it("throws when session_summary response is truncated JSON (fail-fast)", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1367,7 +1367,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("throws when inner_task returns non-2xx", async () => {
     let calls = 0;
@@ -1384,7 +1384,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
       llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
     ).rejects.toThrow(/HTTP 503/);
     expect(calls).toBe(1);
-  });
+  }, 5_000);
 
   it("throws when inner_task content is not a string", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1851,7 +1851,7 @@ describe("llm-provider (Gemini native)", () => {
         input: { messages: [{ role: "user", text: "hi" }] },
       }),
     ).rejects.toThrow();
-  });
+  }, 5_000);
 
   it("retries once on 429 and succeeds", async () => {
     let calls = 0;

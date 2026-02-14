@@ -191,7 +191,7 @@ describe("effect-executor", () => {
         json_text: "{}",
       },
     ]);
-  });
+  }, 5_000);
 
   it("enqueues INNER_TASK_FAILED when CALL_INNER_TASK provider throws", async () => {
     const providers = createStubProviders({
