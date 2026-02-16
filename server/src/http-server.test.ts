@@ -1757,17 +1757,17 @@ describe("http-server", () => {
         ): Promise<Array<{ type: string; seq: number; data: unknown }>> =>
           new Promise((resolve, reject) => {
             const messages: Array<{ type: string; seq: number; data: unknown }> = [];
-            let done = false;
+            let isDone = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
 
             const finish = (
               err?: Error,
               result?: Array<{ type: string; seq: number; data: unknown }>,
             ) => {
-              if (done) {
+              if (isDone) {
                 return;
               }
-              done = true;
+              isDone = true;
               if (timeout) {
                 clearTimeout(timeout);
               }
