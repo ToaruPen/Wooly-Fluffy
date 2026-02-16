@@ -98,6 +98,82 @@ const withStaffCookie = (headers?: Record<string, string>): Record<string, strin
   cookie: staffCookie,
 });
 
+const createLocalTestHelpers = (localPort: number) => {
+  let localStaffCookie = "";
+
+  const sendRequestLocal = (
+    method: string,
+    path: string,
+    options?: { headers?: Record<string, string>; body?: string | Buffer },
+  ) =>
+    new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>(
+      (resolve, reject) => {
+        const req = request({ host: "127.0.0.1", port: localPort, method, path }, (res) => {
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => {
+            body += chunk;
+          });
+          res.on("end", () => {
+            resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
+          });
+        });
+
+        req.on("error", reject);
+        if (options?.headers) {
+          for (const [key, value] of Object.entries(options.headers)) {
+            req.setHeader(key, value);
+          }
+        }
+        if (options?.body) {
+          req.write(options.body);
+        }
+        req.end();
+      },
+    );
+
+  const loginStaffLocal = async (): Promise<string> => {
+    const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passcode: "test-pass" }),
+    });
+    if (response.status !== 200) {
+      throw new Error(`staff_login_failed:${response.status}`);
+    }
+    const setCookie = response.headers["set-cookie"];
+    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    localStaffCookie = cookieFromSetCookie(String(first ?? ""));
+    return localStaffCookie;
+  };
+
+  const withLocalStaffCookie = (headers?: Record<string, string>): Record<string, string> => ({
+    ...(headers ?? {}),
+    cookie: localStaffCookie,
+  });
+
+  return { sendRequestLocal, loginStaffLocal, withLocalStaffCookie };
+};
+
+const extractPendingCounts = (
+  data: unknown,
+): { count: number; sessionSummaryCount: number } | null => {
+  if (typeof data !== "object" || data === null || !("pending" in data)) {
+    return null;
+  }
+  const pending = (data as { pending?: unknown }).pending;
+  if (typeof pending !== "object" || pending === null) {
+    return null;
+  }
+  const pendingRecord = pending as { count?: unknown; session_summary_count?: unknown };
+  if (
+    typeof pendingRecord.count !== "number" ||
+    typeof pendingRecord.session_summary_count !== "number"
+  ) {
+    return null;
+  }
+  return { count: pendingRecord.count, sessionSummaryCount: pendingRecord.session_summary_count };
+};
+
 const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) => {
   const boundary = "testboundary";
   const lines: Array<string | Buffer> = [
@@ -1565,58 +1641,9 @@ describe("http-server", () => {
           throw new Error("server address unavailable");
         }
         const localPort = address.port;
-
-        const sendRequestLocal = (
-          method: string,
-          path: string,
-          options?: { headers?: Record<string, string>; body?: string | Buffer },
-        ) =>
-          new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>(
-            (resolve, reject) => {
-              const req = request({ host: "127.0.0.1", port: localPort, method, path }, (res) => {
-                let body = "";
-                res.setEncoding("utf8");
-                res.on("data", (chunk) => {
-                  body += chunk;
-                });
-                res.on("end", () => {
-                  resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
-                });
-              });
-
-              req.on("error", reject);
-              if (options?.headers) {
-                for (const [key, value] of Object.entries(options.headers)) {
-                  req.setHeader(key, value);
-                }
-              }
-              if (options?.body) {
-                req.write(options.body);
-              }
-              req.end();
-            },
-          );
-
-        const loginStaffLocal = async (): Promise<string> => {
-          const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ passcode: "test-pass" }),
-          });
-          if (response.status !== 200) {
-            throw new Error(`staff_login_failed:${response.status}`);
-          }
-          const setCookie = response.headers["set-cookie"];
-          const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-          return cookieFromSetCookie(String(first ?? ""));
-        };
-
-        const localStaffCookie = await loginStaffLocal();
-        const withLocalStaffCookie = (
-          headers?: Record<string, string>,
-        ): Record<string, string> => ({
-          ...(headers ?? {}),
-          cookie: localStaffCookie,
-        });
+        const { sendRequestLocal, loginStaffLocal, withLocalStaffCookie } =
+          createLocalTestHelpers(localPort);
+        await loginStaffLocal();
 
         {
           const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
@@ -1699,58 +1726,9 @@ describe("http-server", () => {
           throw new Error("server address unavailable");
         }
         const localPort = address.port;
-
-        const sendRequestLocal = (
-          method: string,
-          path: string,
-          options?: { headers?: Record<string, string>; body?: string | Buffer },
-        ) =>
-          new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>(
-            (resolve, reject) => {
-              const req = request({ host: "127.0.0.1", port: localPort, method, path }, (res) => {
-                let body = "";
-                res.setEncoding("utf8");
-                res.on("data", (chunk) => {
-                  body += chunk;
-                });
-                res.on("end", () => {
-                  resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
-                });
-              });
-
-              req.on("error", reject);
-              if (options?.headers) {
-                for (const [key, value] of Object.entries(options.headers)) {
-                  req.setHeader(key, value);
-                }
-              }
-              if (options?.body) {
-                req.write(options.body);
-              }
-              req.end();
-            },
-          );
-
-        const loginStaffLocal = async (): Promise<string> => {
-          const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ passcode: "test-pass" }),
-          });
-          if (response.status !== 200) {
-            throw new Error(`staff_login_failed:${response.status}`);
-          }
-          const setCookie = response.headers["set-cookie"];
-          const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-          return cookieFromSetCookie(String(first ?? ""));
-        };
-
-        const localStaffCookie = await loginStaffLocal();
-        const withLocalStaffCookie = (
-          headers?: Record<string, string>,
-        ): Record<string, string> => ({
-          ...(headers ?? {}),
-          cookie: localStaffCookie,
-        });
+        const { sendRequestLocal, loginStaffLocal, withLocalStaffCookie } =
+          createLocalTestHelpers(localPort);
+        await loginStaffLocal();
 
         const waitForPendingSnapshot = (
           targetCount: number,
@@ -1812,28 +1790,9 @@ describe("http-server", () => {
                     if (parsed.type !== "staff.snapshot") {
                       continue;
                     }
-                    const count =
-                      typeof parsed.data === "object" &&
-                      parsed.data !== null &&
-                      "pending" in parsed.data &&
-                      typeof (parsed.data as { pending?: unknown }).pending === "object" &&
-                      (parsed.data as { pending?: { count?: unknown } }).pending !== null
-                        ? (parsed.data as { pending?: { count?: unknown } }).pending?.count
-                        : undefined;
-
-                    const sessionSummaryCount =
-                      typeof parsed.data === "object" &&
-                      parsed.data !== null &&
-                      "pending" in parsed.data &&
-                      typeof (parsed.data as { pending?: unknown }).pending === "object" &&
-                      (
-                        parsed.data as {
-                          pending?: { session_summary_count?: unknown };
-                        }
-                      ).pending !== null
-                        ? (parsed.data as { pending?: { session_summary_count?: unknown } }).pending
-                            ?.session_summary_count
-                        : undefined;
+                    const pendingCounts = extractPendingCounts(parsed.data);
+                    const count = pendingCounts?.count;
+                    const sessionSummaryCount = pendingCounts?.sessionSummaryCount;
 
                     if (
                       count === targetCount &&
@@ -1848,7 +1807,7 @@ describe("http-server", () => {
               },
             );
 
-            req.setHeader("cookie", localStaffCookie);
+            req.setHeader("cookie", withLocalStaffCookie().cookie);
 
             timeout = setTimeout(() => {
               req.destroy();
