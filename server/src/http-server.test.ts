@@ -829,6 +829,7 @@ describe("http-server", () => {
         },
         pending: {
           count: 0,
+          session_summary_count: 0,
         },
       });
     });
@@ -1516,12 +1517,12 @@ describe("http-server", () => {
       expect(messages[0]?.type).toBe("staff.snapshot");
       expect(messages[0]?.data).toEqual({
         state: { mode: "ROOM", personal_name: null, phase: "idle" },
-        pending: { count: 0 },
+        pending: { count: 0, session_summary_count: 0 },
       });
       expect(messages[1]?.type).toBe("staff.snapshot");
       expect(messages[1]?.data).toEqual({
         state: { mode: "ROOM", personal_name: null, phase: "listening" },
-        pending: { count: 0 },
+        pending: { count: 0, session_summary_count: 0 },
       });
     });
 
@@ -1751,8 +1752,9 @@ describe("http-server", () => {
           cookie: localStaffCookie,
         });
 
-        const waitForPendingCount = (
+        const waitForPendingSnapshot = (
           targetCount: number,
+          targetSessionSummaryCount: number,
           onFirstMessage: () => Promise<void>,
         ): Promise<Array<{ type: string; seq: number; data: unknown }>> =>
           new Promise((resolve, reject) => {
@@ -1819,7 +1821,24 @@ describe("http-server", () => {
                         ? (parsed.data as { pending?: { count?: unknown } }).pending?.count
                         : undefined;
 
-                    if (count === targetCount) {
+                    const sessionSummaryCount =
+                      typeof parsed.data === "object" &&
+                      parsed.data !== null &&
+                      "pending" in parsed.data &&
+                      typeof (parsed.data as { pending?: unknown }).pending === "object" &&
+                      (
+                        parsed.data as {
+                          pending?: { session_summary_count?: unknown };
+                        }
+                      ).pending !== null
+                        ? (parsed.data as { pending?: { session_summary_count?: unknown } }).pending
+                            ?.session_summary_count
+                        : undefined;
+
+                    if (
+                      count === targetCount &&
+                      sessionSummaryCount === targetSessionSummaryCount
+                    ) {
                       res.destroy();
                       finish(undefined, messages);
                       return;
@@ -1842,7 +1861,7 @@ describe("http-server", () => {
             req.end();
           });
 
-        const messages = await waitForPendingCount(1, async () => {
+        const messages = await waitForPendingSnapshot(0, 1, async () => {
           const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
             headers: withLocalStaffCookie({ "content-type": "application/json" }),
             body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
@@ -1872,14 +1891,14 @@ describe("http-server", () => {
         expect(messages[0]?.type).toBe("staff.snapshot");
         expect(messages[0]?.data).toEqual({
           state: { mode: "ROOM", personal_name: null, phase: "idle" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
 
         const last = messages[messages.length - 1];
         expect(last?.type).toBe("staff.snapshot");
         expect(last?.data).toEqual(
           expect.objectContaining({
-            pending: { count: 1 },
+            pending: { count: 0, session_summary_count: 1 },
           }),
         );
       } finally {

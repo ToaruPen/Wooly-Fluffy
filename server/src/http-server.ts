@@ -296,8 +296,9 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   let lastKioskSnapshotJson = "";
   let lastStaffSnapshotJson = "";
 
-  const getStaffPendingCount = () =>
-    store.listPending().length + store.listPendingSessionSummaries().length;
+  const getStaffPendingCount = () => store.listPending().length;
+
+  const getStaffSessionSummaryPendingCount = () => store.listPendingSessionSummaries().length;
 
   const broadcastKioskSnapshotIfChanged = () => {
     const snapshot = createKioskSnapshot(state);
@@ -313,7 +314,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
   const broadcastStaffSnapshotIfChanged = () => {
     const pendingCount = getStaffPendingCount();
-    const snapshot = createStaffSnapshot(state, pendingCount);
+    const snapshot = createStaffSnapshot(state, pendingCount, getStaffSessionSummaryPendingCount());
     const json = JSON.stringify(snapshot);
     if (json === lastStaffSnapshotJson) {
       return;
@@ -437,7 +438,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         req,
         res,
         "staff.snapshot",
-        createStaffSnapshot(state, getStaffPendingCount()),
+        createStaffSnapshot(state, getStaffPendingCount(), getStaffSessionSummaryPendingCount()),
         sseKeepAliveIntervalMs,
         (client) => {
           staffClients.add(client);

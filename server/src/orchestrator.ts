@@ -250,7 +250,11 @@ export const createKioskSnapshot = (state: OrchestratorState) => ({
   },
 });
 
-export const createStaffSnapshot = (state: OrchestratorState, pending_count: number) => ({
+export const createStaffSnapshot = (
+  state: OrchestratorState,
+  pending_count: number,
+  session_summary_pending_count = 0,
+) => ({
   state: {
     mode: state.mode,
     personal_name: state.personal_name,
@@ -258,6 +262,7 @@ export const createStaffSnapshot = (state: OrchestratorState, pending_count: num
   },
   pending: {
     count: pending_count,
+    session_summary_count: session_summary_pending_count,
   },
 });
 
