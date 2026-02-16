@@ -140,7 +140,7 @@ export type OrchestratorEffect =
     }
   | { type: "STORE_WRITE_SESSION_SUMMARY_PENDING"; input: SessionSummaryPendingInput };
 
-export type SessionSummaryJson = {
+type SessionSummaryJson = {
   summary: string;
   topics: string[];
   staff_notes: string[];

@@ -16,7 +16,7 @@ export type SessionBufferLimits = {
   fold_excerpt_chars: number;
 };
 
-export const DEFAULT_SESSION_BUFFER_LIMITS: SessionBufferLimits = {
+const DEFAULT_SESSION_BUFFER_LIMITS: SessionBufferLimits = {
   max_messages: 100,
   max_message_chars: 400,
   max_total_chars: 20_000,
@@ -81,10 +81,10 @@ const enforceLimits = (buffer: SessionBuffer, limits: SessionBufferLimits): Sess
   while (totalChars(next) > limits.max_total_chars && next.messages.length > 0) {
     next = foldOne(next, limits);
   }
-  while (next.running_summary.length > limits.max_total_chars) {
+  while (next.running_summary.length > limits.max_running_summary_chars) {
     next = {
       ...next,
-      running_summary: next.running_summary.slice(-limits.max_total_chars),
+      running_summary: next.running_summary.slice(-limits.max_running_summary_chars),
     };
   }
   return next;

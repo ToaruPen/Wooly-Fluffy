@@ -1659,6 +1659,236 @@ describe("http-server", () => {
       }
     });
 
+    it("broadcasts staff snapshot when pending session summary is created", async () => {
+      const savedTickInterval = process.env.WF_TICK_INTERVAL_MS;
+      const savedInactivityTimeout = process.env.WF_INACTIVITY_TIMEOUT_MS;
+      process.env.WF_TICK_INTERVAL_MS = "50";
+      process.env.WF_INACTIVITY_TIMEOUT_MS = "10000";
+
+      let now = 0;
+      const localStore = createStore({ db_path: ":memory:" });
+      const localServer = createHttpServer({
+        store: localStore,
+        now_ms: () => now,
+        stt_provider: {
+          transcribe: () => ({ text: "こんにちは" }),
+          health: () => ({ status: "ok" }),
+        },
+      });
+
+      const restoreEnv = () => {
+        if (savedTickInterval === undefined) {
+          delete process.env.WF_TICK_INTERVAL_MS;
+        } else {
+          process.env.WF_TICK_INTERVAL_MS = savedTickInterval;
+        }
+        if (savedInactivityTimeout === undefined) {
+          delete process.env.WF_INACTIVITY_TIMEOUT_MS;
+        } else {
+          process.env.WF_INACTIVITY_TIMEOUT_MS = savedInactivityTimeout;
+        }
+      };
+
+      try {
+        await new Promise<void>((resolve) => {
+          localServer.listen(0, "127.0.0.1", resolve);
+        });
+        const address = localServer.address();
+        if (!address || typeof address === "string") {
+          throw new Error("server address unavailable");
+        }
+        const localPort = address.port;
+
+        const sendRequestLocal = (
+          method: string,
+          path: string,
+          options?: { headers?: Record<string, string>; body?: string | Buffer },
+        ) =>
+          new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>(
+            (resolve, reject) => {
+              const req = request({ host: "127.0.0.1", port: localPort, method, path }, (res) => {
+                let body = "";
+                res.setEncoding("utf8");
+                res.on("data", (chunk) => {
+                  body += chunk;
+                });
+                res.on("end", () => {
+                  resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
+                });
+              });
+
+              req.on("error", reject);
+              if (options?.headers) {
+                for (const [key, value] of Object.entries(options.headers)) {
+                  req.setHeader(key, value);
+                }
+              }
+              if (options?.body) {
+                req.write(options.body);
+              }
+              req.end();
+            },
+          );
+
+        const loginStaffLocal = async (): Promise<string> => {
+          const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ passcode: "test-pass" }),
+          });
+          if (response.status !== 200) {
+            throw new Error(`staff_login_failed:${response.status}`);
+          }
+          const setCookie = response.headers["set-cookie"];
+          const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+          return cookieFromSetCookie(String(first ?? ""));
+        };
+
+        const localStaffCookie = await loginStaffLocal();
+        const withLocalStaffCookie = (
+          headers?: Record<string, string>,
+        ): Record<string, string> => ({
+          ...(headers ?? {}),
+          cookie: localStaffCookie,
+        });
+
+        const waitForPendingCount = (
+          targetCount: number,
+          onFirstMessage: () => Promise<void>,
+        ): Promise<Array<{ type: string; seq: number; data: unknown }>> =>
+          new Promise((resolve, reject) => {
+            const messages: Array<{ type: string; seq: number; data: unknown }> = [];
+            let done = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+
+            const finish = (
+              err?: Error,
+              result?: Array<{ type: string; seq: number; data: unknown }>,
+            ) => {
+              if (done) {
+                return;
+              }
+              done = true;
+              if (timeout) {
+                clearTimeout(timeout);
+              }
+              if (err) {
+                reject(err);
+                return;
+              }
+              resolve(result ?? []);
+            };
+
+            const req = request(
+              { host: "127.0.0.1", port: localPort, method: "GET", path: "/api/v1/staff/stream" },
+              (res) => {
+                let buffer = "";
+                res.setEncoding("utf8");
+                res.on("data", (chunk) => {
+                  buffer += chunk;
+                  while (true) {
+                    const endIndex = buffer.indexOf("\n\n");
+                    if (endIndex === -1) {
+                      return;
+                    }
+                    const eventChunk = buffer.slice(0, endIndex);
+                    buffer = buffer.slice(endIndex + 2);
+                    const lines = eventChunk.split("\n");
+                    const dataLine = lines.find((line) => line.startsWith("data: "));
+                    if (!dataLine) {
+                      continue;
+                    }
+                    const parsed = JSON.parse(dataLine.slice("data: ".length)) as {
+                      type: string;
+                      seq: number;
+                      data: unknown;
+                    };
+                    messages.push(parsed);
+                    if (messages.length === 1) {
+                      void onFirstMessage();
+                    }
+
+                    if (parsed.type !== "staff.snapshot") {
+                      continue;
+                    }
+                    const count =
+                      typeof parsed.data === "object" &&
+                      parsed.data !== null &&
+                      "pending" in parsed.data &&
+                      typeof (parsed.data as { pending?: unknown }).pending === "object" &&
+                      (parsed.data as { pending?: { count?: unknown } }).pending !== null
+                        ? (parsed.data as { pending?: { count?: unknown } }).pending?.count
+                        : undefined;
+
+                    if (count === targetCount) {
+                      res.destroy();
+                      finish(undefined, messages);
+                      return;
+                    }
+                  }
+                });
+              },
+            );
+
+            req.setHeader("cookie", localStaffCookie);
+
+            timeout = setTimeout(() => {
+              req.destroy();
+              finish(new Error("sse_timeout"));
+            }, 3000);
+
+            req.on("error", (err) => {
+              finish(err instanceof Error ? err : new Error("request_error"));
+            });
+            req.end();
+          });
+
+        const messages = await waitForPendingCount(1, async () => {
+          const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            headers: withLocalStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+          });
+          expect(down.status).toBe(200);
+
+          const up = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            headers: withLocalStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+          });
+          expect(up.status).toBe(200);
+
+          const multipart = buildMultipartBody({
+            stt_request_id: "stt-1",
+            audio: Buffer.from("dummy", "utf8"),
+          });
+          const audio = await sendRequestLocal("POST", "/api/v1/kiosk/stt-audio", {
+            headers: { "content-type": multipart.contentType },
+            body: multipart.body,
+          });
+          expect(audio.status).toBe(202);
+
+          now = 10_001;
+        });
+
+        expect(messages.length).toBeGreaterThan(1);
+        expect(messages[0]?.type).toBe("staff.snapshot");
+        expect(messages[0]?.data).toEqual({
+          state: { mode: "ROOM", personal_name: null, phase: "idle" },
+          pending: { count: 0 },
+        });
+
+        const last = messages[messages.length - 1];
+        expect(last?.type).toBe("staff.snapshot");
+        expect(last?.data).toEqual(
+          expect.objectContaining({
+            pending: { count: 1 },
+          }),
+        );
+      } finally {
+        await closeServerWithTimeout(localServer);
+        localStore.close();
+        restoreEnv();
+      }
+    });
+
     it("does not create memory pending when personal mode is disabled", async () => {
       {
         const down = await sendRequest("POST", "/api/v1/staff/event", {

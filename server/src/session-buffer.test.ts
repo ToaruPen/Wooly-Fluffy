@@ -69,16 +69,16 @@ describe("session-buffer", () => {
 
     expect(buf.running_summary.length).toBeGreaterThan(0);
     expect(buf.messages.length).toBeLessThan(2);
-    expect(buf.running_summary.length).toBeLessThanOrEqual(tight.max_total_chars);
+    expect(buf.running_summary.length).toBeLessThanOrEqual(tight.max_running_summary_chars);
   });
 
-  it("clamps running_summary to max_total_chars", () => {
+  it("clamps running_summary to max_running_summary_chars", () => {
     const tight: SessionBufferLimits = {
       ...limits,
       max_messages: 0,
       max_total_chars: 2,
       max_message_chars: 400,
-      max_running_summary_chars: 50,
+      max_running_summary_chars: 2,
       fold_excerpt_chars: 10,
     };
 
@@ -88,7 +88,27 @@ describe("session-buffer", () => {
       tight,
     );
     expect(buf.messages).toEqual([]);
-    expect(buf.running_summary.length).toBeLessThanOrEqual(2);
+    expect(buf.running_summary.length).toBeLessThanOrEqual(tight.max_running_summary_chars);
+  });
+
+  it("trims pre-existing running_summary when it exceeds max_running_summary_chars", () => {
+    const tight: SessionBufferLimits = {
+      ...limits,
+      max_messages: 10,
+      max_total_chars: 1_000,
+      max_running_summary_chars: 2,
+      max_message_chars: 10,
+      fold_excerpt_chars: 10,
+    };
+
+    const buf = appendToSessionBuffer(
+      { running_summary: "abcdef", messages: [] },
+      { role: "user", text: "x" },
+      tight,
+    );
+
+    expect(buf.running_summary).toBe("ef");
+    expect(buf.messages).toEqual([{ role: "user", text: "x" }]);
   });
 
   it("clamps a message to empty when max_message_chars is 0", () => {
