@@ -2582,6 +2582,24 @@ describe("llm-provider (env)", () => {
           staff_notes: [],
         },
       });
+
+      const consentDecision = await llm.inner_task.call({
+        task: "consent_decision",
+        input: { text: "hi" },
+      });
+      expect(JSON.parse(consentDecision.json_text)).toEqual({
+        task: "consent_decision",
+        answer: "unknown",
+      });
+
+      const memoryExtract = await llm.inner_task.call({
+        task: "memory_extract",
+        input: { assistant_text: "hi" },
+      });
+      expect(JSON.parse(memoryExtract.json_text)).toEqual({
+        task: "memory_extract",
+        candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" },
+      });
     } finally {
       process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
       process.env.LLM_BASE_URL = saved.LLM_BASE_URL;

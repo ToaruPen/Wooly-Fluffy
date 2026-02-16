@@ -33,18 +33,23 @@ const store = (() => {
   }
 })();
 
-try {
-  store.housekeepExpired();
-} catch (err) {
-  console.error(err);
-}
-
-const housekeepingTimer = setInterval(() => {
+const runHousekeeping = () => {
   try {
     store.housekeepExpired();
   } catch (err) {
     console.error(err);
   }
+  try {
+    store.housekeepExpiredSessionSummaries();
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+runHousekeeping();
+
+const housekeepingTimer = setInterval(() => {
+  runHousekeeping();
 }, 600_000);
 
 housekeepingTimer.unref?.();

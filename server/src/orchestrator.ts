@@ -1,3 +1,12 @@
+import {
+  appendToSessionBuffer,
+  buildSessionSummaryMessages,
+  createEmptySessionBuffer,
+  hasSessionBufferContent,
+  type SessionBuffer,
+} from "./session-buffer.js";
+import { maskLikelyPii } from "./safety/pii-mask.js";
+
 export type Mode = "ROOM" | "PERSONAL";
 
 export type Expression = "neutral" | "happy" | "sad" | "surprised";
@@ -50,6 +59,7 @@ export type InFlight = {
   chat_request_id: string | null;
   consent_inner_task_request_id: string | null;
   memory_extract_request_id: string | null;
+  session_summary_request_id: string | null;
 };
 
 export type OrchestratorState = {
@@ -57,6 +67,7 @@ export type OrchestratorState = {
   personal_name: string | null;
   phase: Phase;
   last_action_at_ms: number;
+  session_buffer: SessionBuffer;
   consent_deadline_at_ms: number | null;
   memory_candidate: MemoryCandidate | null;
   in_flight: InFlight;
@@ -126,7 +137,58 @@ export type OrchestratorEffect =
         value: string;
         source_quote?: string;
       };
-    };
+    }
+  | { type: "STORE_WRITE_SESSION_SUMMARY_PENDING"; input: SessionSummaryPendingInput };
+
+type SessionSummaryJson = {
+  summary: string;
+  topics: string[];
+  staff_notes: string[];
+};
+
+export type SessionSummaryPendingInput = {
+  title: string;
+  summary_json: SessionSummaryJson;
+};
+
+const SESSION_SUMMARY_LIMITS = {
+  title_max_len: 60,
+  title_min_len: 1,
+  summary_max_len: 400,
+  summary_min_len: 1,
+  topics_max: 5,
+  topic_max_len: 40,
+  staff_notes_max: 5,
+  staff_note_max_len: 80,
+} as const;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return false;
+  }
+  return true;
+};
+
+const clampString = (value: string, maxLen: number): string => value.slice(0, Math.max(0, maxLen));
+
+const normalizeSessionSummaryText = (value: string, maxLen: number): string =>
+  clampString(maskLikelyPii(value.trim()), maxLen)
+    .trim()
+    .replace(/\u3000/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const FALLBACK_SESSION_SUMMARY_PENDING_INPUT: SessionSummaryPendingInput = {
+  title: "要約",
+  summary_json: {
+    summary: "要約を生成できませんでした。",
+    topics: [],
+    staff_notes: [],
+  },
+};
 
 const toToolCallLite = (call: ToolCall): ToolCallLite => ({
   id: call.id,
@@ -159,6 +221,7 @@ const createEmptyInFlight = (): InFlight => ({
   chat_request_id: null,
   consent_inner_task_request_id: null,
   memory_extract_request_id: null,
+  session_summary_request_id: null,
 });
 
 export const createInitialState = (now: number): OrchestratorState => ({
@@ -166,6 +229,7 @@ export const createInitialState = (now: number): OrchestratorState => ({
   personal_name: null,
   phase: "idle",
   last_action_at_ms: now,
+  session_buffer: createEmptySessionBuffer(),
   consent_deadline_at_ms: null,
   memory_candidate: null,
   in_flight: createEmptyInFlight(),
@@ -186,7 +250,11 @@ export const createKioskSnapshot = (state: OrchestratorState) => ({
   },
 });
 
-export const createStaffSnapshot = (state: OrchestratorState, pending_count: number) => ({
+export const createStaffSnapshot = (
+  state: OrchestratorState,
+  pending_count: number,
+  session_summary_pending_count = 0,
+) => ({
   state: {
     mode: state.mode,
     personal_name: state.personal_name,
@@ -194,31 +262,12 @@ export const createStaffSnapshot = (state: OrchestratorState, pending_count: num
   },
   pending: {
     count: pending_count,
+    session_summary_count: session_summary_pending_count,
   },
 });
 
 export const initialKioskSnapshot = createKioskSnapshot(createInitialState(0));
 export const initialStaffSnapshot = createStaffSnapshot(createInitialState(0), 0);
-
-const normalizeText = (text: string) =>
-  text
-    .replace(/\u3000/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-
-const extractPersonalName = (text: string): string | null => {
-  const normalized = normalizeText(text);
-  const match = normalized.match(/^パーソナル(?:[、,\s]+)([^\s、,。．.!?]+)/);
-  if (!match) {
-    return null;
-  }
-  return match[1];
-};
-
-const isRoomCommand = (text: string): boolean => {
-  const normalized = normalizeText(text);
-  return normalized === "ルーム" || normalized === "ルームに戻る";
-};
 
 const nextRequestId = (
   state: OrchestratorState,
@@ -237,6 +286,7 @@ const resetForRoom = (state: OrchestratorState, now: number) => ({
   personal_name: null,
   phase: "idle" as const,
   last_action_at_ms: now,
+  session_buffer: createEmptySessionBuffer(),
   consent_deadline_at_ms: null,
   memory_candidate: null,
   in_flight: createEmptyInFlight(),
@@ -303,6 +353,79 @@ const parseMemoryCandidate = (json_text: string): MemoryCandidate | null => {
       kind,
       value,
       ...(source_quote ? { source_quote } : {}),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const parseSessionSummaryPendingInput = (json_text: string): SessionSummaryPendingInput | null => {
+  try {
+    const parsed = JSON.parse(json_text) as unknown;
+    if (!isPlainObject(parsed)) {
+      return null;
+    }
+    if (!("task" in parsed) || !("title" in parsed) || !("summary_json" in parsed)) {
+      return null;
+    }
+    if (parsed.task !== "session_summary") {
+      return null;
+    }
+    if (typeof parsed.title !== "string") {
+      return null;
+    }
+    if (!isPlainObject(parsed.summary_json)) {
+      return null;
+    }
+
+    const title = normalizeSessionSummaryText(parsed.title, SESSION_SUMMARY_LIMITS.title_max_len);
+    if (title.length < SESSION_SUMMARY_LIMITS.title_min_len) {
+      return null;
+    }
+
+    const summaryJson = parsed.summary_json;
+    if (
+      !("summary" in summaryJson) ||
+      !("topics" in summaryJson) ||
+      !("staff_notes" in summaryJson)
+    ) {
+      return null;
+    }
+    const rawSummary = summaryJson.summary;
+    const rawTopics = summaryJson.topics;
+    const rawStaffNotes = summaryJson.staff_notes;
+    if (typeof rawSummary !== "string") {
+      return null;
+    }
+    if (!Array.isArray(rawTopics) || !rawTopics.every((t) => typeof t === "string")) {
+      return null;
+    }
+    if (!Array.isArray(rawStaffNotes) || !rawStaffNotes.every((t) => typeof t === "string")) {
+      return null;
+    }
+
+    const summary = normalizeSessionSummaryText(rawSummary, SESSION_SUMMARY_LIMITS.summary_max_len);
+    if (summary.length < SESSION_SUMMARY_LIMITS.summary_min_len) {
+      return null;
+    }
+
+    const topics = rawTopics
+      .map((t) => normalizeSessionSummaryText(t, SESSION_SUMMARY_LIMITS.topic_max_len))
+      .filter((t) => t.length > 0)
+      .slice(0, SESSION_SUMMARY_LIMITS.topics_max);
+
+    const staff_notes = rawStaffNotes
+      .map((t) => normalizeSessionSummaryText(t, SESSION_SUMMARY_LIMITS.staff_note_max_len))
+      .filter((t) => t.length > 0)
+      .slice(0, SESSION_SUMMARY_LIMITS.staff_notes_max);
+
+    return {
+      title,
+      summary_json: {
+        summary,
+        topics,
+        staff_notes,
+      },
     };
   } catch {
     return null;
@@ -458,17 +581,6 @@ export const reduceOrchestrator = (
         ...state,
         in_flight: { ...state.in_flight, stt_request_id: null },
       };
-      if (isRoomCommand(event.text)) {
-        const nextState = resetForRoom(withCleared, now);
-        return {
-          next_state: nextState,
-          effects: [
-            { type: "SET_MODE", mode: "ROOM" },
-            { type: "SHOW_CONSENT_UI", visible: false },
-          ],
-        };
-      }
-
       if (state.consent_deadline_at_ms !== null && state.memory_candidate) {
         const { id, state: withId } = nextRequestId(withCleared, "inner");
         return {
@@ -491,24 +603,16 @@ export const reduceOrchestrator = (
         };
       }
 
-      const personalName = extractPersonalName(event.text);
-      if (personalName) {
-        const nextState: OrchestratorState = {
-          ...withCleared,
-          mode: "PERSONAL",
-          personal_name: personalName,
-          phase: "idle",
-          consent_deadline_at_ms: null,
-          memory_candidate: null,
-        };
-        return {
-          next_state: nextState,
-          effects: [{ type: "SET_MODE", mode: "PERSONAL", personal_name: personalName }],
-        };
-      }
-
       {
-        const { id, state: withId } = nextRequestId(withCleared, "chat");
+        const withMessage: OrchestratorState = {
+          ...withCleared,
+          last_action_at_ms: now,
+          session_buffer: appendToSessionBuffer(withCleared.session_buffer, {
+            role: "user",
+            text: event.text,
+          }),
+        };
+        const { id, state: withId } = nextRequestId(withMessage, "chat");
         return {
           next_state: {
             ...withId,
@@ -556,6 +660,14 @@ export const reduceOrchestrator = (
         ...state,
         in_flight: { ...state.in_flight, chat_request_id: null },
       };
+      const withMessage: OrchestratorState = {
+        ...cleared,
+        last_action_at_ms: now,
+        session_buffer: appendToSessionBuffer(cleared.session_buffer, {
+          role: "assistant",
+          text: event.assistant_text,
+        }),
+      };
       const effects: OrchestratorEffect[] = [
         {
           type: "SET_EXPRESSION",
@@ -601,7 +713,7 @@ export const reduceOrchestrator = (
         };
       }
       return {
-        next_state: { ...cleared, phase: "idle" },
+        next_state: { ...withMessage, phase: "idle" },
         effects,
       };
     }
@@ -626,6 +738,23 @@ export const reduceOrchestrator = (
       };
     }
     case "INNER_TASK_RESULT": {
+      if (state.in_flight.session_summary_request_id === event.request_id) {
+        const input =
+          parseSessionSummaryPendingInput(event.json_text) ??
+          FALLBACK_SESSION_SUMMARY_PENDING_INPUT;
+        const nextState: OrchestratorState = {
+          ...state,
+          in_flight: {
+            ...state.in_flight,
+            session_summary_request_id: null,
+          },
+        };
+        return {
+          next_state: nextState,
+          effects: [{ type: "STORE_WRITE_SESSION_SUMMARY_PENDING", input }],
+        };
+      }
+
       if (state.in_flight.memory_extract_request_id === event.request_id) {
         const candidate = parseMemoryCandidate(event.json_text);
         if (!candidate) {
@@ -714,6 +843,23 @@ export const reduceOrchestrator = (
       return { next_state: state, effects: [] };
     }
     case "INNER_TASK_FAILED": {
+      if (state.in_flight.session_summary_request_id === event.request_id) {
+        return {
+          next_state: {
+            ...state,
+            in_flight: {
+              ...state.in_flight,
+              session_summary_request_id: null,
+            },
+          },
+          effects: [
+            {
+              type: "STORE_WRITE_SESSION_SUMMARY_PENDING",
+              input: FALLBACK_SESSION_SUMMARY_PENDING_INPUT,
+            },
+          ],
+        };
+      }
       if (state.in_flight.memory_extract_request_id === event.request_id) {
         return {
           next_state: {
@@ -794,20 +940,30 @@ export const reduceOrchestrator = (
         };
       }
       if (
-        state.mode === "PERSONAL" &&
-        now - state.last_action_at_ms >= config.inactivity_timeout_ms
+        state.phase === "idle" &&
+        state.in_flight.session_summary_request_id === null &&
+        now - state.last_action_at_ms >= config.inactivity_timeout_ms &&
+        hasSessionBufferContent(state.session_buffer)
       ) {
-        const nextState = resetForRoom(state, now);
+        const messages = buildSessionSummaryMessages(state.session_buffer);
+        const { id, state: withId } = nextRequestId(state, "inner");
         return {
-          next_state: nextState,
+          next_state: {
+            ...withId,
+            phase: "idle",
+            session_buffer: createEmptySessionBuffer(),
+            in_flight: {
+              ...withId.in_flight,
+              session_summary_request_id: id,
+            },
+          },
           effects: [
             {
-              type: "PLAY_MOTION",
-              motion_id: "idle",
-              motion_instance_id: "motion-inactivity-timeout",
+              type: "CALL_INNER_TASK",
+              request_id: id,
+              task: "session_summary",
+              input: { messages },
             },
-            { type: "SET_MODE", mode: "ROOM" },
-            { type: "SHOW_CONSENT_UI", visible: false },
           ],
         };
       }

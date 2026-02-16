@@ -274,8 +274,7 @@ describe("http-server (async llm provider)", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates pending via async llm chat + inner_task", async () => {
-    // 1st utterance: enter PERSONAL
+  it("does not create memory pending when personal mode is disabled", async () => {
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
@@ -298,34 +297,6 @@ describe("http-server (async llm provider)", () => {
       expect(audio.status).toBe(202);
     }
 
-    // 2nd utterance: triggers async chat + memory_extract
-    {
-      const down = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
-      });
-      expect(down.status).toBe(200);
-      const up = await sendRequest("POST", "/api/v1/staff/event", {
-        headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
-      });
-      expect(up.status).toBe(200);
-      const multipart = buildMultipartBody({
-        stt_request_id: "stt-2",
-        audio: Buffer.from("dummy", "utf8"),
-      });
-      const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-        headers: { "content-type": multipart.contentType },
-        body: multipart.body,
-      });
-      expect(audio.status).toBe(202);
-    }
-
-    // Let async LLM tasks enqueue their events.
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 0);
-    });
-
     const consent = await sendRequest("POST", "/api/v1/kiosk/event", {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
@@ -337,7 +308,7 @@ describe("http-server (async llm provider)", () => {
     });
     expect(list.status).toBe(200);
     const parsed = JSON.parse(list.body) as { items: Array<{ id: string }> };
-    expect(parsed.items.length).toBe(1);
+    expect(parsed.items.length).toBe(0);
   });
 
   it("streams kiosk.command.tool_calls without arguments", async () => {
