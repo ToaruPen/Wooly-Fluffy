@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { OrchestratorEffect, OrchestratorEvent } from "./orchestrator.js";
-import { createEffectExecutor } from "./effect-executor.js";
+import { createEffectExecutor as createEffectExecutorBase } from "./effect-executor.js";
 import type { Providers } from "./providers/types.js";
+
+type CreateEffectExecutorDeps = Parameters<typeof createEffectExecutorBase>[0];
+
+const createEffectExecutor = (
+  deps: Omit<CreateEffectExecutorDeps, "storeWriteSessionSummaryPending"> &
+    Partial<Pick<CreateEffectExecutorDeps, "storeWriteSessionSummaryPending">>,
+) =>
+  createEffectExecutorBase({
+    ...deps,
+    storeWriteSessionSummaryPending: deps.storeWriteSessionSummaryPending ?? (() => {}),
+  });
 
 const flushMicrotasks = async (): Promise<void> => {
   await Promise.resolve();
@@ -303,6 +314,36 @@ describe("effect-executor", () => {
     ]);
 
     expect(writes).toEqual([{ personal_name: "taro", kind: "likes", value: "apples" }]);
+  });
+
+  it("calls storeWriteSessionSummaryPending for STORE_WRITE_SESSION_SUMMARY_PENDING", () => {
+    const providers = createStubProviders();
+
+    const writes: Array<object> = [];
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+      storeWriteSessionSummaryPending: (input) => {
+        writes.push(input);
+      },
+    });
+
+    executor.executeEffects([
+      {
+        type: "STORE_WRITE_SESSION_SUMMARY_PENDING",
+        input: {
+          title: "t",
+          summary_json: { summary: "s", topics: [], staff_notes: [] },
+        },
+      },
+    ]);
+
+    expect(writes).toEqual([
+      { title: "t", summary_json: { summary: "s", topics: [], staff_notes: [] } },
+    ]);
   });
 
   it("sends kiosk.command.speak without expression by default", () => {

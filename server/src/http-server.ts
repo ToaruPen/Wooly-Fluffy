@@ -14,6 +14,10 @@ import {
   type OrchestratorState,
 } from "./orchestrator.js";
 import { createEffectExecutor } from "./effect-executor.js";
+import {
+  createStoreWritePending,
+  createStoreWriteSessionSummaryPending,
+} from "./http/pending-writer.js";
 import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
 import type { Providers } from "./providers/types.js";
@@ -214,7 +218,6 @@ const mapPendingToDto = (item: {
   personal_name: item.personal_name,
   kind: item.kind,
   value: item.value,
-  ...(item.source_quote ? { source_quote: item.source_quote } : {}),
   status: item.status,
   created_at_ms: item.created_at_ms,
   expires_at_ms: item.expires_at_ms,
@@ -351,10 +354,11 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     onSttRequested: (request_id) => {
       pendingStt.add(request_id);
     },
-    storeWritePending: (input) => {
-      store.createPending(input);
-      broadcastStaffSnapshotIfChanged();
-    },
+    storeWritePending: createStoreWritePending({ store, broadcastStaffSnapshotIfChanged }),
+    storeWriteSessionSummaryPending: createStoreWriteSessionSummaryPending({
+      store,
+      broadcastStaffSnapshotIfChanged,
+    }),
   });
 
   const processEvent = (event: OrchestratorEvent, now: number) => {

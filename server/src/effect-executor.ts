@@ -18,6 +18,10 @@ type StoreWritePending = (
   input: Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }>["input"],
 ) => void;
 
+type StoreWriteSessionSummaryPending = (
+  input: Extract<OrchestratorEffect, { type: "STORE_WRITE_SESSION_SUMMARY_PENDING" }>["input"],
+) => void;
+
 type EffectExecutor = {
   executeEffects: (effects: OrchestratorEffect[]) => OrchestratorEvent[];
   transcribeStt: (input: { request_id: string; mode: Mode; wav: Buffer }) => void;
@@ -29,6 +33,7 @@ export const createEffectExecutor = (deps: {
   enqueueEvent: (event: OrchestratorEvent) => void;
   onSttRequested: (request_id: string) => void;
   storeWritePending: StoreWritePending;
+  storeWriteSessionSummaryPending: StoreWriteSessionSummaryPending;
 }) => {
   let saySeq = 0;
   let currentExpression: string | null = null;
@@ -146,6 +151,9 @@ export const createEffectExecutor = (deps: {
           break;
         case "STORE_WRITE_PENDING":
           deps.storeWritePending(effect.input);
+          break;
+        case "STORE_WRITE_SESSION_SUMMARY_PENDING":
+          deps.storeWriteSessionSummaryPending(effect.input);
           break;
         case "SET_MODE":
         case "SHOW_CONSENT_UI":

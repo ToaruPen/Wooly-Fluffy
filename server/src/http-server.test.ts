@@ -278,6 +278,34 @@ const readFirstSseMessage = (path: string, options?: { headers?: Record<string, 
     req.end();
   });
 
+const closeServerWithTimeout = (
+  serverToClose: Pick<Server, "close">,
+  timeoutMs = 2000,
+): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    let isDone = false;
+    const timeout = setTimeout(() => {
+      if (isDone) {
+        return;
+      }
+      isDone = true;
+      reject(new Error("server_close_timeout"));
+    }, timeoutMs);
+
+    serverToClose.close((error) => {
+      if (isDone) {
+        return;
+      }
+      isDone = true;
+      clearTimeout(timeout);
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+
 beforeEach(async () => {
   vi.stubGlobal("fetch", (async (input: unknown) => {
     const url = String(input);
@@ -446,15 +474,7 @@ describe("http-server", () => {
         };
         expect(parsed.providers.stt.status).toBe("unavailable");
       } finally {
-        await new Promise<void>((resolve, reject) => {
-          localServer.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        });
+        await closeServerWithTimeout(localServer);
         localStore.close();
         if (prevCli === undefined) {
           delete process.env.WHISPER_CPP_CLI_PATH;
@@ -1370,6 +1390,25 @@ describe("http-server", () => {
       expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
     });
 
+    it("supports staff pending confirm endpoint", async () => {
+      const id = store.createPending({
+        personal_name: "taro",
+        kind: "likes",
+        value: "apples",
+      });
+      const confirm = await sendRequest("POST", `/api/v1/staff/pending/${id}/confirm`, {
+        headers: withStaffCookie(),
+      });
+      expect(confirm.status).toBe(200);
+      expect(JSON.parse(confirm.body)).toEqual({ ok: true });
+
+      const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(listAfter.status).toBe(200);
+      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
+    });
+
     it("returns 404 for staff pending deny when id not found", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny", {
         headers: withStaffCookie(),
@@ -1443,6 +1482,22 @@ describe("http-server", () => {
       expect(parsed.items[0]).not.toHaveProperty("source_quote");
     });
 
+    it("omits source_quote even when present", async () => {
+      store.createPending({
+        personal_name: "taro",
+        kind: "likes",
+        value: "apples",
+        source_quote: "I like apples",
+      });
+      const list = await sendRequest("GET", "/api/v1/staff/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(list.status).toBe(200);
+      const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
+      expect(parsed.items.length).toBe(1);
+      expect(parsed.items[0]).not.toHaveProperty("source_quote");
+    });
+
     it("broadcasts staff snapshot after staff event", async () => {
       const messages = await readSseDataMessages(
         "/api/v1/staff/stream",
@@ -1470,8 +1525,141 @@ describe("http-server", () => {
       });
     });
 
-    it("creates pending via orchestrator consent and confirms it", async () => {
-      // 1st utterance: enter PERSONAL
+    it("creates pending session summary after inactivity", async () => {
+      const savedTickInterval = process.env.WF_TICK_INTERVAL_MS;
+      const savedInactivityTimeout = process.env.WF_INACTIVITY_TIMEOUT_MS;
+      process.env.WF_TICK_INTERVAL_MS = "50";
+      process.env.WF_INACTIVITY_TIMEOUT_MS = "10000";
+
+      let now = 0;
+      const localStore = createStore({ db_path: ":memory:" });
+      const localServer = createHttpServer({
+        store: localStore,
+        now_ms: () => now,
+        stt_provider: {
+          transcribe: () => ({ text: "こんにちは" }),
+          health: () => ({ status: "ok" }),
+        },
+      });
+
+      const restoreEnv = () => {
+        if (savedTickInterval === undefined) {
+          delete process.env.WF_TICK_INTERVAL_MS;
+        } else {
+          process.env.WF_TICK_INTERVAL_MS = savedTickInterval;
+        }
+        if (savedInactivityTimeout === undefined) {
+          delete process.env.WF_INACTIVITY_TIMEOUT_MS;
+        } else {
+          process.env.WF_INACTIVITY_TIMEOUT_MS = savedInactivityTimeout;
+        }
+      };
+
+      try {
+        await new Promise<void>((resolve) => {
+          localServer.listen(0, "127.0.0.1", resolve);
+        });
+        const address = localServer.address();
+        if (!address || typeof address === "string") {
+          throw new Error("server address unavailable");
+        }
+        const localPort = address.port;
+
+        const sendRequestLocal = (
+          method: string,
+          path: string,
+          options?: { headers?: Record<string, string>; body?: string | Buffer },
+        ) =>
+          new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>(
+            (resolve, reject) => {
+              const req = request({ host: "127.0.0.1", port: localPort, method, path }, (res) => {
+                let body = "";
+                res.setEncoding("utf8");
+                res.on("data", (chunk) => {
+                  body += chunk;
+                });
+                res.on("end", () => {
+                  resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
+                });
+              });
+
+              req.on("error", reject);
+              if (options?.headers) {
+                for (const [key, value] of Object.entries(options.headers)) {
+                  req.setHeader(key, value);
+                }
+              }
+              if (options?.body) {
+                req.write(options.body);
+              }
+              req.end();
+            },
+          );
+
+        const loginStaffLocal = async (): Promise<string> => {
+          const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ passcode: "test-pass" }),
+          });
+          if (response.status !== 200) {
+            throw new Error(`staff_login_failed:${response.status}`);
+          }
+          const setCookie = response.headers["set-cookie"];
+          const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+          return cookieFromSetCookie(String(first ?? ""));
+        };
+
+        const localStaffCookie = await loginStaffLocal();
+        const withLocalStaffCookie = (
+          headers?: Record<string, string>,
+        ): Record<string, string> => ({
+          ...(headers ?? {}),
+          cookie: localStaffCookie,
+        });
+
+        {
+          const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            headers: withLocalStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+          });
+          expect(down.status).toBe(200);
+          const up = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            headers: withLocalStaffCookie({ "content-type": "application/json" }),
+            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+          });
+          expect(up.status).toBe(200);
+          const multipart = buildMultipartBody({
+            stt_request_id: "stt-1",
+            audio: Buffer.from("dummy", "utf8"),
+          });
+          const audio = await sendRequestLocal("POST", "/api/v1/kiosk/stt-audio", {
+            headers: { "content-type": multipart.contentType },
+            body: multipart.body,
+          });
+          expect(audio.status).toBe(202);
+        }
+
+        now = 10_001;
+        const deadline = Date.now() + 1000;
+        while (Date.now() < deadline) {
+          const summaries = localStore.listPendingSessionSummaries();
+          if (summaries.length > 0) {
+            break;
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
+
+        const summaries = localStore.listPendingSessionSummaries();
+        expect(summaries.length).toBe(1);
+        expect(summaries[0]?.status).toBe("pending");
+      } finally {
+        await closeServerWithTimeout(localServer);
+        localStore.close();
+        restoreEnv();
+      }
+    });
+
+    it("does not create memory pending when personal mode is disabled", async () => {
       {
         const down = await sendRequest("POST", "/api/v1/staff/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
@@ -1494,82 +1682,19 @@ describe("http-server", () => {
         expect(audio.status).toBe(202);
       }
 
-      // 2nd utterance: triggers memory_extract stub -> consent UI visible
-      {
-        const down = await sendRequest("POST", "/api/v1/staff/event", {
-          headers: withStaffCookie({ "content-type": "application/json" }),
-          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
-        });
-        expect(down.status).toBe(200);
-        const up = await sendRequest("POST", "/api/v1/staff/event", {
-          headers: withStaffCookie({ "content-type": "application/json" }),
-          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
-        });
-        expect(up.status).toBe(200);
-        const multipart = buildMultipartBody({
-          stt_request_id: "stt-2",
-          audio: Buffer.from("dummy", "utf8"),
-        });
-        const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-          headers: { "content-type": multipart.contentType },
-          body: multipart.body,
-        });
-        expect(audio.status).toBe(202);
-      }
-
-      // 3rd utterance while waiting for consent: triggers consent_decision inner task
-      {
-        const down = await sendRequest("POST", "/api/v1/staff/event", {
-          headers: withStaffCookie({ "content-type": "application/json" }),
-          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
-        });
-        expect(down.status).toBe(200);
-        const up = await sendRequest("POST", "/api/v1/staff/event", {
-          headers: withStaffCookie({ "content-type": "application/json" }),
-          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
-        });
-        expect(up.status).toBe(200);
-        const multipart = buildMultipartBody({
-          stt_request_id: "stt-5",
-          audio: Buffer.from("dummy", "utf8"),
-        });
-        const audio = await sendRequest("POST", "/api/v1/kiosk/stt-audio", {
-          headers: { "content-type": multipart.contentType },
-          body: multipart.body,
-        });
-        expect(audio.status).toBe(202);
-      }
-
-      // Consent
-      {
-        const response = await sendRequest("POST", "/api/v1/kiosk/event", {
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
-        });
-        expect(response.status).toBe(200);
-        expect(JSON.parse(response.body)).toEqual({ ok: true });
-      }
+      const response = await sendRequest("POST", "/api/v1/kiosk/event", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
+      });
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ ok: true });
 
       const list = await sendRequest("GET", "/api/v1/staff/pending", {
         headers: withStaffCookie(),
       });
       expect(list.status).toBe(200);
       const listBody = JSON.parse(list.body) as { items: Array<{ id: string }> };
-      expect(listBody.items.length).toBe(1);
-      const pendingId = listBody.items[0]?.id;
-      expect(typeof pendingId).toBe("string");
-
-      const confirm = await sendRequest("POST", `/api/v1/staff/pending/${pendingId}/confirm`, {
-        headers: withStaffCookie(),
-      });
-      expect(confirm.status).toBe(200);
-      expect(JSON.parse(confirm.body)).toEqual({ ok: true });
-
-      const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
-        headers: withStaffCookie(),
-      });
-      expect(listAfter.status).toBe(200);
-      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
+      expect(listBody.items.length).toBe(0);
     });
 
     it("swallows event processing errors to keep server alive", async () => {
