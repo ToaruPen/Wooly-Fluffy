@@ -21,3 +21,4 @@
 
 - D-2026-02-18-RUFF_S_RULE_ROLLOUT: [`docs/decisions/d-2026-02-18-ruff-s-rule-rollout.md`](./decisions/d-2026-02-18-ruff-s-rule-rollout.md)
 - D-2026-02-19-WOOLY_FLUFFY_LEGACY_ADR_MIGRATION: [`docs/decisions/d-2026-02-19-wooly-fluffy-legacy-adr-migration.md`](./decisions/d-2026-02-19-wooly-fluffy-legacy-adr-migration.md)
+- D-2026-02-20-AI_VOICE_LOW_LATENCY_PHASED_ROLLOUT: [`docs/decisions/d-2026-02-20-ai-voice-low-latency-phased-rollout.md`](./decisions/d-2026-02-20-ai-voice-low-latency-phased-rollout.md)
