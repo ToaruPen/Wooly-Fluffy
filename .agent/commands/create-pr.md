@@ -17,7 +17,7 @@ Exception: GitHub closing keywords may remain in English (e.g. `Closes #123`, `F
 Notes:
 
 - If omitted, infer the Issue number from the current branch name (`issue-<n>`).
-- This command is intended to run after `/review` is approved.
+- This command is intended to run after `/final-review` is approved.
 
 ## Flow
 
@@ -31,11 +31,19 @@ Required:
    - List linked branches (SoT): `gh issue develop --list <issue-number>`
    - If any linked branch exists and you are not on it, report and stop.
 4. `/review-cycle` has a passing `review.json` for this Issue scope (`Approved` or `Approved with nits`).
-   - If missing or not passing, stop and ask to re-run `/review-cycle`.
-   - `review-metadata.json` must match the current branch state:
-     - `head_sha` equals current `HEAD`
-     - if `base_sha` is present, the same `base_ref` still points to that `base_sha`
-     - if `base_sha` is present, the PR target base (`--base` or default base) must match the reviewed base branch
+    - If missing or not passing, stop and ask to re-run `/review-cycle`.
+    - `review-metadata.json` must match the current branch state:
+      - `head_sha` equals current `HEAD`
+      - `diff_source` must be `range`
+      - if `base_sha` is present, the same `base_ref` still points to that `base_sha`
+      - if `base_sha` is present, the PR target base (`--base` or default base) must match the reviewed base branch
+5. `/test-review` has a passing `test-review.json` for this Issue scope (`Approved` or `Approved with nits`).
+   - If missing or not passing, stop and ask to re-run `/test-review`.
+   - `test-review-metadata.json` must match the current branch state:
+      - `head_sha` equals current `HEAD`
+      - `diff_mode` must be `range`
+      - if `base_sha` is present, the same `base_ref` still points to that `base_sha`
+      - if `base_sha` is present, the PR target base (`--base` or default base) must match the reviewed base branch
 
 ### Phase 1: Push
 
@@ -76,11 +84,11 @@ Notes:
 
 ## Related
 
-- `.agent/commands/review.md` - final review gate
+- `.agent/commands/final-review.md` - final review gate
 - `.agent/commands/review-cycle.md` - local review cycle (review.json)
 - `.agent/commands/worktree.md` - worktree + linked branch flow
 - `.agent/rules/branch.md` - branch naming rules
 
 ## Next command
 
-After PR creation, optionally run `/review <pr-number>` to review the PR diff.
+After PR creation, optionally run `/final-review <pr-number>` to review the PR diff.

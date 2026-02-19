@@ -12,8 +12,8 @@ assignees: []
 
 ## SoT
 
-- PRD: <!-- 例: docs/prd/wooly-fluffy.md -->
-- Epic: <!-- 例: docs/epics/wooly-fluffy-mvp-epic.md -->
+- PRD: <!-- 例: docs/prd/<project>.md -->
+- Epic: <!-- 例: docs/epics/<project>-epic.md -->
 
 ## 対象画面 / ルート
 
@@ -28,7 +28,7 @@ assignees: []
 
 ### P2
 
-- [ ] <!-- 例: CTAがステージを覆って主役コンテンツを隠す -->
+- [ ] <!-- 例: CTAが主要コンテンツを覆っている -->
 
 ### P3
 
@@ -38,9 +38,9 @@ assignees: []
 
 - [ ] 操作可否と表示状態が矛盾しない
 - [ ] 主操作は desktop/mobile で到達しやすい
-- [ ] 主要コンテンツ（ステージ等）がCTAで隠れない
+- [ ] 主要コンテンツがCTAで隠れない
 - [ ] 通常利用時にデバッグ情報を常時表示しない
-- [ ] `web` の typecheck/lint/test が通る
+- [ ] プロジェクト標準の品質チェックが通る（typecheck/lint/test など）
 
 ## 非スコープ
 
@@ -63,11 +63,13 @@ assignees: []
 ## 検証コマンド
 
 ```bash
-npm run -w web typecheck
-npm run -w web lint
-npm run -w web test
-# 必要時
-npm run -w web e2e
+# project standard checks (replace with your project commands)
+<typecheck-command>
+<lint-command>
+<test-command>
+
+# runtime/e2e as needed
+<smoke-or-e2e-command>
 ```
 
 ## スクリーンショット
@@ -84,4 +86,4 @@ npm run -w web e2e
 - [ ] ACを満たした
 - [ ] P0/P1が残っていない
 - [ ] `/review-cycle` を通過
-- [ ] `/review` でDoDを確認
+- [ ] `/final-review` でDoDを確認

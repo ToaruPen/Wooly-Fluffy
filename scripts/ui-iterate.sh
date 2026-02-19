@@ -8,35 +8,55 @@ usage() {
   cat <<'EOF'
 Usage: scripts/ui-iterate.sh <issue-number> [round-id] [options]
 
-Capture UI screenshots for iterative redesign and run web checks.
+Capture UI screenshots for iterative redesign and optionally run checks.
 
 Positional arguments:
   issue-number                Issue number (e.g. 99 or issue-99)
   round-id                    Optional round id (e.g. round-01 or 1)
 
 Options:
-  --route <path>              Target route (default: /kiosk)
+  --route <path>              Target route (default: /)
   --base-url <url>            Base URL (default: $WF_BASE_URL or http://127.0.0.1:5173)
   --out-root <dir>            Output root (default: var/screenshot)
   --desktop-size <WxH>        Desktop viewport (default: 1280x720)
   --mobile-size <WxH>         Mobile viewport (default: 390x844)
-  --skip-checks               Skip typecheck/lint/test
-  --with-e2e                  Also run `npm run -w web e2e`
+  --check-cmd <command>       Check command to run (repeatable)
+  --skip-checks               Skip checks
+  --capture-cmd <command>     Custom capture command (uses env vars below)
   --skip-capture              Skip screenshot capture
   --note <text>               Save note in round metadata
   --dry-run                   Print plan only
   -h, --help                  Show help
 
+Env vars:
+  UI_ITERATE_CHECK_CMDS       Newline-separated default check commands
+  UI_ITERATE_CAPTURE_CMD      Default capture command when --capture-cmd is omitted
+
+Capture command env:
+  UI_ITERATE_URL              Target URL
+  UI_ITERATE_DESKTOP_FILE     Desktop screenshot path
+  UI_ITERATE_MOBILE_FILE      Mobile screenshot path
+  UI_ITERATE_DESKTOP_SIZE     Desktop size (WxH)
+  UI_ITERATE_MOBILE_SIZE      Mobile size (WxH)
+  UI_ITERATE_DESKTOP_WIDTH    Desktop width
+  UI_ITERATE_DESKTOP_HEIGHT   Desktop height
+  UI_ITERATE_MOBILE_WIDTH     Mobile width
+  UI_ITERATE_MOBILE_HEIGHT    Mobile height
+
 Examples:
-  ./scripts/ui-iterate.sh 99
-  ./scripts/ui-iterate.sh 99 round-02 --route /staff
-  ./scripts/ui-iterate.sh 99 3 --route /kiosk --with-e2e
+  ./scripts/ui-iterate.sh 99 --route /kiosk \
+    --check-cmd "npm run -w web typecheck" \
+    --check-cmd "npm run -w web lint" \
+    --check-cmd "npm run -w web test"
+
+  ./scripts/ui-iterate.sh 99 round-02 --route /staff --skip-checks
 
 Outputs:
   <out-root>/issue-<n>/round-<xx>/
     - <route>-desktop.png
     - <route>-mobile.png
     - checks/*.log
+    - checks/commands.txt
     - meta.txt
 
 EOF
@@ -111,36 +131,111 @@ next_round_id() {
 }
 
 run_check() {
-  local name="$1"
-  local cmd="$2"
-  local log_file="$3"
+  local cmd="$1"
+  local log_file="$2"
 
   set +e
   bash -lc "$cmd" >"$log_file" 2>&1
   local ec=$?
   set -e
+  return "$ec"
+}
 
-  if [[ "$ec" -ne 0 ]]; then
-    eprint "Check failed: $name (exit=$ec)"
-    eprint "See log: $log_file"
-    return "$ec"
+run_builtin_capture() {
+  local url="$1"
+  local desktop_file="$2"
+  local mobile_file="$3"
+  local desktop_w="$4"
+  local desktop_h="$5"
+  local mobile_w="$6"
+  local mobile_h="$7"
+
+  require_cmd node
+  require_cmd curl
+
+  if ! curl -fsS "$url" >/dev/null; then
+    eprint "Target URL is unreachable: $url"
+    eprint "Start your app server first, or use --capture-cmd / --skip-capture"
+    return 1
   fi
-  return 0
+
+  node - "$url" "$desktop_file" "$mobile_file" "$desktop_w" "$desktop_h" "$mobile_w" "$mobile_h" <<'NODE'
+const [url, desktopFile, mobileFile, desktopW, desktopH, mobileW, mobileH] = process.argv.slice(2);
+
+const { chromium } = require("playwright");
+
+const toInt = (value, name) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`invalid ${name}: ${value}`);
+  }
+  return parsed;
+};
+
+const capture = async (page, path) => {
+  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  if (!response || !response.ok()) {
+    const status = response ? response.status() : "no-response";
+    throw new Error(`failed to load ${url} (${status})`);
+  }
+  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {
+    // Best-effort only.
+  });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path, fullPage: true });
+};
+
+const main = async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const desktopPage = await browser.newPage({
+      viewport: { width: toInt(desktopW, "desktopW"), height: toInt(desktopH, "desktopH") },
+    });
+    await capture(desktopPage, desktopFile);
+    await desktopPage.close();
+
+    const mobilePage = await browser.newPage({
+      viewport: { width: toInt(mobileW, "mobileW"), height: toInt(mobileH, "mobileH") },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 2,
+    });
+    await capture(mobilePage, mobileFile);
+    await mobilePage.close();
+  } finally {
+    await browser.close();
+  }
+};
+
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});
+NODE
 }
 
 issue_arg=""
 round_arg=""
 
-route="/kiosk"
+route="/"
 base_url="${WF_BASE_URL:-http://127.0.0.1:5173}"
 out_root="var/screenshot"
 desktop_size="1280x720"
 mobile_size="390x844"
 run_checks=1
-run_e2e=0
 run_capture=1
 dry_run=0
 note=""
+capture_cmd="${UI_ITERATE_CAPTURE_CMD:-}"
+
+declare -a check_cmds=()
+if [[ -n "${UI_ITERATE_CHECK_CMDS:-}" ]]; then
+  while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+      check_cmds+=("$line")
+    fi
+  done <<< "${UI_ITERATE_CHECK_CMDS}"
+fi
 
 args=()
 while [[ $# -gt 0 ]]; do
@@ -165,13 +260,17 @@ while [[ $# -gt 0 ]]; do
       mobile_size="${2:-}"
       shift 2
       ;;
+    --check-cmd)
+      check_cmds+=("${2:-}")
+      shift 2
+      ;;
     --skip-checks)
       run_checks=0
       shift
       ;;
-    --with-e2e)
-      run_e2e=1
-      shift
+    --capture-cmd)
+      capture_cmd="${2:-}"
+      shift 2
       ;;
     --skip-capture)
       run_capture=0
@@ -250,8 +349,6 @@ if ! validate_size "$mobile_size"; then
 fi
 
 require_cmd git
-require_cmd node
-require_cmd npm
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ -z "$repo_root" ]]; then
@@ -273,6 +370,14 @@ fi
 
 target_url="${base_url%/}${route}"
 
+desktop_w="${desktop_size%x*}"
+desktop_h="${desktop_size#*x}"
+mobile_w="${mobile_size%x*}"
+mobile_h="${mobile_size#*x}"
+
+desktop_file="$round_dir/${route_slug}-desktop.png"
+mobile_file="$round_dir/${route_slug}-mobile.png"
+
 if [[ "$dry_run" -eq 1 ]]; then
   eprint "Plan:"
   eprint "- repo_root: $repo_root"
@@ -284,8 +389,17 @@ if [[ "$dry_run" -eq 1 ]]; then
   eprint "- desktop_size: $desktop_size"
   eprint "- mobile_size: $mobile_size"
   eprint "- run_checks: $run_checks"
-  eprint "- run_e2e: $run_e2e"
+  if [[ "$run_checks" -eq 1 ]]; then
+    eprint "- check_cmd_count: ${#check_cmds[@]}"
+  fi
   eprint "- run_capture: $run_capture"
+  if [[ "$run_capture" -eq 1 ]]; then
+    if [[ -n "$capture_cmd" ]]; then
+      eprint "- capture_mode: custom-command"
+    else
+      eprint "- capture_mode: builtin-playwright"
+    fi
+  fi
   exit 0
 fi
 
@@ -306,83 +420,58 @@ meta_file="$round_dir/meta.txt"
 } > "$meta_file"
 
 if [[ "$run_checks" -eq 1 ]]; then
-  run_check "web-typecheck" "npm run -w web typecheck" "$checks_dir/web-typecheck.log"
-  run_check "web-lint" "npm run -w web lint" "$checks_dir/web-lint.log"
-  run_check "web-test" "npm run -w web test" "$checks_dir/web-test.log"
-  if [[ "$run_e2e" -eq 1 ]]; then
-    run_check "web-e2e" "npm run -w web e2e" "$checks_dir/web-e2e.log"
+  if [[ "${#check_cmds[@]}" -eq 0 ]]; then
+    eprint "No check commands configured. Use --check-cmd (repeatable) or --skip-checks."
+    exit 2
   fi
+
+  check_manifest="$checks_dir/commands.txt"
+  : > "$check_manifest"
+
+  idx=0
+  for cmd in "${check_cmds[@]}"; do
+    if [[ -z "$cmd" ]]; then
+      continue
+    fi
+    idx=$((idx + 1))
+    log_file="$checks_dir/check-$(printf '%02d' "$idx").log"
+
+    if run_check "$cmd" "$log_file"; then
+      printf 'ok\t%s\t%s\n' "$cmd" "${log_file#$repo_root/}" >> "$check_manifest"
+    else
+      printf 'fail\t%s\t%s\n' "$cmd" "${log_file#$repo_root/}" >> "$check_manifest"
+      eprint "Check failed (see log): ${log_file#$repo_root/}"
+      exit 1
+    fi
+  done
 fi
 
-desktop_file="$round_dir/${route_slug}-desktop.png"
-mobile_file="$round_dir/${route_slug}-mobile.png"
-
 if [[ "$run_capture" -eq 1 ]]; then
-  require_cmd curl
-  if ! curl -fsS "$target_url" >/dev/null; then
-    eprint "Target URL is unreachable: $target_url"
-    eprint "Start web server first (example: npm run -w web dev -- --host 127.0.0.1 --port 5173)"
-    exit 1
+  if [[ -n "$capture_cmd" ]]; then
+    export UI_ITERATE_URL="$target_url"
+    export UI_ITERATE_DESKTOP_FILE="$desktop_file"
+    export UI_ITERATE_MOBILE_FILE="$mobile_file"
+    export UI_ITERATE_DESKTOP_SIZE="$desktop_size"
+    export UI_ITERATE_MOBILE_SIZE="$mobile_size"
+    export UI_ITERATE_DESKTOP_WIDTH="$desktop_w"
+    export UI_ITERATE_DESKTOP_HEIGHT="$desktop_h"
+    export UI_ITERATE_MOBILE_WIDTH="$mobile_w"
+    export UI_ITERATE_MOBILE_HEIGHT="$mobile_h"
+
+    set +e
+    bash -lc "$capture_cmd"
+    ec=$?
+    set -e
+    if [[ "$ec" -ne 0 ]]; then
+      eprint "Capture command failed (exit=$ec)"
+      exit "$ec"
+    fi
+  else
+    if ! run_builtin_capture "$target_url" "$desktop_file" "$mobile_file" "$desktop_w" "$desktop_h" "$mobile_w" "$mobile_h"; then
+      eprint "Builtin capture failed. Install Playwright in your project or use --capture-cmd."
+      exit 1
+    fi
   fi
-
-  desktop_w="${desktop_size%x*}"
-  desktop_h="${desktop_size#*x}"
-  mobile_w="${mobile_size%x*}"
-  mobile_h="${mobile_size#*x}"
-
-  node - "$target_url" "$desktop_file" "$mobile_file" "$desktop_w" "$desktop_h" "$mobile_w" "$mobile_h" <<'NODE'
-const [url, desktopFile, mobileFile, desktopW, desktopH, mobileW, mobileH] = process.argv.slice(2);
-
-const { chromium } = require("playwright");
-
-const toInt = (value, name) => {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`invalid ${name}: ${value}`);
-  }
-  return parsed;
-};
-
-const capture = async (page, path) => {
-  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  if (!response || !response.ok()) {
-    const status = response ? response.status() : "no-response";
-    throw new Error(`failed to load ${url} (${status})`);
-  }
-  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {
-    // Best-effort only.
-  });
-  await page.waitForTimeout(1200);
-  await page.screenshot({ path, fullPage: true });
-};
-
-const main = async () => {
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const desktopPage = await browser.newPage({
-      viewport: { width: toInt(desktopW, "desktopW"), height: toInt(desktopH, "desktopH") },
-    });
-    await capture(desktopPage, desktopFile);
-    await desktopPage.close();
-
-    const mobilePage = await browser.newPage({
-      viewport: { width: toInt(mobileW, "mobileW"), height: toInt(mobileH, "mobileH") },
-      isMobile: true,
-      hasTouch: true,
-      deviceScaleFactor: 2,
-    });
-    await capture(mobilePage, mobileFile);
-    await mobilePage.close();
-  } finally {
-    await browser.close();
-  }
-};
-
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
-NODE
 fi
 
 printf '%s\n' "UI iteration round generated:"

@@ -5,7 +5,7 @@ Iterate UI redesign in short loops:
 "capture -> review -> patch -> verify -> re-capture".
 
 This command is for visual/UX convergence on one Issue.
-It does not bypass implementation gates (`/estimation`, tests, `/review-cycle`, `/review`).
+It does not bypass implementation gates (`/estimation`, tests, `/review-cycle`, `/final-review`).
 
 User-facing output remains in Japanese.
 
@@ -25,7 +25,10 @@ Examples:
 Underlying helper script:
 
 ```bash
-./scripts/ui-iterate.sh <issue-number> [round-id] [--route /kiosk]
+./scripts/ui-iterate.sh <issue-number> [round-id] --route /kiosk \
+  --check-cmd "<project-typecheck-command>" \
+  --check-cmd "<project-lint-command>" \
+  --check-cmd "<project-test-command>"
 ```
 
 Issue template (recommended):
@@ -53,7 +56,7 @@ Before the first redesign round:
 
 1. Read Issue, related Epic, and PRD.
 2. Extract AC and non-goals.
-3. Define target route (e.g. `/kiosk`) and viewports (desktop/mobile).
+3. Define target route and viewports (desktop/mobile).
 4. Define per-round scope: max 1-3 UI problems per round.
 
 Rule: do not mix unrelated backend/domain changes into UI rounds.
@@ -78,11 +81,7 @@ For each round `01..max-rounds`:
 
 1. Pick up to 3 highest-impact findings.
 2. Apply minimal UI changes.
-3. Run verification:
-   - `npm run -w web typecheck`
-   - `npm run -w web lint`
-   - `npm run -w web test`
-   - If runtime behavior changed, run `npm run -w web e2e` (or equivalent smoke)
+3. Run verification with project-standard commands (`typecheck`, `lint`, `test`, and runtime smoke when needed).
 4. Capture screenshots and save under:
 
 ```
@@ -104,7 +103,7 @@ Stop conditions:
 After final round:
 
 1. Run `/review-cycle` for the Issue scope and fix findings until Approved/Approved with nits.
-2. Run `/review` (DoD + `/sync-docs` gate).
+2. Run `/final-review` (DoD + `/sync-docs` gate).
 
 ### Phase 5: Output
 
@@ -142,5 +141,5 @@ UI反復を完了しました（Issue #<n>）。
 - `skills/crud-screen.md` - screen design checklist
 - `.agent/commands/estimation.md` - Full estimate + approval gate
 - `.agent/commands/review-cycle.md` - local review loop
-- `.agent/commands/review.md` - final review gate
+- `.agent/commands/final-review.md` - final review gate
 - `.agent/rules/dod.md` - Definition of Done

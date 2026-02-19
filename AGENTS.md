@@ -1,133 +1,177 @@
-# Agentic-SDD Append: Repository Agent Guide
+# AGENTS.md
 
-This file is intentionally written in English for token efficiency.
-User-facing interactions and generated artifacts (PRDs, Epics, Issues) remain in Japanese.
+Rules for AI agents working in this repository.
 
-## Repository Purpose
+Note: User-facing interactions and generated artifacts (PRDs/Epics/Issues/PRs) remain in Japanese.
+This control documentation is written in English to reduce token usage during agent bootstrap.
 
-This repository implements a "mascot LLM" project for an after-school program.
-It includes a minimal HTTP healthcheck server and a test harness.
+## Start Here (Development Cycle Protocol)
 
-## Source of Truth (SoT)
+Minimal protocol for a first-time agent to decide the next action.
 
-Priority order:
+```text
+Invariant (SoT)
+- Priority order: PRD (requirements) > Epic (implementation plan) > Implementation (code)
+- If you detect a contradiction, STOP and ask a human with references (PRD/Epic/code:line).
+  Do not invent requirements.
 
-- PRD (requirements): `docs/prd/`
-- Epic (implementation plan): `docs/epics/`
-- Decisions (ADRs): `docs/decisions.md`
-- Implementation (code): `server/` (and `web/` when present)
+Fail-fast (no fallback in implementation)
+- During implementation, do not add "fallback" behavior that silently changes outcomes.
+  If a required input/assumption is missing or ambiguous, fail fast with an explicit error,
+  and ask a human (with PRD/Epic/code references) instead of guessing.
+- Backward-compat shims or fallback paths are allowed only when they are behavior-preserving,
+  do not hide errors, and add no cyclomatic complexity.
 
-Rule: If you detect a contradiction between higher-level docs and lower-level artifacts, STOP and ask a human with explicit references (PRD/Epic/code:line). Do not invent requirements.
+Agent Guidelines (simplicity-first)
+- Always prefer simplicity over pathological correctness.
+- YAGNI, KISS, DRY.
+- Prefer explicit failure over compatibility shims when requirements or inputs are missing.
 
-Legacy:
+Questions (user interaction)
+- When you need to ask the user a question, you MUST use the QuestionTool (the `question` tool).
+  Do not ask questions in free-form text.
 
-- The former legacy specs folder has been removed. Do not rely on it.
+Static analysis (required)
+- You must introduce and keep running static analysis: lint, format, and typecheck.
+- If the repository has no lint/format/typecheck yet, treat it as a blocker and introduce the minimal viable checks before proceeding.
+- If you cannot introduce or run a required check due to environment or constraints, STOP and ask a human for an explicit exception (with rationale and impact).
 
-## Repository Map
+Release hygiene (required)
+- After making changes to this repo, you MUST update `CHANGELOG.md`, publish a GitHub Release (tag),
+  and update pinned scripts (e.g. `scripts/agentic-sdd` default ref).
 
-- Requirements (PRD): `docs/prd/wooly-fluffy.md`
-- Implementation plan (Epic): `docs/epics/wooly-fluffy-mvp-epic.md`
-- Decisions (ADR template and records): `docs/decisions.md`
-- Memo / backlog (not SoT): `docs/memo/`
-- Server implementation: `server/` (see `server/AGENTS.md` for directory-scoped rules)
-- Node workspaces: npm with `package-lock.json`
+0) Bootstrap
+- Read AGENTS.md (this section + command list). Read README.md only if needed (Workflow section).
+- Read `.agent/commands/`, `.agent/rules/`, and `skills/` on-demand for the next command only.
 
-## Workflow Commands (Local)
+1) Entry decision (where to start)
 
-- Install: `npm install`
-- Checks: `npm run typecheck` / `npm run lint` / `npm run test` / `npm run coverage` / `npm run deadcode`
-- Run server: `npm run -w server start` (defaults: `HOST=127.0.0.1`, `PORT=3000`)
+For new development:
+- No PRD: /create-prd
+- PRD exists but no Epic: /create-epic
+- Epic exists but no Issues / not split: /create-issues
+- Issues exist: ask the user to choose /impl vs /tdd (do not choose on your own)
+  - Then run: /impl <issue-id> or /tdd <issue-id>
 
-## Note on "slash commands" in this environment
+For bug fix / refactoring:
+- Small (1-2 Issues): Create Issue directly -> /impl or /tdd
+- Medium (3-5 Issues): /create-epic (reference existing PRD) -> /create-issues
+- Large (6+ Issues): /create-prd -> /create-epic -> /create-issues
 
-- `functions.slashcommand` lists built-in skills/commands available to the assistant; it does not execute this repo's Agentic-SDD commands under `.agent/commands/`.
-- To run Agentic-SDD commands for this repo, use the corresponding scripts under `./scripts/` (e.g. `./scripts/review-cycle.sh`, `./scripts/review.sh`, `./scripts/create-pr.sh`).
+Note: Even for direct Issue creation, include PRD/Epic links for traceability.
+Bug fix Issues require Priority (P0-P4). See `.agent/rules/issue.md` for details.
 
-## Guardrails
+2) Complete one Issue (iterate)
+- /impl or /tdd: pass the implementation gates (.agent/rules/impl-gate.md)
+  - Full estimate (11 sections) -> user approval -> implement -> add/run tests
+  - Worktree is required for Issue branches (see `.agent/rules/impl-gate.md` Gate -1)
+- /review-cycle: run locally before committing (fix -> re-run)
+- /final-review: always run /sync-docs; if there is a diff, follow SoT and re-check
 
-- Follow PRD/Epic first for required behavior.
-- Data minimization is mandatory: do not persist or log conversation text, audio, or full STT transcripts.
-- Provider integrations must have explicit timeout/cancel and retry policy.
-- Do not commit secrets (use environment variables / local config).
-- Dependency additions and major changes require explicit agreement; record rationale and licensing links in the Epic or ADRs.
+3) PR / merge
+- Create a PR only after /final-review passes (do not change anything outside the Issue scope)
+  - Then run: /create-pr
+```
+
+### Parallel work (git worktree)
+
+When using `git worktree` to implement multiple Issues in parallel:
+
+- One Issue = one branch = one worktree (never mix changes)
+- If multiple related Issues overlap heavily, create a single "parent" Issue as the implementation unit and keep the related Issues as tracking-only children (no branches/worktrees for children).
+- Do not edit PRD/Epic across parallel branches; serialize SoT changes
+- Apply `parallel-ok` only when declared change-target file sets are disjoint (validate via `./scripts/worktree.sh check`)
+
+---
 
 ## Non-negotiables
 
-- Do not implement features not documented in the PRD/Epic.
-- Completion reports require evidence (diff and test results).
-- Do not mix unrelated changes.
-- Bug fixes require a test that fails before and passes after.
+<non_negotiables>
+Absolute prohibitions with no exceptions:
 
-## Dynamic Verification (Runtime Behavior)
+1. **No case-specific hacks**
+   - Do not write conditional branches like `if (hostname == "xxx")`
+   - Do not use magic numbers for adjustments
 
-Static checks and unit tests often miss liveness/lifecycle regressions.
+2. **No speculative requirements**
+   - Do not implement features not documented in PRD/Epic
+   - When uncertain, ask human (follow SoT priority order)
 
-If your change affects runtime behavior, add a dynamic verification (integration test or smoke test run via `/review-cycle`'s `TEST_COMMAND`).
+3. **No evidence-free completion reports**
+   - Reporting only "Fixed" or "Improved" is not acceptable
+   - Required: Before/After diff, test results, or logs as evidence
 
-Examples (non-exhaustive):
+4. **No batch changes**
+   - Do not mix unrelated changes in one commit
+   - Follow single-step loop: one fix -> verify -> next
 
-- long-lived connections (SSE/WebSocket)
-- graceful shutdown / SIGINT / SIGTERM
-- timers/intervals
-- file/DB/network I/O boundaries
-- external provider calls (timeout/cancel/retry) and streaming
+5. **No invalid tests**
+   - Failure reproducibility: Test must fail before the change
+   - Correction assurance: Test must pass after the change
+   - Without both conditions, the test is not valid evidence
+     </non_negotiables>
 
-Requirements:
+---
 
-- deterministic and time-bounded (explicit timeout) so hangs become test failures
-- covers the regression risk introduced by the diff (do not chase pre-existing issues)
+## Project Overview
 
-Directory-scoped guidance:
+Agentic-SDD (Agentic Spec-Driven Development)
 
-- cross-cutting rule is here (repo root)
-- server-specific examples: `server/AGENTS.md` (SSE/shutdown/connection draining)
-- when an LLM/provider layer directory is added, add a scoped `AGENTS.md` there describing dynamic tests for timeout/cancel/retry/stream behavior
+A workflow template to help non-engineers run AI-driven development while preventing LLM overreach.
 
-## Agentic-SDD: Development Cycle Protocol
+---
 
-0. Bootstrap
+## Key Files
 
-- Read this file and the minimum necessary rule/command file under `.agent/` for the next action.
+- `.agent/commands/`: command definitions (create-prd, create-epic, generate-project-config, ...)
+- `.agent/rules/`: rule definitions (docs-sync, dod, epic, issue, security, performance, ...)
+- `docs/prd/_template.md`: PRD template (Japanese output)
+- `docs/epics/_template.md`: Epic template (Japanese output)
+- `docs/glossary.md`: glossary
+- `templates/project-config/`: templates for `/generate-project-config`
 
-1. Entry decision
+---
 
-- No PRD: `/create-prd`
-- PRD exists but no Epic: `/create-epic`
-- Epic exists but no Issues / not split: `/create-issues`
-- Issues exist: ask the user to choose `/impl` vs `/tdd` (do not choose on your own)
+## Commands
 
-2. Implement one Issue
-
-- `/estimation` (Full estimate; 11 sections) -> user approval -> `/impl` or `/tdd` -> tests -> gates
-- Use `/sync-docs` whenever you suspect drift, and always before creating a PR
-
-3. PR / merge
-
-- Only create a PR after `/review` passes; do not change anything outside the Issue scope
-
-## Worktree / Parallel Work
-
-- One Issue = one branch = one worktree (never mix changes)
-- Do not edit PRD/Epic across parallel branches; serialize SoT changes
-- Use `./scripts/worktree.sh check` before applying `parallel-ok`
-
-## Agentic-SDD Command Index
-
+- `/init`: initialize the Agentic-SDD checklist (OpenCode alias: `/sdd-init`)
 - `/create-prd`: create a PRD (7 questions)
-- `/create-epic`: create an Epic (requires 3 lists)
-- `/generate-project-config`: generate project-specific skills/rules from an Epic
-- `/create-issues`: split an Epic into Issues
-- `/estimation`: write a Full estimate (11 sections) and get approval
-- `/impl`: implement an Issue (estimate required)
-- `/tdd`: implement via TDD (red -> green -> refactor)
+- `/research`: create reusable research artifacts for PRD/Epic/estimation
+- `/create-epic`: create an Epic (requires 3 lists: external services / components / new tech)
+- `/generate-project-config`: generate project-specific skills/rules from Epic
+- `/create-issues`: create Issues (granularity rules)
+- `/debug`: create a structured debugging/investigation note (Issue comment or a new Investigation Issue)
+- `/estimation`: create a Full estimate (11 sections) and get approval
+- `/impl`: implement an Issue (Full estimate required)
+- `/tdd`: implement via TDD (Red -> Green -> Refactor)
 - `/ui-iterate`: iterate UI redesign in short loops (capture -> patch -> verify)
-- `/review-cycle`: local review loop
-- `/review`: definition-of-done check
-- `/create-pr`: create a PR (gh)
-- `/sync-docs`: check consistency across PRD/Epic/code
-- `/worktree`: manage git worktrees
+- `/test-review`: run fail-fast test review checks before review/PR gates
+- `/review-cycle`: local review loop (codex exec -> review.json)
+- `/final-review`: review (DoD check)
+- `/create-pr`: push branch and create a PR (gh)
+- `/codex-pr-review`: request a Codex bot review on a PR and iterate until feedback is resolved
+- `/sync-docs`: consistency check between PRD/Epic/code
+- `/worktree`: manage git worktrees for parallel Issues
+- `/cleanup`: clean up worktree and local branch after merge
+
+---
+
+## Rules (read on-demand)
+
+To keep this bootstrap file small, detailed rules live in these files:
+
+- PRD: `.agent/commands/create-prd.md`, `docs/prd/_template.md`
+- Epic: `.agent/commands/create-epic.md`, `.agent/rules/epic.md`
+- Project Config: `.agent/commands/generate-project-config.md`, `templates/project-config/`
+- Issues: `.agent/commands/create-issues.md`, `.agent/rules/issue.md`
+- Estimation: `.agent/commands/estimation.md`, `.agent/rules/impl-gate.md`
+- Review: `.agent/commands/final-review.md`, `.agent/rules/dod.md`, `.agent/rules/docs-sync.md`
+- Production Quality: `.agent/rules/security.md`, `.agent/rules/performance.md`, `.agent/rules/observability.md`, `.agent/rules/availability.md`
+
+---
 
 ## References
 
 - Glossary: `docs/glossary.md`
-- Decisions (ADR): `docs/decisions.md`
+- Decisions index: `docs/decisions.md`
+- Decisions body rules: `docs/decisions/README.md`

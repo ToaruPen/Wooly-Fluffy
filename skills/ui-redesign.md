@@ -42,13 +42,6 @@ Use this when you need to improve an existing UI (not build from scratch), espec
 
 Define UI states explicitly before changing visuals.
 
-Example matrix (kiosk-like):
-
-- `connected + idle`
-- `connected + listening`
-- `waiting_chat`
-- `disconnected/reconnecting`
-
 For each state, specify:
 
 - CTA label
@@ -56,9 +49,9 @@ For each state, specify:
 - helper/error text
 - major visual emphasis
 
-### 2) Stage vs controls separation
+### 2) Hero vs controls separation
 
-When there is hero content (avatar/video/canvas):
+When there is hero content (avatar/video/canvas/chart):
 
 - keep hero area visually clean
 - place controls in a separate band/panel
@@ -68,7 +61,7 @@ When there is hero content (avatar/video/canvas):
 
 Use explicit conditions for debug elements:
 
-- dev-only (`import.meta.env.DEV`)
+- dev-only (`import.meta.env.DEV`, `NODE_ENV`, etc.)
 - or runtime flag
 
 Never expose internal status labels by default in user-facing mode.
@@ -79,7 +72,7 @@ Per round:
 
 1. baseline screenshot(s)
 2. patch
-3. verification (`typecheck/lint/test`)
+3. verification (`typecheck/lint/test` and runtime checks when needed)
 4. new screenshot(s)
 5. compare and record delta
 
@@ -122,9 +115,9 @@ Check touch target size, overlap, clipping, and scroll traps.
 
 ### Technical verification
 
-- [ ] `npm run -w web typecheck` passes
-- [ ] `npm run -w web lint` passes
-- [ ] `npm run -w web test` passes
+- [ ] Project standard `typecheck` passes
+- [ ] Project standard `lint` passes
+- [ ] Project standard `test` passes
 - [ ] Runtime smoke/E2E is run when behavior changes
 
 ### Evidence
@@ -150,4 +143,4 @@ Check touch target size, overlap, clipping, and scroll traps.
 - `skills/crud-screen.md` - screen design checklist
 - `skills/testing.md` - test strategy and coverage
 - `.agent/commands/review-cycle.md` - local review loop
-- `.agent/commands/review.md` - final gate
+- `.agent/commands/final-review.md` - final gate
