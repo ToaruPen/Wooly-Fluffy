@@ -38,6 +38,7 @@
 - 施設外からの遠隔アクセス（インターネット公開）
 - Webカメラの常時稼働/保存/個人識別
 - タッチゲーム
+- AI応答の低遅延音声パイプライン改修（別Epic: `docs/epics/wooly-fluffy-ai-voice-latency-epic.md`）
 
 ### 1.3 PRD制約の確認
 
