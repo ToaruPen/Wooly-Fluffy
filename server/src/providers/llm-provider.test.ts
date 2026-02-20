@@ -2580,14 +2580,31 @@ describe("llm-provider (Gemini native)", () => {
         } as Response;
       }
 
-      if (url.includes("api.open-meteo.com")) {
+      if (url.includes("geocoding-api.open-meteo.com")) {
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            current_weather: {
-              temperature: 20,
-              weathercode: 0,
+            results: [
+              {
+                name: "Tokyo",
+                country: "Japan",
+                latitude: 35.6762,
+                longitude: 139.6503,
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url.includes("https://api.open-meteo.com/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            current: {
+              temperature_2m: 20,
+              weather_code: 0,
             },
           }),
         } as Response;
