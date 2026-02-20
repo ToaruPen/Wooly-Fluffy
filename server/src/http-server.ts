@@ -364,12 +364,9 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   };
 
   const broadcastStaffSessionSummariesPendingList = () => {
+    sweepExpiredStaffSseClients();
     const items = store.listPendingSessionSummaries().map(mapSessionSummaryToDto);
-    for (const [client, token] of Array.from(staffSseSessions)) {
-      if (!validateStaffSession(token)) {
-        client.close();
-        continue;
-      }
+    for (const client of staffSseSessions.keys()) {
       client.send("staff.session_summaries_pending_list", { items });
     }
   };

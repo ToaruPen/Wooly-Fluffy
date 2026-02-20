@@ -1538,6 +1538,30 @@ describe("http-server", () => {
       expect(summaryJson).not.toHaveProperty("stt_full_text");
     });
 
+    it("normalizes malformed session summary payload fields", async () => {
+      store.createPendingSessionSummary({
+        title: "malformed",
+        summary_json: "invalid-json-shape",
+      });
+
+      const list = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
+        headers: withStaffCookie(),
+      });
+
+      expect(list.status).toBe(200);
+      const parsed = JSON.parse(list.body) as {
+        items: Array<{
+          summary_json: { summary: string; topics: string[]; staff_notes: string[] };
+        }>;
+      };
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0]?.summary_json).toEqual({
+        summary: "",
+        topics: [],
+        staff_notes: [],
+      });
+    });
+
     it("supports staff session summary confirm endpoint", async () => {
       const id = store.createPendingSessionSummary({
         title: "confirm-target",
@@ -1688,8 +1712,8 @@ describe("http-server", () => {
         });
 
         const firstCookie = await loginCookie();
-        let leakedPendingList = false;
-        let leakedSnapshot = false;
+        let hasLeakedPendingList = false;
+        let hasLeakedSnapshot = false;
 
         await new Promise<void>((resolve, reject) => {
           let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -1728,7 +1752,7 @@ describe("http-server", () => {
                     type: string;
                     data: unknown;
                   };
-                  const hadTriggered = didTrigger;
+                  const didTriggerPreviously = didTrigger;
 
                   if (!didTrigger && parsed.type === "staff.snapshot") {
                     didTrigger = true;
@@ -1747,12 +1771,12 @@ describe("http-server", () => {
                     });
                   }
 
-                  if (hadTriggered && parsed.type === "staff.snapshot") {
-                    leakedSnapshot = true;
+                  if (didTriggerPreviously && parsed.type === "staff.snapshot") {
+                    hasLeakedSnapshot = true;
                   }
 
                   if (parsed.type === "staff.session_summaries_pending_list") {
-                    leakedPendingList = true;
+                    hasLeakedPendingList = true;
                   }
                 }
               });
@@ -1771,8 +1795,8 @@ describe("http-server", () => {
           }, 300);
         });
 
-        expect(leakedPendingList).toBe(false);
-        expect(leakedSnapshot).toBe(false);
+        expect(hasLeakedPendingList).toBe(false);
+        expect(hasLeakedSnapshot).toBe(false);
       } finally {
         await closeServerWithTimeout(localServer);
         localStore.close();
@@ -2086,8 +2110,8 @@ describe("http-server", () => {
             const messages: Array<{ type: string; seq: number; data: unknown }> = [];
             let isDone = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
-            let sawTargetSnapshot = false;
-            let sawTargetList = false;
+            let hasSeenTargetSnapshot = false;
+            let hasSeenTargetList = false;
 
             const finish = (
               err?: Error,
@@ -2140,8 +2164,8 @@ describe("http-server", () => {
                       const parsedData = parsed.data as { items?: unknown };
                       const items = Array.isArray(parsedData?.items) ? parsedData.items : undefined;
                       if (items && items.length === targetListLength) {
-                        sawTargetList = true;
-                        if (sawTargetSnapshot) {
+                        hasSeenTargetList = true;
+                        if (hasSeenTargetSnapshot) {
                           res.destroy();
                           finish(undefined, messages);
                           return;
@@ -2160,8 +2184,8 @@ describe("http-server", () => {
                       count === targetCount &&
                       sessionSummaryCount === targetSessionSummaryCount
                     ) {
-                      sawTargetSnapshot = true;
-                      if (sawTargetList) {
+                      hasSeenTargetSnapshot = true;
+                      if (hasSeenTargetList) {
                         res.destroy();
                         finish(undefined, messages);
                         return;
