@@ -1791,8 +1791,30 @@ describe("http-server", () => {
       });
     });
 
+    it("returns 404 for staff session summary confirm when id is missing", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/confirm", {
+        headers: withStaffCookie(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
     it("returns 404 for staff session summary deny when id not found", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/deny", {
+        headers: withStaffCookie(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
+    it("returns 404 for staff session summary deny when id is missing", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/deny", {
         headers: withStaffCookie(),
       });
 

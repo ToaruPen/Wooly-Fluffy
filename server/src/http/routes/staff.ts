@@ -292,6 +292,10 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
       return true;
     }
     const id = path.slice(STAFF_SESSION_SUMMARIES_PREFIX.length, -"/confirm".length);
+    if (id.length === 0) {
+      sendJson(res, 404, not_found_body);
+      return true;
+    }
     const didConfirm = store.confirmSessionSummary(id);
     if (!didConfirm) {
       sendJson(res, 404, not_found_body);
@@ -315,6 +319,10 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
       return true;
     }
     const id = path.slice(STAFF_SESSION_SUMMARIES_PREFIX.length, -"/deny".length);
+    if (id.length === 0) {
+      sendJson(res, 404, not_found_body);
+      return true;
+    }
     const didDeny = store.denySessionSummary(id);
     if (!didDeny) {
       sendJson(res, 404, not_found_body);

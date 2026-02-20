@@ -354,7 +354,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       return;
     }
     lastStaffSnapshotJson = json;
-    for (const [client, token] of staffSseSessions) {
+    for (const [client, token] of Array.from(staffSseSessions)) {
       if (!validateStaffSession(token)) {
         client.close();
         continue;
@@ -365,7 +365,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
 
   const broadcastStaffSessionSummariesPendingList = () => {
     const items = store.listPendingSessionSummaries().map(mapSessionSummaryToDto);
-    for (const [client, token] of staffSseSessions) {
+    for (const [client, token] of Array.from(staffSseSessions)) {
       if (!validateStaffSession(token)) {
         client.close();
         continue;
