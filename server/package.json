@@ -4,7 +4,6 @@
   "version": "0.0.0",
   "type": "module",
   "dependencies": {
-    "@google/genai": "^1.40.0",
     "better-sqlite3": "^12.6.2",
     "busboy": "^1.6.0"
   },
