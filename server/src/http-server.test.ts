@@ -354,6 +354,28 @@ const readFirstSseMessage = (path: string, options?: { headers?: Record<string, 
     req.end();
   });
 
+const withHardTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutError: string,
+): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(timeoutError));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
 const closeServerWithTimeout = (
   serverToClose: Pick<Server, "close">,
   timeoutMs = 2000,
@@ -1495,6 +1517,379 @@ describe("http-server", () => {
         error: { code: "not_found", message: "Not Found" },
       });
     });
+
+    it("supports staff session summary pending list endpoint", async () => {
+      store.createPendingSessionSummary({
+        title: "2026-02-20",
+        summary_json: {
+          summary: "きょうのハイライト",
+          topics: ["工作", "外遊び"],
+          staff_notes: ["手洗いを促す"],
+          transcript_full: "should not leak",
+          raw_audio_base64: "should not leak",
+        },
+      });
+
+      const list = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
+        headers: withStaffCookie(),
+      });
+
+      expect(list.status).toBe(200);
+      const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
+      expect(parsed.items.length).toBe(1);
+      expect(parsed.items[0]).toEqual(
+        expect.objectContaining({
+          id: expect.any(String),
+          title: "2026-02-20",
+          summary_json: {
+            summary: "きょうのハイライト",
+            topics: ["工作", "外遊び"],
+            staff_notes: ["手洗いを促す"],
+          },
+          status: "pending",
+          created_at_ms: expect.any(Number),
+          expires_at_ms: expect.any(Number),
+        }),
+      );
+      expect(parsed.items[0]).not.toHaveProperty("schema_version");
+      expect(parsed.items[0]).not.toHaveProperty("trigger");
+
+      const summaryJson = parsed.items[0]?.summary_json as Record<string, unknown>;
+      expect(summaryJson).not.toHaveProperty("transcript_full");
+      expect(summaryJson).not.toHaveProperty("raw_audio_base64");
+      expect(summaryJson).not.toHaveProperty("stt_full_text");
+    });
+
+    it("normalizes malformed session summary payload fields", async () => {
+      store.createPendingSessionSummary({
+        title: "malformed",
+        summary_json: "invalid-json-shape",
+      });
+
+      const list = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
+        headers: withStaffCookie(),
+      });
+
+      expect(list.status).toBe(200);
+      const parsed = JSON.parse(list.body) as {
+        items: Array<{
+          summary_json: { summary: string; topics: string[]; staff_notes: string[] };
+        }>;
+      };
+      expect(parsed.items).toHaveLength(1);
+      expect(parsed.items[0]?.summary_json).toEqual({
+        summary: "",
+        topics: [],
+        staff_notes: [],
+      });
+    });
+
+    it("supports staff session summary confirm endpoint", async () => {
+      const id = store.createPendingSessionSummary({
+        title: "confirm-target",
+        summary_json: { summary: "x", topics: [], staff_notes: [] },
+      });
+
+      const confirm = await sendRequest("POST", `/api/v1/staff/session-summaries/${id}/confirm`, {
+        headers: withStaffCookie(),
+      });
+      expect(confirm.status).toBe(200);
+      expect(JSON.parse(confirm.body)).toEqual({ ok: true });
+
+      const listAfter = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(listAfter.status).toBe(200);
+      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
+    });
+
+    it("supports staff session summary deny endpoint", async () => {
+      const id = store.createPendingSessionSummary({
+        title: "deny-target",
+        summary_json: { summary: "x", topics: [], staff_notes: [] },
+      });
+
+      const deny = await sendRequest("POST", `/api/v1/staff/session-summaries/${id}/deny`, {
+        headers: withStaffCookie(),
+      });
+      expect(deny.status).toBe(200);
+      expect(JSON.parse(deny.body)).toEqual({ ok: true });
+
+      const listAfter = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
+        headers: withStaffCookie(),
+      });
+      expect(listAfter.status).toBe(200);
+      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
+    });
+
+    it("broadcasts session summary pending list update after confirm", async () => {
+      const id = store.createPendingSessionSummary({
+        title: "confirm-broadcast",
+        summary_json: { summary: "x", topics: [], staff_notes: [] },
+      });
+
+      const messages = await withHardTimeout(
+        readSseDataMessages(
+          "/api/v1/staff/stream",
+          3,
+          async () => {
+            const response = await sendRequest(
+              "POST",
+              `/api/v1/staff/session-summaries/${id}/confirm`,
+              {
+                headers: withStaffCookie(),
+              },
+            );
+            expect(response.status).toBe(200);
+            expect(JSON.parse(response.body)).toEqual({ ok: true });
+          },
+          { headers: withStaffCookie() },
+        ),
+        3000,
+        "sse_hard_timeout",
+      );
+
+      expect(messages[0]?.type).toBe("staff.snapshot");
+      expect(messages[1]?.type).toBe("staff.snapshot");
+      expect(messages[2]?.type).toBe("staff.session_summaries_pending_list");
+      expect(messages[2]?.data).toEqual({ items: [] });
+    });
+
+    it("broadcasts session summary pending list update after deny", async () => {
+      const id = store.createPendingSessionSummary({
+        title: "deny-broadcast",
+        summary_json: { summary: "x", topics: [], staff_notes: [] },
+      });
+
+      const messages = await withHardTimeout(
+        readSseDataMessages(
+          "/api/v1/staff/stream",
+          3,
+          async () => {
+            const response = await sendRequest(
+              "POST",
+              `/api/v1/staff/session-summaries/${id}/deny`,
+              {
+                headers: withStaffCookie(),
+              },
+            );
+            expect(response.status).toBe(200);
+            expect(JSON.parse(response.body)).toEqual({ ok: true });
+          },
+          { headers: withStaffCookie() },
+        ),
+        3000,
+        "sse_hard_timeout",
+      );
+
+      expect(messages[0]?.type).toBe("staff.snapshot");
+      expect(messages[1]?.type).toBe("staff.snapshot");
+      expect(messages[2]?.type).toBe("staff.session_summaries_pending_list");
+      expect(messages[2]?.data).toEqual({ items: [] });
+    });
+
+    it("does not broadcast session summary list to expired staff stream session", async () => {
+      const savedSessionTtl = process.env.WF_STAFF_SESSION_TTL_MS;
+      const savedTickInterval = process.env.WF_TICK_INTERVAL_MS;
+      process.env.WF_STAFF_SESSION_TTL_MS = "10000";
+      process.env.WF_TICK_INTERVAL_MS = "60000";
+
+      let now = 0;
+      const localStore = createStore({ db_path: ":memory:" });
+      const localServer = createHttpServer({
+        store: localStore,
+        now_ms: () => now,
+        stt_provider: {
+          transcribe: () => ({ text: "こんにちは" }),
+          health: () => ({ status: "ok" }),
+        },
+      });
+
+      const restoreEnv = () => {
+        if (savedSessionTtl === undefined) {
+          delete process.env.WF_STAFF_SESSION_TTL_MS;
+        } else {
+          process.env.WF_STAFF_SESSION_TTL_MS = savedSessionTtl;
+        }
+        if (savedTickInterval === undefined) {
+          delete process.env.WF_TICK_INTERVAL_MS;
+        } else {
+          process.env.WF_TICK_INTERVAL_MS = savedTickInterval;
+        }
+      };
+
+      try {
+        await new Promise<void>((resolve) => {
+          localServer.listen(0, "127.0.0.1", resolve);
+        });
+        const address = localServer.address();
+        if (!address || typeof address === "string") {
+          throw new Error("server address unavailable");
+        }
+        const localPort = address.port;
+        const { sendRequestLocal } = createLocalTestHelpers(localPort);
+
+        const loginCookie = async () => {
+          const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ passcode: "test-pass" }),
+          });
+          expect(response.status).toBe(200);
+          const setCookie = response.headers["set-cookie"];
+          const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+          return cookieFromSetCookie(String(first ?? ""));
+        };
+
+        const id = localStore.createPendingSessionSummary({
+          title: "stale-session-check",
+          summary_json: { summary: "x", topics: [], staff_notes: [] },
+        });
+
+        const firstCookie = await loginCookie();
+        let hasLeakedPendingList = false;
+        let hasLeakedSnapshot = false;
+
+        await new Promise<void>((resolve, reject) => {
+          let timeout: ReturnType<typeof setTimeout> | undefined;
+          let hardTimeout: ReturnType<typeof setTimeout> | undefined;
+          const finish = (err?: Error) => {
+            if (timeout) {
+              clearTimeout(timeout);
+            }
+            if (hardTimeout) {
+              clearTimeout(hardTimeout);
+            }
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve();
+          };
+
+          const req = request(
+            { host: "127.0.0.1", port: localPort, method: "GET", path: "/api/v1/staff/stream" },
+            (res) => {
+              let buffer = "";
+              let didTrigger = false;
+              res.setEncoding("utf8");
+              res.on("data", (chunk) => {
+                buffer += chunk;
+                while (true) {
+                  const endIndex = buffer.indexOf("\n\n");
+                  if (endIndex === -1) {
+                    return;
+                  }
+                  const eventChunk = buffer.slice(0, endIndex);
+                  buffer = buffer.slice(endIndex + 2);
+                  const lines = eventChunk.split("\n");
+                  const dataLine = lines.find((line) => line.startsWith("data: "));
+                  if (!dataLine) {
+                    continue;
+                  }
+                  const parsed = JSON.parse(dataLine.slice("data: ".length)) as {
+                    type: string;
+                    data: unknown;
+                  };
+                  const didTriggerPreviously = didTrigger;
+
+                  if (!didTrigger && parsed.type === "staff.snapshot") {
+                    didTrigger = true;
+                    void (async () => {
+                      now = 5_000;
+                      const activeCookie = await loginCookie();
+                      now = 10_500;
+                      const confirm = await sendRequestLocal(
+                        "POST",
+                        `/api/v1/staff/session-summaries/${id}/confirm`,
+                        { headers: { cookie: activeCookie } },
+                      );
+                      expect(confirm.status).toBe(200);
+                    })().catch((err) => {
+                      finish(err instanceof Error ? err : new Error("confirm_failed"));
+                    });
+                  }
+
+                  if (didTriggerPreviously && parsed.type === "staff.snapshot") {
+                    hasLeakedSnapshot = true;
+                  }
+
+                  if (parsed.type === "staff.session_summaries_pending_list") {
+                    hasLeakedPendingList = true;
+                  }
+                }
+              });
+            },
+          );
+
+          req.setHeader("cookie", firstCookie);
+          req.on("error", (err) => {
+            finish(err instanceof Error ? err : new Error("request_error"));
+          });
+          req.end();
+
+          timeout = setTimeout(() => {
+            req.destroy();
+            finish();
+          }, 300);
+
+          hardTimeout = setTimeout(() => {
+            req.destroy();
+            finish(new Error("sse_hard_timeout"));
+          }, 3000);
+        });
+
+        expect(hasLeakedPendingList).toBe(false);
+        expect(hasLeakedSnapshot).toBe(false);
+      } finally {
+        await closeServerWithTimeout(localServer);
+        localStore.close();
+        restoreEnv();
+      }
+    });
+
+    it("returns 404 for staff session summary confirm when id not found", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/confirm", {
+        headers: withStaffCookie(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
+    it("returns 404 for staff session summary confirm when id is missing", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/confirm", {
+        headers: withStaffCookie(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
+    it("returns 404 for staff session summary deny when id not found", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/deny", {
+        headers: withStaffCookie(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
+
+    it("returns 404 for staff session summary deny when id is missing", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/deny", {
+        headers: withStaffCookie(),
+      });
+
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
+    });
   });
 
   describe("route guards and lifecycle", () => {
@@ -1508,6 +1903,24 @@ describe("http-server", () => {
 
     it("returns 405 for staff pending list with non-GET", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/pending");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 401 for staff session summary list without session", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/session-summaries/pending");
+      expect(response.status).toBe(401);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "unauthorized", message: "Unauthorized" },
+      });
+    });
+
+    it("returns 405 for staff session summary list with non-GET", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/session-summaries/pending", {
+        headers: withStaffCookie(),
+      });
       expect(response.status).toBe(405);
       expect(JSON.parse(response.body)).toEqual({
         error: { code: "method_not_allowed", message: "Method Not Allowed" },
@@ -1733,12 +2146,15 @@ describe("http-server", () => {
         const waitForPendingSnapshot = (
           targetCount: number,
           targetSessionSummaryCount: number,
+          targetListLength: number,
           onFirstMessage: () => Promise<void>,
         ): Promise<Array<{ type: string; seq: number; data: unknown }>> =>
           new Promise((resolve, reject) => {
             const messages: Array<{ type: string; seq: number; data: unknown }> = [];
             let isDone = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
+            let hasSeenTargetSnapshot = false;
+            let hasSeenTargetList = false;
 
             const finish = (
               err?: Error,
@@ -1787,6 +2203,19 @@ describe("http-server", () => {
                       void onFirstMessage();
                     }
 
+                    if (parsed.type === "staff.session_summaries_pending_list") {
+                      const parsedData = parsed.data as { items?: unknown };
+                      const items = Array.isArray(parsedData?.items) ? parsedData.items : undefined;
+                      if (items && items.length === targetListLength) {
+                        hasSeenTargetList = true;
+                        if (hasSeenTargetSnapshot) {
+                          res.destroy();
+                          finish(undefined, messages);
+                          return;
+                        }
+                      }
+                    }
+
                     if (parsed.type !== "staff.snapshot") {
                       continue;
                     }
@@ -1798,9 +2227,12 @@ describe("http-server", () => {
                       count === targetCount &&
                       sessionSummaryCount === targetSessionSummaryCount
                     ) {
-                      res.destroy();
-                      finish(undefined, messages);
-                      return;
+                      hasSeenTargetSnapshot = true;
+                      if (hasSeenTargetList) {
+                        res.destroy();
+                        finish(undefined, messages);
+                        return;
+                      }
                     }
                   }
                 });
@@ -1820,7 +2252,7 @@ describe("http-server", () => {
             req.end();
           });
 
-        const messages = await waitForPendingSnapshot(0, 1, async () => {
+        const messages = await waitForPendingSnapshot(0, 1, 1, async () => {
           const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
             headers: withLocalStaffCookie({ "content-type": "application/json" }),
             body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
@@ -1853,11 +2285,26 @@ describe("http-server", () => {
           pending: { count: 0, session_summary_count: 0 },
         });
 
-        const last = messages[messages.length - 1];
-        expect(last?.type).toBe("staff.snapshot");
-        expect(last?.data).toEqual(
+        const updatedSnapshot = [...messages]
+          .reverse()
+          .find((message) => message.type === "staff.snapshot");
+        expect(updatedSnapshot?.data).toEqual(
           expect.objectContaining({
             pending: { count: 0, session_summary_count: 1 },
+          }),
+        );
+
+        const listMessage = messages.find(
+          (message) => message.type === "staff.session_summaries_pending_list",
+        );
+        expect(listMessage?.data).toEqual(
+          expect.objectContaining({
+            items: [
+              expect.objectContaining({
+                title: expect.any(String),
+                status: "pending",
+              }),
+            ],
           }),
         );
       } finally {
@@ -1943,6 +2390,26 @@ describe("http-server", () => {
 
     it("returns 405 for staff pending deny with non-POST", async () => {
       const response = await sendRequest("GET", "/api/v1/staff/pending/nope/deny");
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 405 for staff session summary confirm with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/session-summaries/nope/confirm", {
+        headers: withStaffCookie(),
+      });
+      expect(response.status).toBe(405);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+      });
+    });
+
+    it("returns 405 for staff session summary deny with non-POST", async () => {
+      const response = await sendRequest("GET", "/api/v1/staff/session-summaries/nope/deny", {
+        headers: withStaffCookie(),
+      });
       expect(response.status).toBe(405);
       expect(JSON.parse(response.body)).toEqual({
         error: { code: "method_not_allowed", message: "Method Not Allowed" },

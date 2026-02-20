@@ -26,14 +26,18 @@ describe("pending-writer", () => {
     }
   });
 
-  it("writes pending session summary and broadcasts snapshot", () => {
+  it("writes pending session summary and broadcasts snapshot and list", () => {
     const store = createStore({ db_path: ":memory:" });
     try {
-      let broadcasts = 0;
+      let snapshotBroadcasts = 0;
+      let listBroadcasts = 0;
       const writePending = createStoreWriteSessionSummaryPending({
         store,
         broadcastStaffSnapshotIfChanged: () => {
-          broadcasts += 1;
+          snapshotBroadcasts += 1;
+        },
+        broadcastStaffSessionSummariesPendingList: () => {
+          listBroadcasts += 1;
         },
       });
 
@@ -43,7 +47,8 @@ describe("pending-writer", () => {
       });
 
       expect(store.listPendingSessionSummaries().length).toBe(1);
-      expect(broadcasts).toBe(1);
+      expect(snapshotBroadcasts).toBe(1);
+      expect(listBroadcasts).toBe(1);
     } finally {
       store.close();
     }

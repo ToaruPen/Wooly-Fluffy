@@ -21,6 +21,7 @@ const listAllFiles = () => {
 };
 
 const isIgnoredPath = (p) =>
+  p.startsWith(".agentic-sdd-upstream/") ||
   p.startsWith(".agent/") ||
   p.startsWith(".claude/") ||
   p.startsWith(".sisyphus/") ||

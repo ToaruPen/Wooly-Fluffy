@@ -23,9 +23,11 @@ export const createStoreWritePending = (deps: {
 export const createStoreWriteSessionSummaryPending = (deps: {
   store: Store;
   broadcastStaffSnapshotIfChanged: () => void;
+  broadcastStaffSessionSummariesPendingList: () => void;
 }) => {
   return (input: StoreWriteSessionSummaryPendingInput) => {
     deps.store.createPendingSessionSummary(input);
     deps.broadcastStaffSnapshotIfChanged();
+    deps.broadcastStaffSessionSummariesPendingList();
   };
 };

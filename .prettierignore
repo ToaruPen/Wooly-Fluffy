@@ -12,3 +12,10 @@ web/playwright-report/
 
 # Generated / large
 package-lock.json
+
+# Vendored upstream templates/docs (avoid formatting drift from upstream)
+.agentic-sdd-upstream/
+
+# Project templates with placeholder-heavy markdown
+.github/ISSUE_TEMPLATE/
+.github/pull_request_template.md
