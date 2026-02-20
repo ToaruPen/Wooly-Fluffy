@@ -2686,6 +2686,335 @@ describe("llm-provider (Gemini native)", () => {
       vi.stubGlobal("fetch", savedFetch);
     }
   });
+
+  it("handles default gemini response without candidates", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+            functionCalls: [],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "ok",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("handles default gemini candidates with non-array parts", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+            candidates: [{ content: { parts: null } }],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "ok",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("handles default gemini candidates with non-object entries", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+            candidates: [null, { content: "invalid-content" }],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "ok",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("extracts default gemini text from candidate parts", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: '{"assistant_text":"from-candidates","expression":"neutral"}' }],
+                },
+              },
+            ],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "from-candidates",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("skips invalid candidate content while extracting default gemini text", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              { content: "invalid-content" },
+              { content: { parts: null } },
+              {
+                content: {
+                  parts: [{ text: '{"assistant_text":"fallback","expression":"neutral"}' }],
+                },
+              },
+            ],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "fallback",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("treats default gemini missing candidates and functionCalls as no tool calls", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "ok",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("fails when default gemini response has no text and no candidates", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).rejects.toThrow(/gemini returned empty text/);
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("skips non-object candidates before extracting default gemini text", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              null,
+              {
+                content: {
+                  parts: [{ text: '{"assistant_text":"from-second","expression":"neutral"}' }],
+                },
+              },
+            ],
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "from-second",
+        expression: "neutral",
+        motion_id: null,
+        tool_calls: [],
+      });
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
 });
 
 describe("llm-provider (env)", () => {
