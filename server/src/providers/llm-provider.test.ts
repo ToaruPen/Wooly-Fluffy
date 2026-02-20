@@ -3015,6 +3015,104 @@ describe("llm-provider (Gemini native)", () => {
       vi.stubGlobal("fetch", savedFetch);
     }
   });
+
+  it("retries chat when default gemini REST returns retryable status", async () => {
+    const savedFetch = globalThis.fetch;
+    let calls = 0;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ assistant_text: "retry-ok", expression: "happy" }),
+            functionCalls: [],
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toEqual({
+        assistant_text: "retry-ok",
+        expression: "happy",
+        motion_id: null,
+        tool_calls: [],
+      });
+      expect(calls).toBe(2);
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("retries inner_task when default gemini REST returns retryable status", async () => {
+    const savedFetch = globalThis.fetch;
+    let calls = 0;
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.includes(":generateContent")) {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            ok: false,
+            status: 429,
+            json: async () => ({}),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ task: "consent_decision", answer: "yes" }),
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.inner_task.call({ task: "consent_decision", input: { text: "yes" } }),
+      ).resolves.toEqual({
+        json_text: JSON.stringify({ task: "consent_decision", answer: "yes" }),
+      });
+      expect(calls).toBe(2);
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
 });
 
 describe("llm-provider (env)", () => {

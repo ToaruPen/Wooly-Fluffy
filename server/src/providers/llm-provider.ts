@@ -495,7 +495,13 @@ const createGeminiModelsClient = (apiKey: string): GeminiNativeModelsClient => {
       body: input.body ? JSON.stringify(input.body) : undefined,
     });
     if (!response.ok) {
-      throw new Error(`gemini_request_failed:${response.status}`);
+      const err = new Error(`gemini_request_failed:${response.status}`) as Error & {
+        status?: number;
+        response?: { status?: number };
+      };
+      err.status = response.status;
+      err.response = { status: response.status };
+      throw err;
     }
     const parsed = (await response.json()) as unknown;
     if (!isPlainObject(parsed)) {
