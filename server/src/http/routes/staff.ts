@@ -16,6 +16,15 @@ type PendingRow = {
   expires_at_ms: number;
 };
 
+type PendingSessionSummaryRow = {
+  id: string;
+  title: string;
+  summary_json: unknown;
+  status: "pending";
+  created_at_ms: number;
+  expires_at_ms: number;
+};
+
 type HandleStaffRoutesInput = {
   req: IncomingMessage;
   res: ServerResponse;
@@ -27,6 +36,7 @@ type HandleStaffRoutesInput = {
   not_found_body: string;
   readJson: (req: IncomingMessage, maxBytes: number) => Promise<unknown>;
   mapPendingToDto: (item: PendingRow) => object;
+  mapSessionSummaryToDto: (item: PendingSessionSummaryRow) => object;
   sendJson: (res: ServerResponse, statusCode: number, body: string) => void;
   sendError: (res: ServerResponse, statusCode: number, code: string, message: string) => void;
   safeSendError: (res: ServerResponse, statusCode: number, code: string, message: string) => void;
@@ -39,6 +49,7 @@ type HandleStaffRoutesInput = {
   openStaffStream: (token: string) => void;
   enqueueEvent: (event: OrchestratorEvent, now: number) => void;
   broadcastStaffSnapshotIfChanged: () => void;
+  broadcastStaffSessionSummariesPendingList: () => void;
 };
 
 const isStaffEventType = (
@@ -55,6 +66,9 @@ const isStaffEventType = (
   value === "STAFF_EMERGENCY_STOP" ||
   value === "STAFF_RESUME";
 
+const STAFF_PENDING_PREFIX = "/api/v1/staff/pending/";
+const STAFF_SESSION_SUMMARIES_PREFIX = "/api/v1/staff/session-summaries/";
+
 export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
   const {
     req,
@@ -67,6 +81,7 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     not_found_body,
     readJson,
     mapPendingToDto,
+    mapSessionSummaryToDto,
     sendJson,
     sendError,
     safeSendError,
@@ -79,6 +94,7 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     openStaffStream,
     enqueueEvent,
     broadcastStaffSnapshotIfChanged,
+    broadcastStaffSessionSummariesPendingList,
   } = input;
 
   if (path === "/api/v1/staff/auth/login") {
@@ -204,7 +220,7 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     return true;
   }
 
-  if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/confirm")) {
+  if (path.startsWith(STAFF_PENDING_PREFIX) && path.endsWith("/confirm")) {
     if (!requireStaffLan()) {
       return true;
     }
@@ -215,7 +231,7 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     if (!requireStaffSession()) {
       return true;
     }
-    const id = path.slice("/api/v1/staff/pending/".length, -"/confirm".length);
+    const id = path.slice(STAFF_PENDING_PREFIX.length, -"/confirm".length);
     const didConfirm = store.confirmById(id);
     if (!didConfirm) {
       sendJson(res, 404, not_found_body);
@@ -226,7 +242,7 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     return true;
   }
 
-  if (path.startsWith("/api/v1/staff/pending/") && path.endsWith("/deny")) {
+  if (path.startsWith(STAFF_PENDING_PREFIX) && path.endsWith("/deny")) {
     if (!requireStaffLan()) {
       return true;
     }
@@ -237,13 +253,75 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     if (!requireStaffSession()) {
       return true;
     }
-    const id = path.slice("/api/v1/staff/pending/".length, -"/deny".length);
+    const id = path.slice(STAFF_PENDING_PREFIX.length, -"/deny".length);
     const didDeny = store.denyById(id);
     if (!didDeny) {
       sendJson(res, 404, not_found_body);
       return true;
     }
     broadcastStaffSnapshotIfChanged();
+    sendJson(res, 200, ok_body);
+    return true;
+  }
+
+  if (path === "/api/v1/staff/session-summaries/pending") {
+    if (!requireStaffLan()) {
+      return true;
+    }
+    if (req.method !== "GET") {
+      sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+      return true;
+    }
+    if (!requireStaffSession()) {
+      return true;
+    }
+    const items = store.listPendingSessionSummaries().map(mapSessionSummaryToDto);
+    sendJson(res, 200, JSON.stringify({ items }));
+    return true;
+  }
+
+  if (path.startsWith(STAFF_SESSION_SUMMARIES_PREFIX) && path.endsWith("/confirm")) {
+    if (!requireStaffLan()) {
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+      return true;
+    }
+    if (!requireStaffSession()) {
+      return true;
+    }
+    const id = path.slice(STAFF_SESSION_SUMMARIES_PREFIX.length, -"/confirm".length);
+    const didConfirm = store.confirmSessionSummary(id);
+    if (!didConfirm) {
+      sendJson(res, 404, not_found_body);
+      return true;
+    }
+    broadcastStaffSnapshotIfChanged();
+    broadcastStaffSessionSummariesPendingList();
+    sendJson(res, 200, ok_body);
+    return true;
+  }
+
+  if (path.startsWith(STAFF_SESSION_SUMMARIES_PREFIX) && path.endsWith("/deny")) {
+    if (!requireStaffLan()) {
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendError(res, 405, "method_not_allowed", "Method Not Allowed");
+      return true;
+    }
+    if (!requireStaffSession()) {
+      return true;
+    }
+    const id = path.slice(STAFF_SESSION_SUMMARIES_PREFIX.length, -"/deny".length);
+    const didDeny = store.denySessionSummary(id);
+    if (!didDeny) {
+      sendJson(res, 404, not_found_body);
+      return true;
+    }
+    broadcastStaffSnapshotIfChanged();
+    broadcastStaffSessionSummariesPendingList();
     sendJson(res, 200, ok_body);
     return true;
   }

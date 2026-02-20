@@ -223,6 +223,40 @@ const mapPendingToDto = (item: {
   expires_at_ms: item.expires_at_ms,
 });
 
+const mapSessionSummaryToDto = (item: {
+  id: string;
+  title: string;
+  summary_json: unknown;
+  status: "pending";
+  created_at_ms: number;
+  expires_at_ms: number;
+}) => {
+  const parsedSummary =
+    typeof item.summary_json === "object" && item.summary_json !== null
+      ? (item.summary_json as Record<string, unknown>)
+      : {};
+
+  const topics = Array.isArray(parsedSummary.topics)
+    ? parsedSummary.topics.filter((v): v is string => typeof v === "string")
+    : [];
+  const staffNotes = Array.isArray(parsedSummary.staff_notes)
+    ? parsedSummary.staff_notes.filter((v): v is string => typeof v === "string")
+    : [];
+
+  return {
+    id: item.id,
+    title: item.title,
+    summary_json: {
+      summary: typeof parsedSummary.summary === "string" ? parsedSummary.summary : "",
+      topics,
+      staff_notes: staffNotes,
+    },
+    status: item.status,
+    created_at_ms: item.created_at_ms,
+    expires_at_ms: item.expires_at_ms,
+  };
+};
+
 export const createHttpServer = (options: CreateHttpServerOptions) => {
   const { store } = options;
   const nowMs = options.now_ms ?? (() => Date.now());
@@ -320,8 +354,23 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       return;
     }
     lastStaffSnapshotJson = json;
-    for (const client of staffClients) {
+    for (const [client, token] of staffSseSessions) {
+      if (!validateStaffSession(token)) {
+        client.close();
+        continue;
+      }
       client.send("staff.snapshot", snapshot);
+    }
+  };
+
+  const broadcastStaffSessionSummariesPendingList = () => {
+    const items = store.listPendingSessionSummaries().map(mapSessionSummaryToDto);
+    for (const [client, token] of staffSseSessions) {
+      if (!validateStaffSession(token)) {
+        client.close();
+        continue;
+      }
+      client.send("staff.session_summaries_pending_list", { items });
     }
   };
 
@@ -362,6 +411,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     storeWriteSessionSummaryPending: createStoreWriteSessionSummaryPending({
       store,
       broadcastStaffSnapshotIfChanged,
+      broadcastStaffSessionSummariesPendingList,
     }),
   });
 
@@ -463,6 +513,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         not_found_body: notFoundBody,
         readJson,
         mapPendingToDto,
+        mapSessionSummaryToDto,
         sendJson,
         sendError,
         safeSendError,
@@ -475,6 +526,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         openStaffStream,
         enqueueEvent,
         broadcastStaffSnapshotIfChanged,
+        broadcastStaffSessionSummariesPendingList,
       })
     ) {
       return;
