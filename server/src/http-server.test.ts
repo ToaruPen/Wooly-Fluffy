@@ -354,6 +354,28 @@ const readFirstSseMessage = (path: string, options?: { headers?: Record<string, 
     req.end();
   });
 
+const withHardTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutError: string,
+): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(timeoutError));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
 const closeServerWithTimeout = (
   serverToClose: Pick<Server, "close">,
   timeoutMs = 2000,
@@ -1606,21 +1628,25 @@ describe("http-server", () => {
         summary_json: { summary: "x", topics: [], staff_notes: [] },
       });
 
-      const messages = await readSseDataMessages(
-        "/api/v1/staff/stream",
-        3,
-        async () => {
-          const response = await sendRequest(
-            "POST",
-            `/api/v1/staff/session-summaries/${id}/confirm`,
-            {
-              headers: withStaffCookie(),
-            },
-          );
-          expect(response.status).toBe(200);
-          expect(JSON.parse(response.body)).toEqual({ ok: true });
-        },
-        { headers: withStaffCookie() },
+      const messages = await withHardTimeout(
+        readSseDataMessages(
+          "/api/v1/staff/stream",
+          3,
+          async () => {
+            const response = await sendRequest(
+              "POST",
+              `/api/v1/staff/session-summaries/${id}/confirm`,
+              {
+                headers: withStaffCookie(),
+              },
+            );
+            expect(response.status).toBe(200);
+            expect(JSON.parse(response.body)).toEqual({ ok: true });
+          },
+          { headers: withStaffCookie() },
+        ),
+        3000,
+        "sse_hard_timeout",
       );
 
       expect(messages[0]?.type).toBe("staff.snapshot");
@@ -1635,17 +1661,25 @@ describe("http-server", () => {
         summary_json: { summary: "x", topics: [], staff_notes: [] },
       });
 
-      const messages = await readSseDataMessages(
-        "/api/v1/staff/stream",
-        3,
-        async () => {
-          const response = await sendRequest("POST", `/api/v1/staff/session-summaries/${id}/deny`, {
-            headers: withStaffCookie(),
-          });
-          expect(response.status).toBe(200);
-          expect(JSON.parse(response.body)).toEqual({ ok: true });
-        },
-        { headers: withStaffCookie() },
+      const messages = await withHardTimeout(
+        readSseDataMessages(
+          "/api/v1/staff/stream",
+          3,
+          async () => {
+            const response = await sendRequest(
+              "POST",
+              `/api/v1/staff/session-summaries/${id}/deny`,
+              {
+                headers: withStaffCookie(),
+              },
+            );
+            expect(response.status).toBe(200);
+            expect(JSON.parse(response.body)).toEqual({ ok: true });
+          },
+          { headers: withStaffCookie() },
+        ),
+        3000,
+        "sse_hard_timeout",
       );
 
       expect(messages[0]?.type).toBe("staff.snapshot");
@@ -1717,9 +1751,13 @@ describe("http-server", () => {
 
         await new Promise<void>((resolve, reject) => {
           let timeout: ReturnType<typeof setTimeout> | undefined;
+          let hardTimeout: ReturnType<typeof setTimeout> | undefined;
           const finish = (err?: Error) => {
             if (timeout) {
               clearTimeout(timeout);
+            }
+            if (hardTimeout) {
+              clearTimeout(hardTimeout);
             }
             if (err) {
               reject(err);
@@ -1793,6 +1831,11 @@ describe("http-server", () => {
             req.destroy();
             finish();
           }, 300);
+
+          hardTimeout = setTimeout(() => {
+            req.destroy();
+            finish(new Error("sse_hard_timeout"));
+          }, 3000);
         });
 
         expect(hasLeakedPendingList).toBe(false);
