@@ -8,7 +8,6 @@ import type {
 } from "./types.js";
 import { executeToolCalls } from "../tools/tool-executor.js";
 import { readEnvInt } from "../env.js";
-import { GoogleGenAI } from "@google/genai";
 import {
   buildGeminiFunctionResponseParts,
   coerceGeminiToolCalls,
@@ -408,9 +407,153 @@ const CHAT_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+
+const toGeminiModelPath = (model: string): string =>
+  model.startsWith("models/") ? model : `models/${model}`;
+
+const extractGeminiTextFromResponse = (response: Record<string, unknown>): string | undefined => {
+  const directText = response.text;
+  if (typeof directText === "string") {
+    return directText;
+  }
+
+  const candidates = response.candidates;
+  if (!Array.isArray(candidates)) {
+    return undefined;
+  }
+  for (const candidate of candidates) {
+    if (!isPlainObject(candidate)) {
+      continue;
+    }
+    const content = candidate.content;
+    if (!isPlainObject(content)) {
+      continue;
+    }
+    const parts = content.parts;
+    if (!Array.isArray(parts)) {
+      continue;
+    }
+    const texts = parts
+      .filter(isPlainObject)
+      .map((part) => part.text)
+      .filter((value): value is string => typeof value === "string");
+    if (texts.length > 0) {
+      return texts.join("").trim();
+    }
+  }
+  return undefined;
+};
+
+const extractGeminiFunctionCallsFromResponse = (response: Record<string, unknown>): unknown => {
+  const directFunctionCalls = response.functionCalls;
+  if (Array.isArray(directFunctionCalls)) {
+    return directFunctionCalls;
+  }
+
+  const candidates = response.candidates;
+  if (!Array.isArray(candidates)) {
+    return undefined;
+  }
+  for (const candidate of candidates) {
+    if (!isPlainObject(candidate)) {
+      continue;
+    }
+    const content = candidate.content;
+    if (!isPlainObject(content)) {
+      continue;
+    }
+    const parts = content.parts;
+    if (!Array.isArray(parts)) {
+      continue;
+    }
+    const functionCalls = parts
+      .filter(isPlainObject)
+      .map((part) => part.functionCall)
+      .filter((value) => typeof value !== "undefined");
+    if (functionCalls.length > 0) {
+      return functionCalls;
+    }
+  }
+  return undefined;
+};
+
 const createGeminiModelsClient = (apiKey: string): GeminiNativeModelsClient => {
-  const ai = new GoogleGenAI({ apiKey });
-  return ai.models as unknown as GeminiNativeModelsClient;
+  const requestJson = async (input: {
+    model: string;
+    suffix: string;
+    method: "GET" | "POST";
+    body?: Record<string, unknown>;
+    signal?: AbortSignal;
+  }): Promise<Record<string, unknown>> => {
+    const modelPath = toGeminiModelPath(input.model);
+    const url = `${GEMINI_API_BASE_URL}/${modelPath}${input.suffix}?key=${encodeURIComponent(apiKey)}`;
+    const response = await fetch(url, {
+      method: input.method,
+      signal: input.signal,
+      headers: input.method === "POST" ? { "content-type": "application/json" } : undefined,
+      body: input.body ? JSON.stringify(input.body) : undefined,
+    });
+    if (!response.ok) {
+      throw new Error(`gemini_request_failed:${response.status}`);
+    }
+    const parsed = (await response.json()) as unknown;
+    if (!isPlainObject(parsed)) {
+      throw new Error("gemini_response_invalid");
+    }
+    return parsed;
+  };
+
+  return {
+    generateContent: async (params) => {
+      const generationConfig: Record<string, unknown> = {};
+      if (params.config?.responseMimeType) {
+        generationConfig.responseMimeType = params.config.responseMimeType;
+      }
+      if (typeof params.config?.responseJsonSchema !== "undefined") {
+        generationConfig.responseSchema = params.config.responseJsonSchema;
+      }
+
+      const body: Record<string, unknown> = {
+        contents: params.contents,
+      };
+      if (params.config?.systemInstruction) {
+        body.systemInstruction = {
+          role: "system",
+          parts: [{ text: params.config.systemInstruction }],
+        };
+      }
+      if (params.config?.tools) {
+        body.tools = params.config.tools;
+      }
+      if (Object.keys(generationConfig).length > 0) {
+        body.generationConfig = generationConfig;
+      }
+
+      const parsed = await requestJson({
+        model: params.model,
+        suffix: ":generateContent",
+        method: "POST",
+        body,
+        signal: params.config?.abortSignal,
+      });
+
+      return {
+        text: extractGeminiTextFromResponse(parsed),
+        functionCalls: extractGeminiFunctionCallsFromResponse(parsed),
+        candidates: Array.isArray(parsed.candidates)
+          ? (parsed.candidates as Array<{ content?: unknown }>)
+          : undefined,
+      };
+    },
+    get: async (params) =>
+      requestJson({
+        model: params.model,
+        suffix: "",
+        method: "GET",
+        signal: params.config?.abortSignal,
+      }),
+  };
 };
 
 const extractGeminiText = (response: { text?: unknown }): string => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createGeminiNativeLlmProvider,
@@ -2537,12 +2537,154 @@ describe("llm-provider (Gemini native)", () => {
     expect(calls).toBe(1);
   });
 
-  it("constructs default models client when gemini_models is omitted", () => {
-    const llm = createGeminiNativeLlmProvider({
-      model: "gemini-2.5-flash-lite",
-      api_key: "test-key",
-    });
-    expect(llm.kind).toBe("gemini_native");
+  it("constructs default models client when gemini_models is omitted", async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: Array<{ url: string; method: string; body?: string }> = [];
+    vi.stubGlobal("fetch", (async (input: unknown, init?: { method?: string; body?: string }) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method, body: init?.body });
+
+      if (url.includes(":generateContent")) {
+        if (calls.filter((c) => c.url.includes(":generateContent")).length === 1) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        functionCall: {
+                          name: "get_weather",
+                          args: { location: "Tokyo" },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          } as Response;
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text: JSON.stringify({ assistant_text: "晴れです", expression: "happy" }),
+            functionCalls: [],
+            candidates: [{ content: { parts: [{ text: "ignored" }] } }],
+          }),
+        } as Response;
+      }
+
+      if (url.includes("api.open-meteo.com")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            current_weather: {
+              temperature: 20,
+              weathercode: 0,
+            },
+          }),
+        } as Response;
+      }
+
+      if (url.includes("/v1beta/models/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+        } as Response;
+      }
+
+      throw new Error(`unexpected_fetch:${url}`);
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      const chat = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" });
+      expect(chat).toEqual({
+        assistant_text: "晴れです",
+        expression: "happy",
+        motion_id: null,
+        tool_calls: [
+          {
+            id: expect.any(String),
+            type: "function",
+            function: {
+              name: "get_weather",
+              arguments: JSON.stringify({ location: "Tokyo" }),
+            },
+          },
+        ],
+      });
+
+      await expect(llm.health()).resolves.toEqual({ status: "ok" });
+      expect(
+        calls.some((c) => c.url.includes("/v1beta/models/gemini-2.5-flash-lite:generateContent")),
+      ).toBe(true);
+      expect(calls.some((c) => c.url.includes("/v1beta/models/gemini-2.5-flash-lite?key="))).toBe(
+        true,
+      );
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("throws when default gemini client receives non-ok response", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async () => {
+      return {
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "models/gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).rejects.toThrow(/gemini_request_failed:503/);
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
+  });
+
+  it("throws when default gemini client receives non-object JSON", async () => {
+    const savedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => "invalid-json",
+      } as Response;
+    }) as typeof fetch);
+
+    try {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).rejects.toThrow(/gemini_response_invalid/);
+    } finally {
+      vi.stubGlobal("fetch", savedFetch);
+    }
   });
 });
 
