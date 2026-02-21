@@ -46,7 +46,8 @@ type CreateStoreOptions = {
   id_factory?: () => string;
 };
 
-const WEEK_MS = 86_400_000 * 7;
+const DAY_MS = 86_400_000;
+const WEEK_MS = DAY_MS * 7;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS session_summary_items (
