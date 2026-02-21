@@ -146,7 +146,7 @@ describe("sse-client", () => {
 
     source.onmessage?.({
       data: JSON.stringify({
-        type: "staff.pending_list",
+        type: "staff.session_summaries_pending_list",
         seq: 123,
         data: { items: [] },
       }),
@@ -154,7 +154,7 @@ describe("sse-client", () => {
 
     expect(onSnapshot).toHaveBeenCalledTimes(0);
     expect(onMessage).toHaveBeenCalledWith({
-      type: "staff.pending_list",
+      type: "staff.session_summaries_pending_list",
       seq: 123,
       data: { items: [] },
     });
@@ -563,7 +563,7 @@ describe("debug page", () => {
 
     await act(async () => {
       staffHandlers.onMessage?.({
-        type: "staff.pending_list",
+        type: "staff.session_summaries_pending_list",
         seq: 3,
         data: { items: [] },
       });
@@ -2405,15 +2405,13 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/login" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url === "/api/v1/staff/pending" && method === "GET") {
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           return jsonResponse(200, {
             items: [
               {
                 id: "p1",
-                personal_name: "taro",
-                kind: "food",
-                value: "curry",
-                source_quote: "likes curry",
+                title: "Morning chat",
+                summary_json: { note: "Talked about plants" },
                 status: "pending",
                 created_at_ms: 0,
                 expires_at_ms: 1,
@@ -2427,7 +2425,7 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/keepalive" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url.startsWith("/api/v1/staff/pending/") && method === "POST") {
+        if (url.startsWith("/api/v1/staff/session-summaries/") && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
         return jsonResponse(500, { error: { code: "unhandled", message: url } });
@@ -2476,8 +2474,10 @@ describe("app", () => {
 
       expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
       expect(document.body.textContent ?? "").toContain("Pending");
-      expect(document.body.textContent ?? "").toContain("taro / food / curry");
-      expect(document.body.textContent ?? "").toContain("likes curry");
+      expect(document.body.textContent ?? "").toContain("Morning chat");
+      expect(document.body.textContent ?? "").toContain('{"note":"Talked about plants"}');
+      expect(document.body.textContent ?? "").toContain("Created:");
+      expect(document.body.textContent ?? "").toContain("Deadline:");
 
       const handlers = connectSseMock.mock.calls[0]![1];
       await act(async () => {
@@ -2487,16 +2487,24 @@ describe("app", () => {
         });
         handlers.onError?.(new Error("boom"));
         handlers.onMessage?.({ type: "staff.snapshot", seq: 1, data: {} });
-        handlers.onMessage?.({ type: "staff.pending_list", seq: 2, data: null });
-        handlers.onMessage?.({ type: "staff.pending_list", seq: 3, data: { items: "nope" } });
-        handlers.onMessage?.({ type: "staff.pending_list", seq: 3, data: { items: [] } });
+        handlers.onMessage?.({ type: "staff.session_summaries_pending_list", seq: 2, data: null });
+        handlers.onMessage?.({
+          type: "staff.session_summaries_pending_list",
+          seq: 3,
+          data: { items: "nope" },
+        });
+        handlers.onMessage?.({
+          type: "staff.session_summaries_pending_list",
+          seq: 3,
+          data: { items: [] },
+        });
         handlers.onSnapshot({
           state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
           pending: { count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("boom");
-      expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");
+      expect(document.body.textContent ?? "").not.toContain("Mode:");
       expect(document.body.textContent ?? "").toContain("Pending: 0");
 
       await act(async () => {
@@ -2505,7 +2513,7 @@ describe("app", () => {
           pending: { count: 0 },
         });
       });
-      expect(document.body.textContent ?? "").toContain("Mode: ROOM");
+      expect(document.body.textContent ?? "").not.toContain("Mode:");
 
       const ptt = Array.from(document.querySelectorAll("button")).find((b) =>
         (b.textContent ?? "").includes("Push to talk"),
@@ -2789,15 +2797,14 @@ describe("app", () => {
 
       await act(async () => {
         handlers.onMessage?.({
-          type: "staff.pending_list",
+          type: "staff.session_summaries_pending_list",
           seq: 9,
           data: {
             items: [
               {
                 id: "p2",
-                personal_name: "taro",
-                kind: "food",
-                value: "curry",
+                title: "After lunch",
+                summary_json: { note: "Played cards" },
                 status: "pending",
                 created_at_ms: 0,
                 expires_at_ms: 1,
@@ -2806,11 +2813,15 @@ describe("app", () => {
           },
         });
       });
-      expect(document.body.textContent ?? "").toContain("taro / food / curry");
-      expect(document.body.textContent ?? "").not.toContain("likes curry");
+      expect(document.body.textContent ?? "").toContain("After lunch");
+      expect(document.body.textContent ?? "").toContain('{"note":"Played cards"}');
 
       await act(async () => {
-        handlers.onMessage?.({ type: "staff.pending_list", seq: 10, data: { items: [] } });
+        handlers.onMessage?.({
+          type: "staff.session_summaries_pending_list",
+          seq: 10,
+          data: { items: [] },
+        });
       });
       expect(document.body.textContent ?? "").toContain("No pending items.");
 
@@ -2962,7 +2973,7 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/login" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url === "/api/v1/staff/pending" && method === "GET") {
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           return jsonResponse(200, { items: [] });
         }
         if (url === "/api/v1/staff/event" && method === "POST") {
@@ -3031,7 +3042,7 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/login" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url === "/api/v1/staff/pending" && method === "GET") {
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
         }
         return jsonResponse(200, { ok: true });
@@ -3089,7 +3100,7 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/login" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url === "/api/v1/staff/pending" && method === "GET") {
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           throw new Error("offline");
         }
         return jsonResponse(200, { ok: true });
@@ -3146,14 +3157,13 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/login" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url === "/api/v1/staff/pending" && method === "GET") {
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           return jsonResponse(200, {
             items: [
               {
                 id: "p1",
-                personal_name: "taro",
-                kind: "food",
-                value: "curry",
+                title: "Morning chat",
+                summary_json: { note: "Talked about plants" },
                 status: "pending",
                 created_at_ms: 0,
                 expires_at_ms: 1,
@@ -3161,7 +3171,7 @@ describe("app", () => {
             ],
           });
         }
-        if (url.startsWith("/api/v1/staff/pending/") && method === "POST") {
+        if (url.startsWith("/api/v1/staff/session-summaries/") && method === "POST") {
           mutateCall += 1;
           if (mutateCall === 1) {
             return jsonResponse(404, { error: { code: "not_found", message: "x" } });
@@ -3281,7 +3291,7 @@ describe("app", () => {
       });
     });
 
-    it("covers modeText PERSONAL name branch", async () => {
+    it("does not render Mode card even when snapshot includes mode fields", async () => {
       vi.resetModules();
 
       const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
@@ -3298,7 +3308,7 @@ describe("app", () => {
         if (url === "/api/v1/staff/auth/login" && method === "POST") {
           return jsonResponse(200, { ok: true });
         }
-        if (url === "/api/v1/staff/pending" && method === "GET") {
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           return jsonResponse(200, { items: [] });
         }
         return jsonResponse(200, { ok: true });
@@ -3336,8 +3346,7 @@ describe("app", () => {
           pending: { count: 0 },
         });
       });
-      expect(document.body.textContent ?? "").toContain("Mode: PERSONAL");
-      expect(document.body.textContent ?? "").not.toContain("Mode: PERSONAL (");
+      expect(document.body.textContent ?? "").not.toContain("Mode:");
 
       await act(async () => {
         handlers.onSnapshot({
@@ -3345,7 +3354,76 @@ describe("app", () => {
           pending: { count: 0 },
         });
       });
-      expect(document.body.textContent ?? "").toContain("Mode: PERSONAL (taro)");
+      expect(document.body.textContent ?? "").not.toContain("Mode:");
+
+      await act(async () => {
+        appRoot.unmount();
+      });
+    });
+
+    it("renders '-' timestamps when pending item has invalid date range values", async () => {
+      vi.resetModules();
+
+      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+        close: vi.fn(),
+      }));
+      vi.doMock("./sse-client", async () => {
+        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+        return { ...actual, connectSse: connectSseMock };
+      });
+
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url === "/api/v1/staff/auth/login" && method === "POST") {
+          return jsonResponse(200, { ok: true });
+        }
+        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+          return jsonResponse(200, {
+            items: [
+              {
+                id: "p-invalid-ts",
+                title: "Out of range",
+                summary_json: { note: "invalid timestamp" },
+                status: "pending",
+                created_at_ms: 9_000_000_000_000_000,
+                expires_at_ms: -9_000_000_000_000_000,
+              },
+            ],
+          });
+        }
+        return jsonResponse(200, { ok: true });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      window.history.pushState({}, "", "/staff");
+      document.body.innerHTML = '<div id="root"></div>';
+
+      let appRoot: Root;
+      await act(async () => {
+        const mainModule = await import("./main");
+        appRoot = mainModule.appRoot;
+      });
+
+      const input = document.querySelector("input") as HTMLInputElement | null;
+      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+        (b.textContent ?? "").includes("Sign in"),
+      );
+      expect(input).toBeTruthy();
+      expect(signIn).toBeTruthy();
+
+      await act(async () => {
+        if (input) {
+          setNativeInputValue(input, "pass");
+          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        signIn?.click();
+      });
+
+      expect(document.body.textContent ?? "").toContain("Out of range");
+      expect(document.body.textContent ?? "").toContain("Created: -");
+      expect(document.body.textContent ?? "").toContain("Deadline: -");
 
       await act(async () => {
         appRoot.unmount();
