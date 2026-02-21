@@ -91,19 +91,33 @@ const getPhaseLabel = (phase: Phase): string => {
 };
 
 const formatTimestampUtc = (timestampMs: number | null): string => {
-  if (timestampMs === null || !Number.isFinite(timestampMs)) {
+  if (timestampMs === null) {
     return "-";
+  }
+  if (!Number.isFinite(timestampMs)) {
+    throw new Error(`Invalid timestamp value: ${String(timestampMs)}`);
   }
   const date = new Date(timestampMs);
   if (Number.isNaN(date.getTime())) {
-    return "-";
+    throw new Error(`Invalid timestamp value: ${String(timestampMs)}`);
   }
   return date.toISOString();
 };
 
 const formatSummary = (summaryJson: unknown): string => {
+  if (typeof summaryJson === "string") {
+    return summaryJson;
+  }
   const encoded = JSON.stringify(summaryJson);
   return typeof encoded === "string" ? encoded : "null";
+};
+
+const renderTimestampText = (timestampMs: number | null): string => {
+  try {
+    return formatTimestampUtc(timestampMs);
+  } catch (error) {
+    return (error as Error).message;
+  }
 };
 
 export const StaffPage = () => {
@@ -540,10 +554,10 @@ export const StaffPage = () => {
                     <div className={styles.pendingTitle}>{item.title}</div>
                     <div className={styles.pendingQuote}>{formatSummary(item.summary_json)}</div>
                     <div className={styles.staffLabel}>
-                      Created: {formatTimestampUtc(item.created_at_ms)}
+                      Created: {renderTimestampText(item.created_at_ms)}
                     </div>
                     <div className={styles.staffLabel}>
-                      Deadline: {formatTimestampUtc(item.expires_at_ms)}
+                      Deadline: {renderTimestampText(item.expires_at_ms)}
                     </div>
                     <div className={styles.pendingActions}>
                       <button

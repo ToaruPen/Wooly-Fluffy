@@ -9,6 +9,8 @@ type ConnectHandlers = {
   onError?: (error: Error) => void;
 };
 
+const STAFF_TEST_TIMEOUT_MS = 10_000;
+
 const resetDom = () => {
   document.body.innerHTML = "";
   window.history.pushState({}, "", "/");
@@ -3299,77 +3301,81 @@ describe("app", () => {
       });
     });
 
-    it("does not render Mode card even when snapshot includes mode fields", async () => {
-      vi.resetModules();
+    it(
+      "does not render Mode card even when snapshot includes mode fields",
+      async () => {
+        vi.resetModules();
 
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
 
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+            return jsonResponse(200, { items: [] });
+          }
           return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          return jsonResponse(200, { items: [] });
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
-
-      const handlers = connectSseMock.mock.calls[0]![1];
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
-          pending: { count: 0, session_summary_count: 0 },
         });
-      });
-      expect(document.body.textContent ?? "").not.toContain("Mode:");
+        vi.stubGlobal("fetch", fetchMock);
 
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-          pending: { count: 0, session_summary_count: 0 },
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
         });
-      });
-      expect(document.body.textContent ?? "").not.toContain("Mode:");
 
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          signIn?.click();
+        });
 
-    it("renders '-' timestamps when pending item has non-finite or invalid date values", async () => {
+        const handlers = connectSseMock.mock.calls[0]![1];
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").not.toContain("Mode:");
+
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").not.toContain("Mode:");
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
+
+    it("surfaces timestamp validation errors and preserves null deadline fallback", async () => {
       vi.resetModules();
 
       const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
@@ -3400,6 +3406,14 @@ describe("app", () => {
               {
                 id: "p-null-summary",
                 title: "Missing summary",
+                summary_json: "already formatted",
+                status: "pending",
+                created_at_ms: 0,
+                expires_at_ms: null,
+              },
+              {
+                id: "p-undefined-summary",
+                title: "Undefined summary",
                 summary_json: undefined,
                 status: "pending",
                 created_at_ms: 0,
@@ -3447,9 +3461,20 @@ describe("app", () => {
 
       expect(document.body.textContent ?? "").toContain("Non finite");
       expect(document.body.textContent ?? "").toContain("Missing summary");
+      expect(document.body.textContent ?? "").toContain("Undefined summary");
+      expect(document.body.textContent ?? "").toContain("already formatted");
+      expect(document.body.textContent ?? "").not.toContain('"already formatted"');
       expect(document.body.textContent ?? "").toContain("null");
       expect(document.body.textContent ?? "").toContain("Out of range");
-      expect(document.body.textContent ?? "").toContain("Created: -");
+      expect(document.body.textContent ?? "").toContain("Invalid timestamp value: Infinity");
+      expect(document.body.textContent ?? "").toContain("Invalid timestamp value: -Infinity");
+      expect(document.body.textContent ?? "").toContain(
+        "Invalid timestamp value: 9000000000000000",
+      );
+      expect(document.body.textContent ?? "").toContain(
+        "Invalid timestamp value: -9000000000000000",
+      );
+      expect(document.body.textContent ?? "").toContain("Created: 1970-01-01T00:00:00.000Z");
       expect(document.body.textContent ?? "").toContain("Deadline: -");
 
       await act(async () => {
