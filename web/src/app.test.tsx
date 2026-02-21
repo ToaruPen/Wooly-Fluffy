@@ -2483,7 +2483,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
-          pending: { count: 1 },
+          pending: { count: 0, session_summary_count: 1 },
         });
         handlers.onError?.(new Error("boom"));
         handlers.onMessage?.({ type: "staff.snapshot", seq: 1, data: {} });
@@ -2500,7 +2500,7 @@ describe("app", () => {
         });
         handlers.onSnapshot({
           state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("boom");
@@ -2509,8 +2509,16 @@ describe("app", () => {
 
       await act(async () => {
         handlers.onSnapshot({
+          state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
+          pending: { count: 0, session_summary_count: 1 },
+        });
+      });
+      expect(document.body.textContent ?? "").toContain("Pending: 1");
+
+      await act(async () => {
+        handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "idle" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").not.toContain("Mode:");
@@ -2678,7 +2686,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "listening" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("Phase: Listening");
@@ -2687,7 +2695,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "waiting_stt" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("Phase: Waiting (STT)");
@@ -2696,7 +2704,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "waiting_chat" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("Phase: Waiting (Chat)");
@@ -2705,7 +2713,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "asking_consent" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("Phase: Asking Consent");
@@ -2714,7 +2722,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "waiting_inner_task" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").toContain("Phase: Waiting (Task)");
@@ -2723,7 +2731,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "ROOM", personal_name: null, phase: "idle" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
 
@@ -3343,7 +3351,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").not.toContain("Mode:");
@@ -3351,7 +3359,7 @@ describe("app", () => {
       await act(async () => {
         handlers.onSnapshot({
           state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-          pending: { count: 0 },
+          pending: { count: 0, session_summary_count: 0 },
         });
       });
       expect(document.body.textContent ?? "").not.toContain("Mode:");

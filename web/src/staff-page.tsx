@@ -19,6 +19,7 @@ type StaffSnapshot = {
   };
   pending: {
     count: number;
+    session_summary_count: number;
   };
 };
 
@@ -376,7 +377,7 @@ export const StaffPage = () => {
   const phase = snapshot?.state.phase ?? null;
   const phaseText = phase ? getPhaseLabel(phase) : "-";
   const phaseCategory = phase ? getPhaseCategory(phase) : "idle";
-  const pendingCountText = snapshot ? String(snapshot.pending.count) : "-";
+  const pendingCountText = snapshot ? String(snapshot.pending.session_summary_count) : "-";
 
   return (
     <div className={styles.staffPage}>
