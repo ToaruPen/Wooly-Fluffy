@@ -1321,7 +1321,6 @@
   font-weight: 600;
   color: var(--color-text, #1e293b);
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 .pendingQuote {
@@ -1338,7 +1337,6 @@
   max-height: calc(1.4em * 4);
   overflow: hidden;
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 .pendingActions {
