@@ -10,6 +10,9 @@ type ConnectHandlers = {
 };
 
 const STAFF_TEST_TIMEOUT_MS = 10_000;
+const SSE_TEST_TIMEOUT_MS = 5_000;
+const KEEPALIVE_INTERVAL_MS = 30_000;
+const SESSION_TIMEOUT_MS = 180_000;
 
 const resetDom = () => {
   document.body.innerHTML = "";
@@ -131,36 +134,40 @@ describe("sse-client", () => {
     expect(source.closed).toBe(true);
   });
 
-  it("dispatches non-snapshot messages to onMessage", async () => {
-    vi.resetModules();
+  it(
+    "dispatches non-snapshot messages to onMessage",
+    async () => {
+      vi.resetModules();
 
-    const FakeEventSource = createFakeEventSourceClass();
+      const FakeEventSource = createFakeEventSourceClass();
 
-    vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+      vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
 
-    const { connectSse } = await import("./sse-client");
+      const { connectSse } = await import("./sse-client");
 
-    const onSnapshot = vi.fn();
-    const onMessage = vi.fn();
+      const onSnapshot = vi.fn();
+      const onMessage = vi.fn();
 
-    connectSse("/api/v1/staff/stream", { onSnapshot, onMessage });
-    const source = FakeEventSource.instances[0];
+      connectSse("/api/v1/staff/stream", { onSnapshot, onMessage });
+      const source = FakeEventSource.instances[0];
 
-    source.onmessage?.({
-      data: JSON.stringify({
+      source.onmessage?.({
+        data: JSON.stringify({
+          type: "staff.session_summaries_pending_list",
+          seq: 123,
+          data: { items: [] },
+        }),
+      } as MessageEvent);
+
+      expect(onSnapshot).toHaveBeenCalledTimes(0);
+      expect(onMessage).toHaveBeenCalledWith({
         type: "staff.session_summaries_pending_list",
         seq: 123,
         data: { items: [] },
-      }),
-    } as MessageEvent);
-
-    expect(onSnapshot).toHaveBeenCalledTimes(0);
-    expect(onMessage).toHaveBeenCalledWith({
-      type: "staff.session_summaries_pending_list",
-      seq: 123,
-      data: { items: [] },
-    });
-  });
+      });
+    },
+    SSE_TEST_TIMEOUT_MS,
+  );
 
   it("does not throw when onError is not provided", async () => {
     vi.resetModules();
@@ -2753,10 +2760,10 @@ describe("app", () => {
         );
 
         await act(async () => {
-          vi.advanceTimersByTime(30_000);
+          vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
         });
         await act(async () => {
-          vi.advanceTimersByTime(30_000);
+          vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
         });
         const keepaliveCalls = fetchMock.mock.calls.filter(
           (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
@@ -2765,7 +2772,7 @@ describe("app", () => {
 
         await act(async () => {
           window.dispatchEvent(new Event("pointerdown"));
-          vi.advanceTimersByTime(30_000);
+          vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
         });
         const keepaliveCalls2 = fetchMock.mock.calls.filter(
           (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
@@ -2846,7 +2853,7 @@ describe("app", () => {
         });
 
         await act(async () => {
-          vi.advanceTimersByTime(180_000);
+          vi.advanceTimersByTime(SESSION_TIMEOUT_MS);
         });
         expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
         expect(closeSpy).toHaveBeenCalled();
@@ -2955,19 +2962,19 @@ describe("app", () => {
 
         await act(async () => {
           window.dispatchEvent(new Event("pointerdown"));
-          vi.advanceTimersByTime(30_000);
+          vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
         });
         expect(document.body.textContent ?? "").toContain("HTTP 500");
 
         await act(async () => {
           window.dispatchEvent(new Event("pointerdown"));
-          vi.advanceTimersByTime(30_000);
+          vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
         });
         expect(document.body.textContent ?? "").toContain("Network error");
 
         await act(async () => {
           window.dispatchEvent(new Event("pointerdown"));
-          vi.advanceTimersByTime(30_000);
+          vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
         });
         expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
 
