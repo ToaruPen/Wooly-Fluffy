@@ -68,13 +68,17 @@ PRD (`docs/prd/`) > Epic (`docs/epics/`) > ADRs (`docs/decisions.md`) > Code. If
 
 3. PR / merge
 
-- Only create a PR after `/review` passes; do not change anything outside the Issue scope
+- Only create a PR after `/final-review` passes; do not change anything outside the Issue scope
 
 ### Worktree / Parallel Work
 
 - One Issue = one branch = one worktree (never mix changes)
 - Do not edit PRD/Epic across parallel branches; serialize SoT changes
 - Use `./scripts/worktree.sh check` before applying `parallel-ok`
+- Before high-impact operations (`/review-cycle`, `/create-pr`, `/pr-bots-review`, manual conflict resolution), run Scope Lock checks:
+  - `git branch --show-current`
+  - `gh issue develop --list <issue-number>`
+  - `gh pr view <pr-number-or-url> --json headRefName --jq '.headRefName'`
 
 ### Command Index
 
@@ -85,16 +89,18 @@ PRD (`docs/prd/`) > Epic (`docs/epics/`) > ADRs (`docs/decisions.md`) > Code. If
 - `/estimation`: write a Full estimate (11 sections) and get approval
 - `/impl`: implement an Issue (estimate required)
 - `/tdd`: implement via TDD (red -> green -> refactor)
+- `/test-review`: run fail-fast test review checks before review/PR gates
 - `/review-cycle`: local review loop
-- `/review`: definition-of-done check
+- `/final-review`: definition-of-done check
 - `/create-pr`: create a PR (gh)
+- `/pr-bots-review`: request a PR review-bot check and iterate until feedback is resolved
 - `/sync-docs`: check consistency across PRD/Epic/code
 - `/worktree`: manage git worktrees
 
 ### Note on slash commands
 
 - Built-in skills/commands do not execute this repo's Agentic-SDD commands under `.agent/commands/`.
-- To run Agentic-SDD commands, use the corresponding scripts under `./scripts/` (e.g. `./scripts/review-cycle.sh`, `./scripts/review.sh`, `./scripts/create-pr.sh`).
+- To run Agentic-SDD commands, use the corresponding scripts under `./scripts/` (e.g. `./scripts/review-cycle.sh`, `./scripts/test-review.sh`, `./scripts/create-pr.sh`).
 
 ### References
 
