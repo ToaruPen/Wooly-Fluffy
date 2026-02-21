@@ -5,7 +5,6 @@ import styles from "./styles.module.css";
 import { DevDebugLink } from "./dev-debug-link";
 import { readViteInt } from "./env";
 
-type Mode = "ROOM" | "PERSONAL";
 type Phase =
   | "idle"
   | "listening"
@@ -16,22 +15,19 @@ type Phase =
 
 type StaffSnapshot = {
   state: {
-    mode: Mode;
-    personal_name: string | null;
     phase: Phase;
   };
   pending: {
     count: number;
+    session_summary_count: number;
   };
 };
 
 type PendingItem = {
   id: string;
-  personal_name: string;
-  kind: "likes" | "food" | "play" | "hobby";
-  value: string;
-  source_quote?: string;
-  status: "pending" | "confirmed" | "rejected" | "deleted";
+  title: string;
+  summary_json: unknown;
+  status: "pending" | "confirmed";
   created_at_ms: number;
   expires_at_ms: number | null;
 };
@@ -91,6 +87,36 @@ const getPhaseLabel = (phase: Phase): string => {
       return "Asking Consent";
     case "waiting_inner_task":
       return "Waiting (Task)";
+  }
+};
+
+const formatTimestampUtc = (timestampMs: number | null): string => {
+  if (timestampMs === null) {
+    return "-";
+  }
+  if (!Number.isFinite(timestampMs)) {
+    throw new Error(`Invalid timestamp value: ${String(timestampMs)}`);
+  }
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid timestamp value: ${String(timestampMs)}`);
+  }
+  return date.toISOString();
+};
+
+const formatSummary = (summaryJson: unknown): string => {
+  if (typeof summaryJson === "string") {
+    return summaryJson;
+  }
+  const encoded = JSON.stringify(summaryJson);
+  return typeof encoded === "string" ? encoded : "null";
+};
+
+const renderTimestampText = (timestampMs: number | null): string => {
+  try {
+    return formatTimestampUtc(timestampMs);
+  } catch (error) {
+    return (error as Error).message;
   }
 };
 
@@ -160,7 +186,7 @@ export const StaffPage = () => {
   const refreshPending = async () => {
     setPendingError(null);
     try {
-      const res = await getJson("/api/v1/staff/pending");
+      const res = await getJson("/api/v1/staff/session-summaries/pending");
       if (res.status === 401) {
         setView("locked");
         return;
@@ -179,7 +205,7 @@ export const StaffPage = () => {
   const mutatePending = async (id: string, action: "confirm" | "deny") => {
     setActionError(null);
     try {
-      const res = await postEmpty(`/api/v1/staff/pending/${id}/${action}`);
+      const res = await postEmpty(`/api/v1/staff/session-summaries/${id}/${action}`);
       if (res.status === 401) {
         setView("locked");
         return;
@@ -291,7 +317,7 @@ export const StaffPage = () => {
         setSnapshot(data as StaffSnapshot);
       },
       onMessage: (message: ServerMessage) => {
-        if (message.type !== "staff.pending_list") {
+        if (message.type !== "staff.session_summaries_pending_list") {
           return;
         }
         const data = message.data;
@@ -362,16 +388,10 @@ export const StaffPage = () => {
 
   const title = view === "logged_in" ? "STAFF" : view === "locked" ? "STAFF (Locked)" : "STAFF";
 
-  const modeText = snapshot
-    ? snapshot.state.mode === "PERSONAL"
-      ? `PERSONAL${snapshot.state.personal_name ? ` (${snapshot.state.personal_name})` : ""}`
-      : "ROOM"
-    : "-";
-
   const phase = snapshot?.state.phase ?? null;
   const phaseText = phase ? getPhaseLabel(phase) : "-";
   const phaseCategory = phase ? getPhaseCategory(phase) : "idle";
-  const pendingCountText = snapshot ? String(snapshot.pending.count) : "-";
+  const pendingCountText = snapshot ? String(snapshot.pending.session_summary_count) : "-";
 
   return (
     <div className={styles.staffPage}>
@@ -413,10 +433,6 @@ export const StaffPage = () => {
         <main className={styles.staffLayout}>
           <section>
             <div className={styles.staffStatusGrid}>
-              <div className={styles.statusCard}>
-                <div className={styles.statusCardLabel}>Mode</div>
-                <div className={styles.statusCardValue}>Mode: {modeText}</div>
-              </div>
               <div className={styles.statusCard}>
                 <div className={styles.statusCardLabel}>Phase</div>
                 <div className={styles.statusCardValue}>
@@ -535,12 +551,14 @@ export const StaffPage = () => {
               <div className={styles.pendingList}>
                 {pendingItems.map((item) => (
                   <div key={item.id} className={styles.pendingCard}>
-                    <div className={styles.pendingTitle}>
-                      {item.personal_name} / {item.kind} / {item.value}
+                    <div className={styles.pendingTitle}>{item.title}</div>
+                    <div className={styles.pendingQuote}>{formatSummary(item.summary_json)}</div>
+                    <div className={styles.staffLabel}>
+                      Created: {renderTimestampText(item.created_at_ms)}
                     </div>
-                    {item.source_quote ? (
-                      <div className={styles.pendingQuote}>{item.source_quote}</div>
-                    ) : null}
+                    <div className={styles.staffLabel}>
+                      Deadline: {renderTimestampText(item.expires_at_ms)}
+                    </div>
                     <div className={styles.pendingActions}>
                       <button
                         type="button"

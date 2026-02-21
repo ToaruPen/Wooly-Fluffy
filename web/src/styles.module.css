@@ -1304,6 +1304,8 @@
   border-left: 4px solid var(--color-staff-primary, #3b82f6);
   border-radius: var(--radius-md, 12px);
   padding: var(--space-3, 12px);
+  display: flex;
+  flex-direction: column;
   transition:
     box-shadow 0.15s ease,
     transform 0.15s ease;
@@ -1318,6 +1320,7 @@
   font-size: var(--text-sm, 14px);
   font-weight: 600;
   color: var(--color-text, #1e293b);
+  overflow-wrap: anywhere;
 }
 
 .pendingQuote {
@@ -1326,15 +1329,24 @@
   border-radius: var(--radius-sm, 8px);
   background: var(--color-secondary, #f1f5f9);
   font-size: var(--text-sm, 14px);
+  line-height: 1.4;
   font-style: italic;
   color: var(--color-text-muted, #64748b);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  max-height: calc(1.4em * 4);
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .pendingActions {
-  margin-top: 10px;
+  margin-top: auto;
+  padding-top: 10px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .staffErrorText {
