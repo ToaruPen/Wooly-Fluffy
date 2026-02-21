@@ -3361,7 +3361,7 @@ describe("app", () => {
       });
     });
 
-    it("renders '-' timestamps when pending item has invalid date range values", async () => {
+    it("renders '-' timestamps when pending item has non-finite or invalid date values", async () => {
       vi.resetModules();
 
       const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
@@ -3381,6 +3381,22 @@ describe("app", () => {
         if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
           return jsonResponse(200, {
             items: [
+              {
+                id: "p-non-finite-ts",
+                title: "Non finite",
+                summary_json: { note: "non-finite timestamp" },
+                status: "pending",
+                created_at_ms: Number.POSITIVE_INFINITY,
+                expires_at_ms: Number.NEGATIVE_INFINITY,
+              },
+              {
+                id: "p-null-summary",
+                title: "Missing summary",
+                summary_json: undefined,
+                status: "pending",
+                created_at_ms: 0,
+                expires_at_ms: null,
+              },
               {
                 id: "p-invalid-ts",
                 title: "Out of range",
@@ -3421,6 +3437,9 @@ describe("app", () => {
         signIn?.click();
       });
 
+      expect(document.body.textContent ?? "").toContain("Non finite");
+      expect(document.body.textContent ?? "").toContain("Missing summary");
+      expect(document.body.textContent ?? "").toContain("null");
       expect(document.body.textContent ?? "").toContain("Out of range");
       expect(document.body.textContent ?? "").toContain("Created: -");
       expect(document.body.textContent ?? "").toContain("Deadline: -");
