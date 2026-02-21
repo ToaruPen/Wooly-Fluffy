@@ -425,7 +425,6 @@ beforeEach(async () => {
   delete process.env.WF_STAFF_SESSION_TTL_MS;
   delete process.env.WF_SSE_KEEPALIVE_INTERVAL_MS;
   delete process.env.WF_TICK_INTERVAL_MS;
-  delete process.env.WF_CONSENT_TIMEOUT_MS;
   delete process.env.WF_INACTIVITY_TIMEOUT_MS;
   process.env.TTS_SPEAKER_ID = "2";
 
@@ -486,7 +485,6 @@ afterEach(async () => {
   delete process.env.WF_STAFF_SESSION_TTL_MS;
   delete process.env.WF_SSE_KEEPALIVE_INTERVAL_MS;
   delete process.env.WF_TICK_INTERVAL_MS;
-  delete process.env.WF_CONSENT_TIMEOUT_MS;
   delete process.env.WF_INACTIVITY_TIMEOUT_MS;
   delete process.env.TTS_SPEAKER_ID;
   staffCookie = "";
@@ -1221,8 +1219,10 @@ describe("http-server", () => {
         headers: withStaffCookie(),
       });
 
-      expect(response.status).toBe(200);
-      expect(JSON.parse(response.body)).toEqual({ items: [] });
+      expect(response.status).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
+      });
     });
 
     it("returns 400 for stt-audio without boundary", async () => {
@@ -1470,45 +1470,7 @@ describe("http-server", () => {
       });
     });
 
-    it("supports staff pending deny endpoint", async () => {
-      const id = store.createPending({
-        personal_name: "taro",
-        kind: "likes",
-        value: "apples",
-      });
-      const deny = await sendRequest("POST", `/api/v1/staff/pending/${id}/deny`, {
-        headers: withStaffCookie(),
-      });
-      expect(deny.status).toBe(200);
-      expect(JSON.parse(deny.body)).toEqual({ ok: true });
-
-      const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
-        headers: withStaffCookie(),
-      });
-      expect(listAfter.status).toBe(200);
-      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
-    });
-
-    it("supports staff pending confirm endpoint", async () => {
-      const id = store.createPending({
-        personal_name: "taro",
-        kind: "likes",
-        value: "apples",
-      });
-      const confirm = await sendRequest("POST", `/api/v1/staff/pending/${id}/confirm`, {
-        headers: withStaffCookie(),
-      });
-      expect(confirm.status).toBe(200);
-      expect(JSON.parse(confirm.body)).toEqual({ ok: true });
-
-      const listAfter = await sendRequest("GET", "/api/v1/staff/pending", {
-        headers: withStaffCookie(),
-      });
-      expect(listAfter.status).toBe(200);
-      expect(JSON.parse(listAfter.body)).toEqual({ items: [] });
-    });
-
-    it("returns 404 for staff pending deny when id not found", async () => {
+    it("returns 404 for legacy staff pending endpoints", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny", {
         headers: withStaffCookie(),
       });
@@ -1901,11 +1863,11 @@ describe("http-server", () => {
       });
     });
 
-    it("returns 405 for staff pending list with non-GET", async () => {
+    it("returns 404 for staff pending list with non-GET", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/pending");
-      expect(response.status).toBe(405);
+      expect(response.status).toBe(404);
       expect(JSON.parse(response.body)).toEqual({
-        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+        error: { code: "not_found", message: "Not Found" },
       });
     });
 
@@ -1961,31 +1923,14 @@ describe("http-server", () => {
       expect(second.status).toBe(200);
     });
 
-    it("omits source_quote when null", async () => {
-      store.createPending({ personal_name: "taro", kind: "likes", value: "apples" });
+    it("returns 404 for legacy staff pending list endpoint", async () => {
       const list = await sendRequest("GET", "/api/v1/staff/pending", {
         headers: withStaffCookie(),
       });
-      expect(list.status).toBe(200);
-      const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
-      expect(parsed.items.length).toBe(1);
-      expect(parsed.items[0]).not.toHaveProperty("source_quote");
-    });
-
-    it("omits source_quote even when present", async () => {
-      store.createPending({
-        personal_name: "taro",
-        kind: "likes",
-        value: "apples",
-        source_quote: "I like apples",
+      expect(list.status).toBe(404);
+      expect(JSON.parse(list.body)).toEqual({
+        error: { code: "not_found", message: "Not Found" },
       });
-      const list = await sendRequest("GET", "/api/v1/staff/pending", {
-        headers: withStaffCookie(),
-      });
-      expect(list.status).toBe(200);
-      const parsed = JSON.parse(list.body) as { items: Array<Record<string, unknown>> };
-      expect(parsed.items.length).toBe(1);
-      expect(parsed.items[0]).not.toHaveProperty("source_quote");
     });
 
     it("broadcasts staff snapshot after staff event", async () => {
@@ -2341,21 +2286,16 @@ describe("http-server", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
       });
-      expect(response.status).toBe(200);
-      expect(JSON.parse(response.body)).toEqual({ ok: true });
-
-      const list = await sendRequest("GET", "/api/v1/staff/pending", {
-        headers: withStaffCookie(),
+      expect(response.status).toBe(400);
+      expect(JSON.parse(response.body)).toEqual({
+        error: { code: "invalid_request", message: "Invalid request" },
       });
-      expect(list.status).toBe(200);
-      const listBody = JSON.parse(list.body) as { items: Array<{ id: string }> };
-      expect(listBody.items.length).toBe(0);
     });
 
     it("swallows event processing errors to keep server alive", async () => {
-      const originalListPending = store.listPending;
+      const originalList = store.listPendingSessionSummaries;
       try {
-        store.listPending = () => {
+        store.listPendingSessionSummaries = () => {
           throw new Error("boom");
         };
 
@@ -2366,7 +2306,7 @@ describe("http-server", () => {
         expect(response.status).toBe(200);
         expect(JSON.parse(response.body)).toEqual({ ok: true });
       } finally {
-        store.listPending = originalListPending;
+        store.listPendingSessionSummaries = originalList;
       }
     });
 
@@ -2380,19 +2320,19 @@ describe("http-server", () => {
       });
     });
 
-    it("returns 405 for staff pending confirm with non-POST", async () => {
+    it("returns 404 for staff pending confirm with non-POST", async () => {
       const response = await sendRequest("GET", "/api/v1/staff/pending/nope/confirm");
-      expect(response.status).toBe(405);
+      expect(response.status).toBe(404);
       expect(JSON.parse(response.body)).toEqual({
-        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+        error: { code: "not_found", message: "Not Found" },
       });
     });
 
-    it("returns 405 for staff pending deny with non-POST", async () => {
+    it("returns 404 for staff pending deny with non-POST", async () => {
       const response = await sendRequest("GET", "/api/v1/staff/pending/nope/deny");
-      expect(response.status).toBe(405);
+      expect(response.status).toBe(404);
       expect(JSON.parse(response.body)).toEqual({
-        error: { code: "method_not_allowed", message: "Method Not Allowed" },
+        error: { code: "not_found", message: "Not Found" },
       });
     });
 
