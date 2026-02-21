@@ -53,7 +53,6 @@ WHISPER_CPP_MODEL_PATH="/ABS/PATH/TO/whisper.cpp/models/ggml-large-v3-turbo.bin"
 # WF_TICK_INTERVAL_MS="1000"
 
 # Orchestrator timeouts
-# WF_CONSENT_TIMEOUT_MS="30000"
 # WF_INACTIVITY_TIMEOUT_MS="300000"
 
 # Provider timeouts

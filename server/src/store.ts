@@ -4,9 +4,6 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const Database = require("better-sqlite3") as typeof import("better-sqlite3");
 
-type MemoryKind = "likes" | "food" | "play" | "hobby";
-type MemoryStatus = "pending" | "confirmed" | "rejected" | "deleted";
-
 type SessionSummaryStatus = "pending" | "confirmed";
 type SessionSummaryTrigger = "idle";
 
@@ -33,49 +30,13 @@ type PendingSessionSummaryItem = {
   expires_at_ms: number;
 };
 
-type PendingItem = {
-  id: string;
-  personal_name: string;
-  kind: MemoryKind;
-  value: string;
-  source_quote: string | null;
-  status: "pending";
-  created_at_ms: number;
-  expires_at_ms: number;
-};
-
-type MemoryItem = {
-  id: string;
-  personal_name: string;
-  kind: MemoryKind;
-  value: string;
-  source_quote: string | null;
-  status: MemoryStatus;
-  created_at_ms: number;
-  updated_at_ms: number;
-  expires_at_ms: number | null;
-};
-
 type Store = {
-  createPending: (input: {
-    personal_name: string;
-    kind: MemoryKind;
-    value: string;
-    source_quote?: string;
-  }) => string;
-  getById: (id: string) => MemoryItem | null;
-  listPending: () => PendingItem[];
-  confirmById: (id: string) => boolean;
-  denyById: (id: string) => boolean;
-  housekeepExpired: () => number;
-
   createPendingSessionSummary: (input: { title: string; summary_json: unknown }) => string;
   getSessionSummaryById: (id: string) => SessionSummaryItem | null;
   listPendingSessionSummaries: () => PendingSessionSummaryItem[];
   confirmSessionSummary: (id: string) => boolean;
   denySessionSummary: (id: string) => boolean;
   housekeepExpiredSessionSummaries: () => number;
-
   close: () => void;
 };
 
@@ -89,25 +50,6 @@ const DAY_MS = 86_400_000;
 const WEEK_MS = DAY_MS * 7;
 
 const schemaSql = `
-CREATE TABLE IF NOT EXISTS memory_items (
-  id TEXT PRIMARY KEY,
-  personal_name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('likes','food','play','hobby')),
-  value TEXT NOT NULL,
-  source_quote TEXT NULL,
-  status TEXT NOT NULL CHECK (status IN ('pending','confirmed','rejected','deleted')),
-  created_at_ms INTEGER NOT NULL,
-  updated_at_ms INTEGER NOT NULL,
-  expires_at_ms INTEGER NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_memory_items_status_created_at
-  ON memory_items (status, created_at_ms DESC);
-CREATE INDEX IF NOT EXISTS idx_memory_items_status_expires_at
-  ON memory_items (status, expires_at_ms);
-CREATE INDEX IF NOT EXISTS idx_memory_items_personal_status
-  ON memory_items (personal_name, status);
-
 CREATE TABLE IF NOT EXISTS session_summary_items (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('pending','confirmed')),
@@ -137,85 +79,6 @@ export const createStore = (options: CreateStoreOptions): Store => {
 
   const db = new Database(options.db_path);
   db.exec(schemaSql);
-
-  const insertPending = db.prepare(
-    `INSERT INTO memory_items (
-      id,
-      personal_name,
-      kind,
-      value,
-      source_quote,
-      status,
-      created_at_ms,
-      updated_at_ms,
-      expires_at_ms
-    ) VALUES (
-      @id,
-      @personal_name,
-      @kind,
-      @value,
-      @source_quote,
-      'pending',
-      @created_at_ms,
-      @updated_at_ms,
-      @expires_at_ms
-    )`,
-  );
-
-  const listPendingStmt = db.prepare(
-    `SELECT
-      id,
-      personal_name,
-      kind,
-      value,
-      source_quote,
-      status,
-      created_at_ms,
-      expires_at_ms
-    FROM memory_items
-    WHERE status = 'pending' AND expires_at_ms IS NOT NULL
-    ORDER BY created_at_ms DESC`,
-  );
-
-  const getByIdStmt = db.prepare(
-    `SELECT
-      id,
-      personal_name,
-      kind,
-      value,
-      source_quote,
-      status,
-      created_at_ms,
-      updated_at_ms,
-      expires_at_ms
-    FROM memory_items
-    WHERE id = @id`,
-  );
-
-  const confirmByIdStmt = db.prepare(
-    `UPDATE memory_items
-    SET
-      status = 'confirmed',
-      updated_at_ms = @updated_at_ms,
-      expires_at_ms = NULL,
-      source_quote = NULL
-    WHERE id = @id AND status = 'pending'`,
-  );
-
-  const denyByIdStmt = db.prepare(
-    `UPDATE memory_items
-    SET
-      status = 'rejected',
-      updated_at_ms = @updated_at_ms,
-      expires_at_ms = @expires_at_ms,
-      source_quote = NULL
-    WHERE id = @id AND status = 'pending'`,
-  );
-
-  const deleteExpiredStmt = db.prepare(
-    `DELETE FROM memory_items
-    WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= @now_ms`,
-  );
 
   const insertPendingSessionSummary = db.prepare(
     `INSERT INTO session_summary_items (
@@ -300,73 +163,6 @@ export const createStore = (options: CreateStoreOptions): Store => {
   };
 
   return {
-    createPending: (input) => {
-      const now = nowMs();
-      const id = idFactory();
-      insertPending.run({
-        id,
-        personal_name: input.personal_name,
-        kind: input.kind,
-        value: input.value,
-        source_quote: input.source_quote ?? null,
-        created_at_ms: now,
-        updated_at_ms: now,
-        expires_at_ms: now + DAY_MS,
-      });
-      return id;
-    },
-
-    getById: (id) => {
-      const row = getByIdStmt.get({ id }) as MemoryItem | undefined;
-      return row ?? null;
-    },
-
-    listPending: () => {
-      const rows = listPendingStmt.all() as Array<{
-        id: string;
-        personal_name: string;
-        kind: MemoryKind;
-        value: string;
-        source_quote: string | null;
-        status: MemoryStatus;
-        created_at_ms: number;
-        expires_at_ms: number;
-      }>;
-
-      return rows.map((row) => ({
-        id: row.id,
-        personal_name: row.personal_name,
-        kind: row.kind,
-        value: row.value,
-        source_quote: row.source_quote,
-        status: "pending" as const,
-        created_at_ms: row.created_at_ms,
-        expires_at_ms: row.expires_at_ms,
-      }));
-    },
-
-    confirmById: (id) => {
-      const now = nowMs();
-      const res = confirmByIdStmt.run({ id, updated_at_ms: now });
-      return res.changes === 1;
-    },
-
-    denyById: (id) => {
-      const now = nowMs();
-      const res = denyByIdStmt.run({
-        id,
-        updated_at_ms: now,
-        expires_at_ms: now + DAY_MS,
-      });
-      return res.changes === 1;
-    },
-
-    housekeepExpired: () => {
-      const now = nowMs();
-      const res = deleteExpiredStmt.run({ now_ms: now });
-      return res.changes;
-    },
-
     createPendingSessionSummary: (input) => {
       const now = nowMs();
       const id = idFactory();

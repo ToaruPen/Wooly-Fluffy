@@ -274,7 +274,7 @@ describe("http-server (async llm provider)", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not create memory pending when personal mode is disabled", async () => {
+  it("rejects legacy consent event and keeps session-summary pending list empty", async () => {
     {
       const down = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
@@ -301,9 +301,9 @@ describe("http-server (async llm provider)", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ type: "UI_CONSENT_BUTTON", answer: "yes" }),
     });
-    expect(consent.status).toBe(200);
+    expect(consent.status).toBe(400);
 
-    const list = await sendRequest("GET", "/api/v1/staff/pending", {
+    const list = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
       headers: withStaffCookie(),
     });
     expect(list.status).toBe(200);

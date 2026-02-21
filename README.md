@@ -301,7 +301,6 @@ Server (optional tuning):
 - `WF_STAFF_SESSION_TTL_MS` (optional): staff session TTL in ms (cookie Max-Age + server-side expiry; default: 180000; clamp: 10000..86400000)
 - `WF_SSE_KEEPALIVE_INTERVAL_MS` (optional): SSE keep-alive interval in ms (default: 25000; clamp: 1000..300000)
 - `WF_TICK_INTERVAL_MS` (optional): tick interval in ms (default: 1000; clamp: 50..60000)
-- `WF_CONSENT_TIMEOUT_MS` (optional): consent wait timeout in ms (default: 30000; clamp: 1000..600000)
 - `WF_INACTIVITY_TIMEOUT_MS` (optional): inactivity timeout in ms (default: 300000; clamp: 10000..3600000)
 - `WHISPER_CPP_TIMEOUT_MS` (optional): whisper.cpp process timeout in ms (default: 15000; clamp: 1000..120000)
 - `TTS_TIMEOUT_MS` (optional): TTS request timeout in ms (default: 2000; clamp: 200..60000)
