@@ -42,9 +42,15 @@ type HandleStaffRoutesInput = {
 
 const isStaffEventType = (
   value: unknown,
-): value is "STAFF_PTT_DOWN" | "STAFF_PTT_UP" | "STAFF_EMERGENCY_STOP" | "STAFF_RESUME" =>
+): value is
+  | "STAFF_PTT_DOWN"
+  | "STAFF_PTT_UP"
+  | "STAFF_FORCE_ROOM"
+  | "STAFF_EMERGENCY_STOP"
+  | "STAFF_RESUME" =>
   value === "STAFF_PTT_DOWN" ||
   value === "STAFF_PTT_UP" ||
+  value === "STAFF_FORCE_ROOM" ||
   value === "STAFF_EMERGENCY_STOP" ||
   value === "STAFF_RESUME";
 

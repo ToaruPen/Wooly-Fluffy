@@ -1114,6 +1114,16 @@ describe("http-server", () => {
       });
     });
 
+    it("accepts STAFF_FORCE_ROOM staff event", async () => {
+      const response = await sendRequest("POST", "/api/v1/staff/event", {
+        headers: withStaffCookie({ "content-type": "application/json" }),
+        body: JSON.stringify({ type: "STAFF_FORCE_ROOM" }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ ok: true });
+    });
+
     it("returns 400 for staff event with invalid json", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
