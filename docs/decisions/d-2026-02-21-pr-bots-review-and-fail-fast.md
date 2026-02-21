@@ -6,7 +6,7 @@ D-2026-02-21-PR_BOTS_REVIEW_AND_FAIL_FAST
 
 ## Context
 
-- 背景: Issue #108 で `/codex-pr-review` を `/pr-bots-review` に刷新し、レビューBot設定を外部化する要件が確定。
+- 背景: Issue #108 で PRレビュー導線を `/pr-bots-review` に刷新し、レビューBot設定を外部化する要件が確定。
 - どの矛盾/制約を解決するか: PRD の「互換性を壊す全面置換は対象外」と、Issue #108 の「aliasなし全面刷新」の矛盾を、例外スコープとして明文化して解消する。
 
 ## Rationale
@@ -43,7 +43,7 @@ D-2026-02-21-PR_BOTS_REVIEW_AND_FAIL_FAST
   - review-loop/autofix-loop 実装（`scripts/`, `templates/`）
   - 関連テスト（`scripts/tests/`）
 - 互換性:
-  - 旧 `/codex-pr-review` 導線は廃止（互換非維持）。
+- 旧PRレビュー導線は廃止（互換非維持）。
 - 運用影響:
   - `AGENTIC_SDD_PR_REVIEW_MENTION` と allowlist 未設定時は即時失敗し、設定不足を明確に通知する。
 
