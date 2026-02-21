@@ -23,7 +23,7 @@ Required environment:
     SOT                  Manual source-of-truth (paths / links / summary)
     GH_ISSUE             GitHub issue number or URL (uses `gh issue view`)
     GH_ISSUE_BODY_FILE   Local file containing issue body (test/offline)
-    SOT_FILES            Extra SoT files (repo-relative paths, space-separated)
+    SOT_FILES            Extra SoT files (repo-relative paths, shell-like quoting supported)
 
   And:
     TESTS                Short test summary (can be 'not run: reason')
@@ -34,7 +34,7 @@ Required environment:
   GH_REPO              Repo for gh (OWNER/REPO)
   GH_INCLUDE_COMMENTS  1 to include comments in issue JSON (default: 0)
   GH_ISSUE_BODY_FILE   Local file containing issue body (test/offline)
-  SOT_FILES            Extra SoT files (repo-relative paths, space-separated)
+  SOT_FILES            Extra SoT files (repo-relative paths, shell-like quoting supported)
   SOT_MAX_CHARS        Max chars for assembled SoT bundle (0 = no limit)
   TEST_COMMAND         Command to run tests (captures full output to tests.txt)
   TEST_STDERR_POLICY   warn|fail|ignore (default: warn). When TEST_COMMAND is set,
@@ -46,6 +46,11 @@ Required environment:
   OUTPUT_ROOT      Output root (default: <repo_root>/.agentic-sdd/reviews)
   SCHEMA_PATH      JSON schema path (default: <repo_root>/.agent/schemas/review.json)
   CONSTRAINTS      Additional constraints string (default: none)
+  REVIEW_CYCLE_INCREMENTAL  0|1 (default: 1)
+  REVIEW_CYCLE_CACHE_POLICY strict|balanced|off (default: balanced)
+                   strict: reuse only Approved/Approved with nits
+                   balanced: reuse all statuses on exact fingerprint match
+                   off: disable reuse and always execute full review
 
   Engine selection:
   REVIEW_ENGINE    codex|claude (default: codex)
@@ -223,8 +228,36 @@ sot_max_chars="${SOT_MAX_CHARS:-0}"
 
 declare -a sot_files=()
 if [[ -n "$sot_files_raw" ]]; then
-  # shellcheck disable=SC2206
-  sot_files=($sot_files_raw)
+  if ! command -v python3 >/dev/null 2>&1; then
+    eprint "python3 not found (required for SOT_FILES parsing)."
+    exit 1
+  fi
+
+  if ! sot_files_parsed="$(python3 - "$sot_files_raw" <<'PY_SPLIT'
+import sys
+import shlex
+
+raw = sys.argv[1]
+try:
+    parts = shlex.split(raw)
+except ValueError as exc:
+    print(f"Invalid SOT_FILES: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+for item in parts:
+    if item == "":
+        continue
+    print(item)
+PY_SPLIT
+  )"; then
+    eprint "Invalid SOT_FILES; failed to parse shell-like list"
+    exit 2
+  fi
+
+  while IFS= read -r parsed_item; do
+    [[ -n "$parsed_item" ]] || continue
+    sot_files+=("$parsed_item")
+  done <<< "$sot_files_parsed"
 fi
 
 if [[ -z "$sot" && -z "$gh_issue" && -z "$gh_issue_body_file" && ${#sot_files[@]} -eq 0 ]]; then
@@ -280,13 +313,22 @@ prompt_bytes=0
 engine_runtime_ms=0
 # Internal compatibility token for incremental cache reuse.
 # Bump when prompt composition or reuse eligibility semantics change.
-script_semantics_version="v2"
+script_semantics_version="v3"
 
-review_cycle_incremental="${REVIEW_CYCLE_INCREMENTAL:-0}"
+review_cycle_incremental="${REVIEW_CYCLE_INCREMENTAL:-1}"
 if [[ "$review_cycle_incremental" != "0" && "$review_cycle_incremental" != "1" ]]; then
   eprint "Invalid REVIEW_CYCLE_INCREMENTAL: $review_cycle_incremental (use 0|1)"
   exit 2
 fi
+
+review_cycle_cache_policy="${REVIEW_CYCLE_CACHE_POLICY:-balanced}"
+case "$review_cycle_cache_policy" in
+  strict|balanced|off) ;;
+  *)
+    eprint "Invalid REVIEW_CYCLE_CACHE_POLICY: $review_cycle_cache_policy (use strict|balanced|off)"
+    exit 2
+    ;;
+esac
 
 sha256_file() {
   local path="$1"
@@ -347,6 +389,11 @@ git_ref_exists() {
   git -C "$repo_root" rev-parse --verify "$ref" >/dev/null 2>&1
 }
 
+git_local_branch_exists() {
+  local branch_ref="$1"
+  git -C "$repo_root" show-ref --verify --quiet "refs/heads/$branch_ref"
+}
+
 fetch_remote_tracking_ref() {
   local ref="$1"
   local remote_name=""
@@ -362,7 +409,7 @@ fetch_remote_tracking_ref() {
     if [[ -z "$branch" ]]; then
       return 0
     fi
-    if git -C "$repo_root" show-ref --verify --quiet "refs/heads/$ref"; then
+    if git_local_branch_exists "$ref"; then
       return 0
     fi
     git -C "$repo_root" fetch --no-tags --quiet "$remote_name" "$branch"
@@ -404,7 +451,7 @@ fetch_remote_tracking_ref() {
 	    } > "$out_tests"
 
 	    set +e
-	    bash -lc "$test_command" >"$tmp_tests_stdout" 2>"$out_tests_stderr"
+    env -u BASH_ENV bash -c "$test_command" >"$tmp_tests_stdout" 2>"$out_tests_stderr"
 	    exit_code=$?
 	    set -e
 	    tests_exit_code="$exit_code"
@@ -716,6 +763,7 @@ print_plan() {
   eprint "- max_diff_bytes: $max_diff_bytes"
   eprint "- max_prompt_bytes: $max_prompt_bytes"
   eprint "- review_cycle_incremental: $review_cycle_incremental"
+  eprint "- review_cycle_cache_policy: $review_cycle_cache_policy"
   if [[ -n "$gh_issue" ]]; then
     eprint "- gh_issue: $gh_issue"
     if [[ -n "$gh_repo" ]]; then
@@ -924,8 +972,12 @@ if [[ -f "$current_run_file" ]]; then
   fi
 fi
 
-if [[ "$review_cycle_incremental" == "1" && -n "$reuse_candidate_meta" ]]; then
-  reuse_state_fast="$(python3 - "$reuse_candidate_meta" "$reuse_candidate_json" "$head_sha" "$meta_base_ref" "$meta_base_sha" "$diff_source" "$diff_sha256" "$sot_fingerprint" "$tests_fingerprint" "$engine_version_available" "$review_engine" "$model" "$effort" "$claude_model" "$schema_sha256" "$constraints" "$engine_version_output" "$script_semantics_version" "$max_prompt_bytes" <<'PY'
+if [[ "$review_cycle_incremental" == "1" && "$review_cycle_cache_policy" == "off" ]]; then
+  reuse_reason="cache-policy-off"
+fi
+
+if [[ "$review_cycle_incremental" == "1" && "$review_cycle_cache_policy" != "off" && -n "$reuse_candidate_meta" ]]; then
+  reuse_state_fast="$(python3 - "$reuse_candidate_meta" "$reuse_candidate_json" "$head_sha" "$meta_base_ref" "$meta_base_sha" "$diff_source" "$diff_sha256" "$sot_fingerprint" "$tests_fingerprint" "$engine_version_available" "$review_engine" "$model" "$effort" "$claude_model" "$schema_sha256" "$constraints" "$engine_version_output" "$script_semantics_version" "$review_cycle_cache_policy" "$max_prompt_bytes" <<'PY'
 import json
 import sys
 
@@ -947,7 +999,8 @@ curr_schema_sha256 = sys.argv[15]
 curr_constraints = sys.argv[16]
 curr_engine_version_output = sys.argv[17]
 curr_script_semantics_version = sys.argv[18]
-curr_max_prompt_bytes = int(sys.argv[19])
+curr_cache_policy = sys.argv[19]
+curr_max_prompt_bytes = int(sys.argv[20])
 
 def out(eligible: bool, reason: str, engine_fingerprint: str = "", prompt_bytes=None) -> None:
     print("eligible=1" if eligible else "eligible=0")
@@ -1008,8 +1061,18 @@ if meta.get("engine_version_available") is not True:
     raise SystemExit(0)
 
 status = str(review.get("status") or "")
-if status not in {"Approved", "Approved with nits"}:
-    out(False, "status-not-reusable")
+if curr_cache_policy == "strict":
+    allowed_statuses = {"Approved", "Approved with nits"}
+    hit_reason = "cache-hit-strict"
+elif curr_cache_policy == "balanced":
+    allowed_statuses = {"Approved", "Approved with nits", "Blocked", "Question"}
+    hit_reason = "cache-hit-balanced"
+else:
+    out(False, "invalid-cache-policy")
+    raise SystemExit(0)
+
+if status not in allowed_statuses:
+    out(False, f"status-not-reusable-{curr_cache_policy}")
     raise SystemExit(0)
 
 if meta.get("review_completed") is not True:
@@ -1056,7 +1119,7 @@ for key, expected in checks:
 if not isinstance(meta_prompt_bytes, int) or meta_prompt_bytes < 0:
     meta_prompt_bytes = 0
 
-out(True, "cache-hit-fast", str(meta.get("engine_fingerprint")), meta_prompt_bytes)
+out(True, hit_reason, str(meta.get("engine_fingerprint")), meta_prompt_bytes)
 PY
 )"
   reuse_eligible=0
@@ -1339,7 +1402,7 @@ if [[ "$reused" -eq 0 ]]; then
   fi
 fi
 
-python3 - "$out_meta" "$scope_id" "$run_id" "$diff_source" "$meta_base_ref" "$meta_base_sha" "$head_sha" "$diff_sha256" "$sot_fingerprint" "$tests_fingerprint" "$engine_fingerprint" "$engine_version_available" "$review_cycle_incremental" "$reuse_eligible" "$reused" "$reuse_reason" "$non_reuse_reason" "$reused_from_run" "$tests_exit_code" "$prompt_bytes" "$sot_bytes" "$diff_bytes" "$engine_runtime_ms" "$review_engine" "$model" "$effort" "$claude_model" "$schema_sha256" "$constraints" "$engine_version_output" "$script_semantics_version" <<'PY'
+python3 - "$out_meta" "$scope_id" "$run_id" "$diff_source" "$meta_base_ref" "$meta_base_sha" "$head_sha" "$diff_sha256" "$sot_fingerprint" "$tests_fingerprint" "$engine_fingerprint" "$engine_version_available" "$review_cycle_incremental" "$review_cycle_cache_policy" "$reuse_eligible" "$reused" "$reuse_reason" "$non_reuse_reason" "$reused_from_run" "$tests_exit_code" "$prompt_bytes" "$sot_bytes" "$diff_bytes" "$engine_runtime_ms" "$review_engine" "$model" "$effort" "$claude_model" "$schema_sha256" "$constraints" "$engine_version_output" "$script_semantics_version" <<'PY'
 import datetime
 import json
 import os
@@ -1358,24 +1421,25 @@ tests_fingerprint = sys.argv[10]
 engine_fingerprint = sys.argv[11]
 engine_version_available = sys.argv[12] == "1"
 incremental_enabled = sys.argv[13] == "1"
-reuse_eligible = sys.argv[14] == "1"
-reused = sys.argv[15] == "1"
-reuse_reason = sys.argv[16]
-non_reuse_reason = sys.argv[17]
-reused_from_run = sys.argv[18]
-tests_exit_code_raw = sys.argv[19]
-prompt_bytes_raw = sys.argv[20]
-sot_bytes_raw = sys.argv[21]
-diff_bytes_raw = sys.argv[22]
-engine_runtime_ms_raw = sys.argv[23]
-review_engine = sys.argv[24]
-model = sys.argv[25]
-reasoning_effort = sys.argv[26]
-claude_model = sys.argv[27]
-schema_sha256 = sys.argv[28]
-constraints = sys.argv[29]
-engine_version_output = sys.argv[30]
-script_semantics_version = sys.argv[31]
+cache_policy = sys.argv[14]
+reuse_eligible = sys.argv[15] == "1"
+reused = sys.argv[16] == "1"
+reuse_reason = sys.argv[17]
+non_reuse_reason = sys.argv[18]
+reused_from_run = sys.argv[19]
+tests_exit_code_raw = sys.argv[20]
+prompt_bytes_raw = sys.argv[21]
+sot_bytes_raw = sys.argv[22]
+diff_bytes_raw = sys.argv[23]
+engine_runtime_ms_raw = sys.argv[24]
+review_engine = sys.argv[25]
+model = sys.argv[26]
+reasoning_effort = sys.argv[27]
+claude_model = sys.argv[28]
+schema_sha256 = sys.argv[29]
+constraints = sys.argv[30]
+engine_version_output = sys.argv[31]
+script_semantics_version = sys.argv[32]
 
 tests_exit_code = None
 if tests_exit_code_raw:
@@ -1413,6 +1477,7 @@ payload = {
     "script_semantics_version": script_semantics_version,
     "engine_version_available": engine_version_available,
     "incremental_enabled": incremental_enabled,
+    "cache_policy": cache_policy,
     "reuse_eligible": reuse_eligible,
     "reused": reused,
     "reuse_reason": reuse_reason,

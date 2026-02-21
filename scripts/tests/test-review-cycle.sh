@@ -204,6 +204,40 @@ if ! grep -q "diff_detail: release/v1" "$tmpdir/stderr_range_local_slash"; then
   exit 1
 fi
 
+# SOT_FILES parser should support shell-escaped spaces in paths (without splitting).
+mkdir -p "$tmpdir/docs/sot files"
+cat > "$tmpdir/docs/sot files/extra.md" <<'EOF'
+This is an extra SoT file with a space in the path.
+EOF
+
+if ! (cd "$tmpdir" && SOT_FILES='docs/sot\ files/extra.md' TESTS="not run: reason" \
+  DIFF_MODE=range "$review_cycle_sh" issue-sotfiles --dry-run) >/dev/null 2>"$tmpdir/stderr-sotfiles-escaped"; then
+  eprint "Expected shell-escaped SOT_FILES path to be parsed"
+  cat "$tmpdir/stderr-sotfiles-escaped" >&2
+  exit 1
+fi
+if ! grep -q "sot_files: docs/sot files/extra.md" "$tmpdir/stderr-sotfiles-escaped"; then
+  eprint "Expected escaped path to be reported in plan"
+  cat "$tmpdir/stderr-sotfiles-escaped" >&2
+  exit 1
+fi
+
+set +e
+(cd "$tmpdir" && SOT_FILES='"docs/sot files/extra.md' TESTS="not run: reason" \
+  DIFF_MODE=range "$review_cycle_sh" issue-sotfiles-bad-quote --dry-run) >/dev/null 2>"$tmpdir/stderr-sotfiles-bad-quote"
+code_sotfiles_bad_quote=$?
+set -e
+if [[ "$code_sotfiles_bad_quote" -eq 0 ]]; then
+  eprint "Expected unterminated quote in SOT_FILES to fail"
+  cat "$tmpdir/stderr-sotfiles-bad-quote" >&2
+  exit 1
+fi
+if ! grep -q "Invalid SOT_FILES" "$tmpdir/stderr-sotfiles-bad-quote"; then
+  eprint "Expected shell-like parse error for bad SOT_FILES quoting"
+  cat "$tmpdir/stderr-sotfiles-bad-quote" >&2
+  exit 1
+fi
+
 # Range mode should fail-fast when uncommitted local changes exist.
 echo "range-local-change" >> "$tmpdir/hello.txt"
 set +e
@@ -267,9 +301,8 @@ fi
 
 
 # Worktree diff mode should succeed even when staged changes also exist
-(cd "$tmpdir" && SOT="test" TESTS="not run: reason" DIFF_MODE=worktree \
-  "$review_cycle_sh" issue-1 --dry-run) >/dev/null 2>"$tmpdir/stderr_worktree"
-if [[ $? -ne 0 ]]; then
+if ! (cd "$tmpdir" && SOT="test" TESTS="not run: reason" DIFF_MODE=worktree \
+  "$review_cycle_sh" issue-1 --dry-run) >/dev/null 2>"$tmpdir/stderr_worktree"; then
   eprint "Expected DIFF_MODE=worktree to succeed when worktree has diff"
   cat "$tmpdir/stderr_worktree" >&2
   exit 1
@@ -476,8 +509,8 @@ for required_key in prompt_bytes sot_bytes diff_bytes engine_runtime_ms reuse_re
   fi
 done
 
-if ! grep -q '"non_reuse_reason": "incremental-disabled"' "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review-metadata.json"; then
-  eprint "Expected non_reuse_reason=incremental-disabled when incremental mode is off"
+if ! grep -q '"non_reuse_reason": "no-previous-run"' "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review-metadata.json"; then
+  eprint "Expected non_reuse_reason=no-previous-run on first run with default incremental mode"
   cat "$tmpdir/.agentic-sdd/reviews/issue-1/run1/review-metadata.json" >&2
   exit 1
 fi
@@ -545,6 +578,21 @@ if grep -q "value too great for base" "$tmpdir/stderr-invalid-leading-zero-limit
   exit 1
 fi
 
+set +e
+(cd "$tmpdir" && SOT="test" TESTS="not run: reason" DIFF_MODE=staged REVIEW_CYCLE_CACHE_POLICY=weird \
+  "$review_cycle_sh" issue-1 --dry-run) >/dev/null 2>"$tmpdir/stderr-policy-invalid"
+code_policy_invalid=$?
+set -e
+if [[ "$code_policy_invalid" -eq 0 ]]; then
+  eprint "Expected invalid REVIEW_CYCLE_CACHE_POLICY to fail"
+  exit 1
+fi
+if ! grep -q "Invalid REVIEW_CYCLE_CACHE_POLICY" "$tmpdir/stderr-policy-invalid"; then
+  eprint "Expected invalid cache policy error message, got:"
+  cat "$tmpdir/stderr-policy-invalid" >&2
+  exit 1
+fi
+
 seed_run="run-cache-seed"
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
   CODEX_BIN="$tmpdir/codex" MODEL=seed-model REASONING_EFFORT=low \
@@ -587,6 +635,18 @@ fi
 
 if ! grep -q '"reused_from_run": "run-cache-seed"' "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json"; then
   eprint "Expected reused_from_run in cache-hit metadata"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json" >&2
+  exit 1
+fi
+
+if ! grep -q '"cache_policy": "balanced"' "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json"; then
+  eprint "Expected cache_policy=balanced in review metadata"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json" >&2
+  exit 1
+fi
+
+if ! grep -q '"reuse_reason": "cache-hit-balanced"' "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json"; then
+  eprint "Expected balanced cache-hit reason in metadata"
   cat "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json" >&2
   exit 1
 fi
@@ -663,6 +723,17 @@ path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as fh:
     data = json.load(fh)
 data["status"] = "Blocked"
+data["findings"] = [
+    {
+        "title": "Blocked cache sample",
+        "body": "cached blocked response for balanced reuse test",
+        "priority": "P1",
+        "code_location": {
+            "repo_relative_path": "hello.txt",
+            "line_range": {"start": 1, "end": 1},
+        },
+    }
+]
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, ensure_ascii=False, indent=2)
     fh.write("\n")
@@ -670,7 +741,7 @@ PY
 
 set +e
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  REVIEW_CYCLE_INCREMENTAL=1 CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=strict CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
   "$review_cycle_sh" issue-1 run-cache-blocked) >/dev/null 2>"$tmpdir/stderr-cache-blocked"
 code_cache_blocked=$?
 set -e
@@ -681,6 +752,83 @@ fi
 if ! grep -q "engine should not be called on cache hit" "$tmpdir/stderr-cache-blocked"; then
   eprint "Expected cache miss to execute engine when cached status is blocked"
   cat "$tmpdir/stderr-cache-blocked" >&2
+  exit 1
+fi
+
+set +e
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=balanced CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-cache-blocked-balanced) >/dev/null 2>"$tmpdir/stderr-cache-blocked-balanced"
+code_cache_blocked_balanced=$?
+set -e
+if [[ "$code_cache_blocked_balanced" -ne 0 ]]; then
+  eprint "Expected blocked cached review to be reusable in balanced policy"
+  cat "$tmpdir/stderr-cache-blocked-balanced" >&2
+  exit 1
+fi
+if ! grep -q '"reused": true' "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-blocked-balanced/review-metadata.json"; then
+  eprint "Expected reused=true for balanced blocked cache hit"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-blocked-balanced/review-metadata.json" >&2
+  exit 1
+fi
+if ! grep -q '"reuse_reason": "cache-hit-balanced"' "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-blocked-balanced/review-metadata.json"; then
+  eprint "Expected balanced cache-hit reason in metadata"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-blocked-balanced/review-metadata.json" >&2
+  exit 1
+fi
+
+cp -p "$tmpdir/.agentic-sdd/reviews/issue-1/$seed_run/review.json" "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review.json"
+cp -p "$tmpdir/.agentic-sdd/reviews/issue-1/$seed_run/review-metadata.json" "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review-metadata.json"
+python3 - "$tmpdir/.agentic-sdd/reviews/issue-1/$hit_run/review.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+data["status"] = "Question"
+data["findings"] = []
+data["questions"] = ["Please confirm expected cache policy behavior"]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+
+set +e
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=balanced CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-cache-question-balanced) >/dev/null 2>"$tmpdir/stderr-cache-question-balanced"
+code_cache_question_balanced=$?
+set -e
+if [[ "$code_cache_question_balanced" -ne 0 ]]; then
+  eprint "Expected question cached review to be reusable in balanced policy"
+  cat "$tmpdir/stderr-cache-question-balanced" >&2
+  exit 1
+fi
+if ! grep -q '"reused": true' "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-question-balanced/review-metadata.json"; then
+  eprint "Expected reused=true for balanced question cache hit"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-question-balanced/review-metadata.json" >&2
+  exit 1
+fi
+if ! grep -q '"reuse_reason": "cache-hit-balanced"' "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-question-balanced/review-metadata.json"; then
+  eprint "Expected balanced cache-hit reason in question metadata"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-cache-question-balanced/review-metadata.json" >&2
+  exit 1
+fi
+
+set +e
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=off CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-cache-policy-off) >/dev/null 2>"$tmpdir/stderr-cache-policy-off"
+code_cache_policy_off=$?
+set -e
+if [[ "$code_cache_policy_off" -eq 0 ]]; then
+  eprint "Expected REVIEW_CYCLE_CACHE_POLICY=off to force full execution"
+  exit 1
+fi
+if ! grep -q "engine should not be called on cache hit" "$tmpdir/stderr-cache-policy-off"; then
+  eprint "Expected policy=off to skip reuse and call engine"
+  cat "$tmpdir/stderr-cache-policy-off" >&2
   exit 1
 fi
 
@@ -701,7 +849,7 @@ PY
 
 set +e
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  REVIEW_CYCLE_INCREMENTAL=1 CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=strict CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
   "$review_cycle_sh" issue-1 run-cache-missing-script-semantics) >/dev/null 2>"$tmpdir/stderr-cache-missing-script-semantics"
 code_cache_missing_script_semantics=$?
 set -e
@@ -732,7 +880,7 @@ PY
 
 set +e
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  REVIEW_CYCLE_INCREMENTAL=1 CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=strict CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
   "$review_cycle_sh" issue-1 run-cache-review-completed-invalid) >/dev/null 2>"$tmpdir/stderr-cache-review-completed-invalid"
 code_cache_review_completed_invalid=$?
 set -e
@@ -764,7 +912,7 @@ PY
 
 set +e
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  REVIEW_CYCLE_INCREMENTAL=1 CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=strict CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
   "$review_cycle_sh" issue-1 run-cache-review-completed-string) >/dev/null 2>"$tmpdir/stderr-cache-review-completed-string"
 code_cache_review_completed_string=$?
 set -e
@@ -795,7 +943,7 @@ PY
 
 set +e
 (cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" TESTS="not run: reason" DIFF_MODE=staged \
-  REVIEW_CYCLE_INCREMENTAL=1 CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
+  REVIEW_CYCLE_INCREMENTAL=1 REVIEW_CYCLE_CACHE_POLICY=strict CODEX_BIN="$tmpdir/codex-no-call" MODEL=seed-model REASONING_EFFORT=low \
   "$review_cycle_sh" issue-1 run-cache-tests-failed) >/dev/null 2>"$tmpdir/stderr-cache-tests-failed"
 code_cache_tests_failed=$?
 set -e
@@ -954,6 +1102,29 @@ if [[ ! -f "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-fail/tests.stderr" ]
 fi
 if [[ -f "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-fail/review.json" ]]; then
   eprint "Did not expect review.json to be created when failing on stderr"
+  exit 1
+fi
+
+cat > "$tmpdir/bash-env-inject.sh" <<'EOF'
+echo injected-from-bashenv >&2
+EOF
+
+set +e
+(cd "$tmpdir" && GH_ISSUE_BODY_FILE="$tmpdir/issue-body.md" DIFF_MODE=staged \
+  BASH_ENV="$tmpdir/bash-env-inject.sh" \
+  TEST_COMMAND='python3 -c "print(\"ok\")"' TESTS="" TEST_STDERR_POLICY=fail \
+  CODEX_BIN="$tmpdir/codex" MODEL=stub REASONING_EFFORT=low \
+  "$review_cycle_sh" issue-1 run-stderr-bashenv) >/dev/null 2>"$tmpdir/stderr-stderr-bashenv"
+code_stderr_bashenv=$?
+set -e
+if [[ "$code_stderr_bashenv" -ne 0 ]]; then
+  eprint "Expected success when BASH_ENV is ignored for TEST_COMMAND execution"
+  cat "$tmpdir/stderr-stderr-bashenv" >&2
+  exit 1
+fi
+if grep -q "injected-from-bashenv" "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-bashenv/tests.stderr"; then
+  eprint "Did not expect BASH_ENV side effects in tests.stderr"
+  cat "$tmpdir/.agentic-sdd/reviews/issue-1/run-stderr-bashenv/tests.stderr" >&2
   exit 1
 fi
 
