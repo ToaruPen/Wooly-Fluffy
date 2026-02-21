@@ -2386,920 +2386,954 @@ describe("app", () => {
   });
 
   describe("staff auth and pending flows", () => {
-    it("renders staff login, then control UI, then locks on inactivity", async () => {
-      vi.resetModules();
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
+    it(
+      "renders staff login, then control UI, then locks on inactivity",
+      async () => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
 
-      const closeSpy = vi.fn();
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: closeSpy,
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
 
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
 
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          return jsonResponse(200, {
-            items: [
-              {
-                id: "p1",
-                title: "Morning chat",
-                summary_json: { note: "Talked about plants" },
-                status: "pending",
-                created_at_ms: 0,
-                expires_at_ms: 1,
-              },
-            ],
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+            return jsonResponse(200, {
+              items: [
+                {
+                  id: "p1",
+                  title: "Morning chat",
+                  summary_json: { note: "Talked about plants" },
+                  status: "pending",
+                  created_at_ms: 0,
+                  expires_at_ms: 1,
+                },
+              ],
+            });
+          }
+          if (url === "/api/v1/staff/event" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/auth/keepalive" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url.startsWith("/api/v1/staff/session-summaries/") && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          return jsonResponse(500, { error: { code: "unhandled", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        expect(document.body.textContent ?? "").toContain("STAFF");
+        expect(document.body.textContent ?? "").toContain("Login");
+        expect(document.body.textContent ?? "").not.toContain("TTS:");
+        expect(document.body.textContent ?? "").not.toContain("Stream:");
+
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        expect(input).toBeTruthy();
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        });
+        await act(async () => {});
+
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(signIn).toBeTruthy();
+        expect((signIn as HTMLButtonElement).disabled).toBe(false);
+
+        await act(async () => {
+          signIn?.click();
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/v1/staff/auth/login",
+          expect.objectContaining({ method: "POST" }),
+        );
+
+        expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
+        expect(document.body.textContent ?? "").toContain("Pending");
+        expect(document.body.textContent ?? "").toContain("Morning chat");
+        expect(document.body.textContent ?? "").toContain('{"note":"Talked about plants"}');
+        expect(document.body.textContent ?? "").toContain("Created:");
+        expect(document.body.textContent ?? "").toContain("Deadline:");
+
+        const handlers = connectSseMock.mock.calls[0]![1];
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
+            pending: { count: 0, session_summary_count: 1 },
           });
-        }
-        if (url === "/api/v1/staff/event" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/auth/keepalive" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url.startsWith("/api/v1/staff/session-summaries/") && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        return jsonResponse(500, { error: { code: "unhandled", message: url } });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      expect(document.body.textContent ?? "").toContain("STAFF");
-      expect(document.body.textContent ?? "").toContain("Login");
-      expect(document.body.textContent ?? "").not.toContain("TTS:");
-      expect(document.body.textContent ?? "").not.toContain("Stream:");
-
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      expect(input).toBeTruthy();
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-      });
-      await act(async () => {});
-
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(signIn).toBeTruthy();
-      expect((signIn as HTMLButtonElement).disabled).toBe(false);
-
-      await act(async () => {
-        signIn?.click();
-      });
-
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/staff/auth/login",
-        expect.objectContaining({ method: "POST" }),
-      );
-
-      expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
-      expect(document.body.textContent ?? "").toContain("Pending");
-      expect(document.body.textContent ?? "").toContain("Morning chat");
-      expect(document.body.textContent ?? "").toContain('{"note":"Talked about plants"}');
-      expect(document.body.textContent ?? "").toContain("Created:");
-      expect(document.body.textContent ?? "").toContain("Deadline:");
-
-      const handlers = connectSseMock.mock.calls[0]![1];
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "PERSONAL", personal_name: null, phase: "idle" },
-          pending: { count: 0, session_summary_count: 1 },
+          handlers.onError?.(new Error("boom"));
+          handlers.onMessage?.({ type: "staff.snapshot", seq: 1, data: {} });
+          handlers.onMessage?.({
+            type: "staff.session_summaries_pending_list",
+            seq: 2,
+            data: null,
+          });
+          handlers.onMessage?.({
+            type: "staff.session_summaries_pending_list",
+            seq: 3,
+            data: { items: "nope" },
+          });
+          handlers.onMessage?.({
+            type: "staff.session_summaries_pending_list",
+            seq: 3,
+            data: { items: [] },
+          });
+          handlers.onSnapshot({
+            state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
         });
-        handlers.onError?.(new Error("boom"));
-        handlers.onMessage?.({ type: "staff.snapshot", seq: 1, data: {} });
-        handlers.onMessage?.({ type: "staff.session_summaries_pending_list", seq: 2, data: null });
-        handlers.onMessage?.({
-          type: "staff.session_summaries_pending_list",
-          seq: 3,
-          data: { items: "nope" },
+        expect(document.body.textContent ?? "").toContain("boom");
+        expect(document.body.textContent ?? "").not.toContain("Mode:");
+        expect(document.body.textContent ?? "").toContain("Pending: 0");
+
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
+            pending: { count: 0, session_summary_count: 1 },
+          });
         });
-        handlers.onMessage?.({
-          type: "staff.session_summaries_pending_list",
-          seq: 3,
-          data: { items: [] },
+        expect(document.body.textContent ?? "").toContain("Pending: 1");
+
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "idle" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
         });
-        handlers.onSnapshot({
-          state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-          pending: { count: 0, session_summary_count: 0 },
+        expect(document.body.textContent ?? "").not.toContain("Mode:");
+
+        const ptt = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Push to talk"),
+        );
+        expect(ptt).toBeTruthy();
+        await act(async () => {
+          ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
+          ptt?.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+          ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+          ptt?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
         });
-      });
-      expect(document.body.textContent ?? "").toContain("boom");
-      expect(document.body.textContent ?? "").not.toContain("Mode:");
-      expect(document.body.textContent ?? "").toContain("Pending: 0");
+        const staffEventCalls = fetchMock.mock.calls.filter(
+          (c) => String(c[0]) === "/api/v1/staff/event",
+        );
+        expect(staffEventCalls.length).toBeGreaterThanOrEqual(2);
 
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
-          pending: { count: 0, session_summary_count: 1 },
-        });
-      });
-      expect(document.body.textContent ?? "").toContain("Pending: 1");
+        const staffEvCount = () =>
+          fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/v1/staff/event").length;
 
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "idle" },
-          pending: { count: 0, session_summary_count: 0 },
-        });
-      });
-      expect(document.body.textContent ?? "").not.toContain("Mode:");
-
-      const ptt = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Push to talk"),
-      );
-      expect(ptt).toBeTruthy();
-      await act(async () => {
-        ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
-        ptt?.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
-        ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-        ptt?.dispatchEvent(new Event("pointercancel", { bubbles: true }));
-      });
-      const staffEventCalls = fetchMock.mock.calls.filter(
-        (c) => String(c[0]) === "/api/v1/staff/event",
-      );
-      expect(staffEventCalls.length).toBeGreaterThanOrEqual(2);
-
-      const staffEvCount = () =>
-        fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/v1/staff/event").length;
-
-      /* Space key PTT: fires when no interactive element focused */
-      const beforeSpace = staffEvCount();
-      await act(async () => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-      });
-      expect(staffEvCount()).toBeGreaterThan(beforeSpace);
-
-      /* Space key PTT: ignored when button focused */
-      const beforeBtn = staffEvCount();
-      await act(async () => {
-        ptt?.focus();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-        (document.body as HTMLElement).focus();
-      });
-      expect(staffEvCount()).toBe(beforeBtn);
-
-      /* Space key PTT: ignored when role="button" focused */
-      const roleBtn = document.createElement("div");
-      roleBtn.setAttribute("role", "button");
-      roleBtn.tabIndex = 0;
-      document.body.appendChild(roleBtn);
-      const beforeRole = staffEvCount();
-      await act(async () => {
-        roleBtn.focus();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-        (document.body as HTMLElement).focus();
-      });
-      expect(staffEvCount()).toBe(beforeRole);
-      document.body.removeChild(roleBtn);
-
-      /* Space key PTT: ignored when contenteditable focused */
-      const editDiv = document.createElement("div");
-      editDiv.setAttribute("contenteditable", "true");
-      document.body.appendChild(editDiv);
-      const beforeEdit = staffEvCount();
-      await act(async () => {
-        editDiv.focus();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-        (document.body as HTMLElement).focus();
-      });
-      expect(staffEvCount()).toBe(beforeEdit);
-      document.body.removeChild(editDiv);
-
-      /* Space key PTT: allowed when contenteditable="false" focused */
-      const nonEditDiv = document.createElement("div");
-      nonEditDiv.setAttribute("contenteditable", "false");
-      nonEditDiv.tabIndex = 0;
-      document.body.appendChild(nonEditDiv);
-      const beforeNonEdit = staffEvCount();
-      await act(async () => {
-        nonEditDiv.focus();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-        (document.body as HTMLElement).focus();
-      });
-      expect(staffEvCount()).toBeGreaterThan(beforeNonEdit);
-      document.body.removeChild(nonEditDiv);
-
-      /* Space key PTT: ignored when textarea focused */
-      const textarea = document.createElement("textarea");
-      document.body.appendChild(textarea);
-      const beforeTa = staffEvCount();
-      await act(async () => {
-        textarea.focus();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-        (document.body as HTMLElement).focus();
-      });
-      expect(staffEvCount()).toBe(beforeTa);
-      document.body.removeChild(textarea);
-
-      /* Space key PTT: ignored when select focused */
-      const selectEl = document.createElement("select");
-      document.body.appendChild(selectEl);
-      const beforeSel = staffEvCount();
-      await act(async () => {
-        selectEl.focus();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-        (document.body as HTMLElement).focus();
-      });
-      expect(staffEvCount()).toBe(beforeSel);
-      document.body.removeChild(selectEl);
-
-      /* Space key PTT: works when activeElement is null (e.g., no focused element) */
-      Object.defineProperty(document, "activeElement", { value: null, configurable: true });
-      const beforeNull = staffEvCount();
-      try {
+        /* Space key PTT: fires when no interactive element focused */
+        const beforeSpace = staffEvCount();
         await act(async () => {
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
         });
-        expect(staffEvCount()).toBeGreaterThan(beforeNull);
-      } finally {
-        delete (document as unknown as Record<string, unknown>).activeElement;
-      }
+        expect(staffEvCount()).toBeGreaterThan(beforeSpace);
 
-      /* Space key PTT: repeat while held suppresses scroll but does not fire new event */
-      await act(async () => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-      });
-      const beforeHeldRepeat = staffEvCount();
-      await act(async () => {
-        window.dispatchEvent(
-          new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
-        );
-      });
-      expect(staffEvCount()).toBe(beforeHeldRepeat);
-      await act(async () => {
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-      });
-
-      /* Space key PTT: ignored on key repeat (not held) */
-      const beforeRepeat = staffEvCount();
-      await act(async () => {
-        window.dispatchEvent(
-          new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
-        );
-      });
-      expect(staffEvCount()).toBe(beforeRepeat);
-
-      /* Space key PTT: ignored for non-Space keys */
-      const beforeNonSpace = staffEvCount();
-      await act(async () => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true }));
-      });
-      expect(staffEvCount()).toBe(beforeNonSpace);
-
-      /* blur / visibility release */
-      await act(async () => {
-        window.dispatchEvent(new Event("blur"));
-      });
-      await act(async () => {
-        document.dispatchEvent(new Event("visibilitychange"));
-      });
-
-      /* Phase: active (listening) → phaseDotActive */
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "listening" },
-          pending: { count: 0, session_summary_count: 0 },
+        /* Space key PTT: ignored when button focused */
+        const beforeBtn = staffEvCount();
+        await act(async () => {
+          ptt?.focus();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+          (document.body as HTMLElement).focus();
         });
-      });
-      expect(document.body.textContent ?? "").toContain("Phase: Listening");
+        expect(staffEvCount()).toBe(beforeBtn);
 
-      /* Phase: waiting (waiting_stt) → phaseDotWaiting */
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "waiting_stt" },
-          pending: { count: 0, session_summary_count: 0 },
+        /* Space key PTT: ignored when role="button" focused */
+        const roleBtn = document.createElement("div");
+        roleBtn.setAttribute("role", "button");
+        roleBtn.tabIndex = 0;
+        document.body.appendChild(roleBtn);
+        const beforeRole = staffEvCount();
+        await act(async () => {
+          roleBtn.focus();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+          (document.body as HTMLElement).focus();
         });
-      });
-      expect(document.body.textContent ?? "").toContain("Phase: Waiting (STT)");
+        expect(staffEvCount()).toBe(beforeRole);
+        document.body.removeChild(roleBtn);
 
-      /* Phase: waiting_chat → phaseDotWaiting */
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "waiting_chat" },
-          pending: { count: 0, session_summary_count: 0 },
+        /* Space key PTT: ignored when contenteditable focused */
+        const editDiv = document.createElement("div");
+        editDiv.setAttribute("contenteditable", "true");
+        document.body.appendChild(editDiv);
+        const beforeEdit = staffEvCount();
+        await act(async () => {
+          editDiv.focus();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+          (document.body as HTMLElement).focus();
         });
-      });
-      expect(document.body.textContent ?? "").toContain("Phase: Waiting (Chat)");
+        expect(staffEvCount()).toBe(beforeEdit);
+        document.body.removeChild(editDiv);
 
-      /* Phase: asking_consent → phaseDotWaiting */
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "asking_consent" },
-          pending: { count: 0, session_summary_count: 0 },
+        /* Space key PTT: allowed when contenteditable="false" focused */
+        const nonEditDiv = document.createElement("div");
+        nonEditDiv.setAttribute("contenteditable", "false");
+        nonEditDiv.tabIndex = 0;
+        document.body.appendChild(nonEditDiv);
+        const beforeNonEdit = staffEvCount();
+        await act(async () => {
+          nonEditDiv.focus();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+          (document.body as HTMLElement).focus();
         });
-      });
-      expect(document.body.textContent ?? "").toContain("Phase: Asking Consent");
+        expect(staffEvCount()).toBeGreaterThan(beforeNonEdit);
+        document.body.removeChild(nonEditDiv);
 
-      /* Phase: waiting_inner_task → phaseDotWaiting */
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "waiting_inner_task" },
-          pending: { count: 0, session_summary_count: 0 },
+        /* Space key PTT: ignored when textarea focused */
+        const textarea = document.createElement("textarea");
+        document.body.appendChild(textarea);
+        const beforeTa = staffEvCount();
+        await act(async () => {
+          textarea.focus();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+          (document.body as HTMLElement).focus();
         });
-      });
-      expect(document.body.textContent ?? "").toContain("Phase: Waiting (Task)");
+        expect(staffEvCount()).toBe(beforeTa);
+        document.body.removeChild(textarea);
 
-      /* Phase: back to idle */
-      await act(async () => {
-        handlers.onSnapshot({
-          state: { mode: "ROOM", personal_name: null, phase: "idle" },
-          pending: { count: 0, session_summary_count: 0 },
+        /* Space key PTT: ignored when select focused */
+        const selectEl = document.createElement("select");
+        document.body.appendChild(selectEl);
+        const beforeSel = staffEvCount();
+        await act(async () => {
+          selectEl.focus();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+          (document.body as HTMLElement).focus();
         });
-      });
+        expect(staffEvCount()).toBe(beforeSel);
+        document.body.removeChild(selectEl);
 
-      await act(async () => {
-        ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-        ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
-      });
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/staff/event",
-        expect.objectContaining({ method: "POST" }),
-      );
-
-      await act(async () => {
-        vi.advanceTimersByTime(30_000);
-      });
-      await act(async () => {
-        vi.advanceTimersByTime(30_000);
-      });
-      const keepaliveCalls = fetchMock.mock.calls.filter(
-        (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
-      );
-      expect(keepaliveCalls).toHaveLength(1);
-
-      await act(async () => {
-        window.dispatchEvent(new Event("pointerdown"));
-        vi.advanceTimersByTime(30_000);
-      });
-      const keepaliveCalls2 = fetchMock.mock.calls.filter(
-        (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
-      );
-      expect(keepaliveCalls2.length).toBeGreaterThan(1);
-
-      const refresh = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Refresh"),
-      );
-      expect(refresh).toBeTruthy();
-      await act(async () => {
-        refresh?.click();
-      });
-
-      const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Force ROOM"),
-      );
-      const emergencyStop = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Emergency stop"),
-      );
-      const resume = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Resume"),
-      );
-      expect(forceRoom).toBeTruthy();
-      expect(emergencyStop).toBeTruthy();
-      expect(resume).toBeTruthy();
-      await act(async () => {
-        forceRoom?.click();
-        emergencyStop?.click();
-        resume?.click();
-      });
-
-      const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Confirm"),
-      );
-      const deny = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Deny"),
-      );
-      expect(confirm).toBeTruthy();
-      expect(deny).toBeTruthy();
-      await act(async () => {
-        confirm?.click();
-        deny?.click();
-      });
-
-      await act(async () => {
-        handlers.onMessage?.({
-          type: "staff.session_summaries_pending_list",
-          seq: 9,
-          data: {
-            items: [
-              {
-                id: "p2",
-                title: "After lunch",
-                summary_json: { note: "Played cards" },
-                status: "pending",
-                created_at_ms: 0,
-                expires_at_ms: 1,
-              },
-            ],
-          },
-        });
-      });
-      expect(document.body.textContent ?? "").toContain("After lunch");
-      expect(document.body.textContent ?? "").toContain('{"note":"Played cards"}');
-
-      await act(async () => {
-        handlers.onMessage?.({
-          type: "staff.session_summaries_pending_list",
-          seq: 10,
-          data: { items: [] },
-        });
-      });
-      expect(document.body.textContent ?? "").toContain("No pending items.");
-
-      await act(async () => {
-        ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-      });
-
-      await act(async () => {
-        vi.advanceTimersByTime(180_000);
-      });
-      expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
-      expect(closeSpy).toHaveBeenCalled();
-
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
-
-    it("covers staff error paths (401/500/network) for login, pending, events, and keepalive", async () => {
-      vi.resetModules();
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
-
-      const closeSpy = vi.fn();
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: closeSpy,
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
-
-      const fetchMock = vi
-        .fn()
-        // 1) login network error
-        .mockRejectedValueOnce(new Error("offline"))
-        // 2) login unauthorized
-        .mockResolvedValueOnce(jsonResponse(401, { error: { code: "unauthorized", message: "x" } }))
-        // 3) login ok
-        .mockResolvedValueOnce(jsonResponse(200, { ok: true }))
-        // 4) pending 500
-        .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
-        // 5) staff event 500
-        .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
-        // 6) staff event network error
-        .mockRejectedValueOnce(new Error("offline"))
-        // 7) keepalive 500
-        .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
-        // 8) keepalive network error
-        .mockRejectedValueOnce(new Error("offline"))
-        // 9) keepalive 401
-        .mockResolvedValueOnce(
-          jsonResponse(401, { error: { code: "unauthorized", message: "x" } }),
-        );
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
-
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
-      await act(async () => {});
-      expect((signIn as HTMLButtonElement).disabled).toBe(false);
-      expect(document.body.textContent ?? "").toContain("Network error");
-
-      await act(async () => {
-        signIn?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("Unauthorized");
-
-      await act(async () => {
-        signIn?.click();
-      });
-      expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
-      expect(document.body.textContent ?? "").toContain("HTTP 500");
-
-      const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Force ROOM"),
-      );
-      expect(forceRoom).toBeTruthy();
-      await act(async () => {
-        forceRoom?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("HTTP 500");
-
-      await act(async () => {
-        forceRoom?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("Network error");
-
-      await act(async () => {
-        window.dispatchEvent(new Event("pointerdown"));
-        vi.advanceTimersByTime(30_000);
-      });
-      expect(document.body.textContent ?? "").toContain("HTTP 500");
-
-      await act(async () => {
-        window.dispatchEvent(new Event("pointerdown"));
-        vi.advanceTimersByTime(30_000);
-      });
-      expect(document.body.textContent ?? "").toContain("Network error");
-
-      await act(async () => {
-        window.dispatchEvent(new Event("pointerdown"));
-        vi.advanceTimersByTime(30_000);
-      });
-      expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
-
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
-
-    it("locks on staff event 401", async () => {
-      vi.resetModules();
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
-
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
-
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          return jsonResponse(200, { items: [] });
-        }
-        if (url === "/api/v1/staff/event" && method === "POST") {
-          return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-      });
-      await act(async () => {
-        signIn?.click();
-      });
-
-      const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Force ROOM"),
-      );
-      expect(forceRoom).toBeTruthy();
-      await act(async () => {
-        forceRoom?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
-
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
-
-    it("locks when pending GET returns 401", async () => {
-      vi.resetModules();
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
-
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
-
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
-
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
-
-      expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
-
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
-
-    it("shows pending network error when pending GET throws", async () => {
-      vi.resetModules();
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
-
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
-
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          throw new Error("offline");
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("Network error");
-
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
-
-    it("covers pending mutation errors (HTTP/network/401)", async () => {
-      vi.resetModules();
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
-
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
-
-      let mutateCall = 0;
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
-          return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          return jsonResponse(200, {
-            items: [
-              {
-                id: "p1",
-                title: "Morning chat",
-                summary_json: { note: "Talked about plants" },
-                status: "pending",
-                created_at_ms: 0,
-                expires_at_ms: 1,
-              },
-            ],
+        /* Space key PTT: works when activeElement is null (e.g., no focused element) */
+        Object.defineProperty(document, "activeElement", { value: null, configurable: true });
+        const beforeNull = staffEvCount();
+        try {
+          await act(async () => {
+            window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+            window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
           });
+          expect(staffEvCount()).toBeGreaterThan(beforeNull);
+        } finally {
+          delete (document as unknown as Record<string, unknown>).activeElement;
         }
-        if (url.startsWith("/api/v1/staff/session-summaries/") && method === "POST") {
-          mutateCall += 1;
-          if (mutateCall === 1) {
-            return jsonResponse(404, { error: { code: "not_found", message: "x" } });
+
+        /* Space key PTT: repeat while held suppresses scroll but does not fire new event */
+        await act(async () => {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+        });
+        const beforeHeldRepeat = staffEvCount();
+        await act(async () => {
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
+          );
+        });
+        expect(staffEvCount()).toBe(beforeHeldRepeat);
+        await act(async () => {
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+        });
+
+        /* Space key PTT: ignored on key repeat (not held) */
+        const beforeRepeat = staffEvCount();
+        await act(async () => {
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
+          );
+        });
+        expect(staffEvCount()).toBe(beforeRepeat);
+
+        /* Space key PTT: ignored for non-Space keys */
+        const beforeNonSpace = staffEvCount();
+        await act(async () => {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+          window.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true }));
+        });
+        expect(staffEvCount()).toBe(beforeNonSpace);
+
+        /* blur / visibility release */
+        await act(async () => {
+          window.dispatchEvent(new Event("blur"));
+        });
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+
+        /* Phase: active (listening) → phaseDotActive */
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "listening" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("Phase: Listening");
+
+        /* Phase: waiting (waiting_stt) → phaseDotWaiting */
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "waiting_stt" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("Phase: Waiting (STT)");
+
+        /* Phase: waiting_chat → phaseDotWaiting */
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "waiting_chat" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("Phase: Waiting (Chat)");
+
+        /* Phase: asking_consent → phaseDotWaiting */
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "asking_consent" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("Phase: Asking Consent");
+
+        /* Phase: waiting_inner_task → phaseDotWaiting */
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "waiting_inner_task" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("Phase: Waiting (Task)");
+
+        /* Phase: back to idle */
+        await act(async () => {
+          handlers.onSnapshot({
+            state: { mode: "ROOM", personal_name: null, phase: "idle" },
+            pending: { count: 0, session_summary_count: 0 },
+          });
+        });
+
+        await act(async () => {
+          ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+          ptt?.dispatchEvent(new Event("pointerup", { bubbles: true }));
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/v1/staff/event",
+          expect.objectContaining({ method: "POST" }),
+        );
+
+        await act(async () => {
+          vi.advanceTimersByTime(30_000);
+        });
+        await act(async () => {
+          vi.advanceTimersByTime(30_000);
+        });
+        const keepaliveCalls = fetchMock.mock.calls.filter(
+          (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
+        );
+        expect(keepaliveCalls).toHaveLength(1);
+
+        await act(async () => {
+          window.dispatchEvent(new Event("pointerdown"));
+          vi.advanceTimersByTime(30_000);
+        });
+        const keepaliveCalls2 = fetchMock.mock.calls.filter(
+          (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
+        );
+        expect(keepaliveCalls2.length).toBeGreaterThan(1);
+
+        const refresh = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Refresh"),
+        );
+        expect(refresh).toBeTruthy();
+        await act(async () => {
+          refresh?.click();
+        });
+
+        const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Force ROOM"),
+        );
+        const emergencyStop = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Emergency stop"),
+        );
+        const resume = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Resume"),
+        );
+        expect(forceRoom).toBeTruthy();
+        expect(emergencyStop).toBeTruthy();
+        expect(resume).toBeTruthy();
+        await act(async () => {
+          forceRoom?.click();
+          emergencyStop?.click();
+          resume?.click();
+        });
+
+        const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Confirm"),
+        );
+        const deny = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Deny"),
+        );
+        expect(confirm).toBeTruthy();
+        expect(deny).toBeTruthy();
+        await act(async () => {
+          confirm?.click();
+          deny?.click();
+        });
+
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "staff.session_summaries_pending_list",
+            seq: 9,
+            data: {
+              items: [
+                {
+                  id: "p2",
+                  title: "After lunch",
+                  summary_json: { note: "Played cards" },
+                  status: "pending",
+                  created_at_ms: 0,
+                  expires_at_ms: 1,
+                },
+              ],
+            },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("After lunch");
+        expect(document.body.textContent ?? "").toContain('{"note":"Played cards"}');
+
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "staff.session_summaries_pending_list",
+            seq: 10,
+            data: { items: [] },
+          });
+        });
+        expect(document.body.textContent ?? "").toContain("No pending items.");
+
+        await act(async () => {
+          ptt?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+        });
+
+        await act(async () => {
+          vi.advanceTimersByTime(180_000);
+        });
+        expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
+        expect(closeSpy).toHaveBeenCalled();
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers staff error paths (401/500/network) for login, pending, events, and keepalive",
+      async () => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi
+          .fn()
+          // 1) login network error
+          .mockRejectedValueOnce(new Error("offline"))
+          // 2) login unauthorized
+          .mockResolvedValueOnce(
+            jsonResponse(401, { error: { code: "unauthorized", message: "x" } }),
+          )
+          // 3) login ok
+          .mockResolvedValueOnce(jsonResponse(200, { ok: true }))
+          // 4) pending 500
+          .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
+          // 5) staff event 500
+          .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
+          // 6) staff event network error
+          .mockRejectedValueOnce(new Error("offline"))
+          // 7) keepalive 500
+          .mockResolvedValueOnce(jsonResponse(500, { error: { code: "boom", message: "boom" } }))
+          // 8) keepalive network error
+          .mockRejectedValueOnce(new Error("offline"))
+          // 9) keepalive 401
+          .mockResolvedValueOnce(
+            jsonResponse(401, { error: { code: "unauthorized", message: "x" } }),
+          );
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
           }
-          if (mutateCall === 2) {
+          signIn?.click();
+        });
+        await act(async () => {});
+        expect((signIn as HTMLButtonElement).disabled).toBe(false);
+        expect(document.body.textContent ?? "").toContain("Network error");
+
+        await act(async () => {
+          signIn?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("Unauthorized");
+
+        await act(async () => {
+          signIn?.click();
+        });
+        expect(connectSseMock).toHaveBeenCalledWith("/api/v1/staff/stream", expect.any(Object));
+        expect(document.body.textContent ?? "").toContain("HTTP 500");
+
+        const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Force ROOM"),
+        );
+        expect(forceRoom).toBeTruthy();
+        await act(async () => {
+          forceRoom?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("HTTP 500");
+
+        await act(async () => {
+          forceRoom?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("Network error");
+
+        await act(async () => {
+          window.dispatchEvent(new Event("pointerdown"));
+          vi.advanceTimersByTime(30_000);
+        });
+        expect(document.body.textContent ?? "").toContain("HTTP 500");
+
+        await act(async () => {
+          window.dispatchEvent(new Event("pointerdown"));
+          vi.advanceTimersByTime(30_000);
+        });
+        expect(document.body.textContent ?? "").toContain("Network error");
+
+        await act(async () => {
+          window.dispatchEvent(new Event("pointerdown"));
+          vi.advanceTimersByTime(30_000);
+        });
+        expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "locks on staff event 401",
+      async () => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+            return jsonResponse(200, { items: [] });
+          }
+          if (url === "/api/v1/staff/event" && method === "POST") {
+            return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
+          }
+          return jsonResponse(200, { ok: true });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        });
+        await act(async () => {
+          signIn?.click();
+        });
+
+        const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Force ROOM"),
+        );
+        expect(forceRoom).toBeTruthy();
+        await act(async () => {
+          forceRoom?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "locks when pending GET returns 401",
+      async () => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+            return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
+          }
+          return jsonResponse(200, { ok: true });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          signIn?.click();
+        });
+
+        expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "shows pending network error when pending GET throws",
+      async () => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
             throw new Error("offline");
           }
-          return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
+          return jsonResponse(200, { ok: true });
+        });
+        vi.stubGlobal("fetch", fetchMock);
 
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
 
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
 
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          signIn?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("Network error");
 
-      const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Confirm"),
-      );
-      const deny = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Deny"),
-      );
-      expect(confirm).toBeTruthy();
-      expect(deny).toBeTruthy();
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
 
-      await act(async () => {
-        confirm?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("HTTP 404");
+    it(
+      "covers pending mutation errors (HTTP/network/401)",
+      async () => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-02-01T00:00:00Z"));
 
-      await act(async () => {
-        deny?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("Network error");
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
 
-      await act(async () => {
-        confirm?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
+        let mutateCall = 0;
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+            return jsonResponse(200, {
+              items: [
+                {
+                  id: "p1",
+                  title: "Morning chat",
+                  summary_json: { note: "Talked about plants" },
+                  status: "pending",
+                  created_at_ms: 0,
+                  expires_at_ms: 1,
+                },
+              ],
+            });
+          }
+          if (url.startsWith("/api/v1/staff/session-summaries/") && method === "POST") {
+            mutateCall += 1;
+            if (mutateCall === 1) {
+              return jsonResponse(404, { error: { code: "not_found", message: "x" } });
+            }
+            if (mutateCall === 2) {
+              throw new Error("offline");
+            }
+            return jsonResponse(401, { error: { code: "unauthorized", message: "x" } });
+          }
+          return jsonResponse(200, { ok: true });
+        });
+        vi.stubGlobal("fetch", fetchMock);
 
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
 
-    it("shows HTTP error on non-401 login failure", async () => {
-      vi.resetModules();
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
 
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          signIn?.click();
+        });
 
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
-          return jsonResponse(500, { error: { code: "boom", message: "boom" } });
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
+        const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Confirm"),
+        );
+        const deny = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Deny"),
+        );
+        expect(confirm).toBeTruthy();
+        expect(deny).toBeTruthy();
 
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
+        await act(async () => {
+          confirm?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("HTTP 404");
 
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
+        await act(async () => {
+          deny?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("Network error");
 
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
+        await act(async () => {
+          confirm?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("STAFF (Locked)");
 
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
 
-      expect(document.body.textContent ?? "").toContain("HTTP 500");
+    it(
+      "shows HTTP error on non-401 login failure",
+      async () => {
+        vi.resetModules();
 
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(500, { error: { code: "boom", message: "boom" } });
+          }
+          return jsonResponse(200, { ok: true });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
+
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          signIn?.click();
+        });
+
+        expect(document.body.textContent ?? "").toContain("HTTP 500");
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
 
     it(
       "does not render Mode card even when snapshot includes mode fields",
@@ -3375,111 +3409,115 @@ describe("app", () => {
       STAFF_TEST_TIMEOUT_MS,
     );
 
-    it("surfaces timestamp validation errors and preserves null deadline fallback", async () => {
-      vi.resetModules();
+    it(
+      "surfaces timestamp validation errors and preserves null deadline fallback",
+      async () => {
+        vi.resetModules();
 
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
-        close: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
 
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/v1/staff/auth/login" && method === "POST") {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/staff/auth/login" && method === "POST") {
+            return jsonResponse(200, { ok: true });
+          }
+          if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
+            return jsonResponse(200, {
+              items: [
+                {
+                  id: "p-non-finite-ts",
+                  title: "Non finite",
+                  summary_json: { note: "non-finite timestamp" },
+                  status: "pending",
+                  created_at_ms: Number.POSITIVE_INFINITY,
+                  expires_at_ms: Number.NEGATIVE_INFINITY,
+                },
+                {
+                  id: "p-null-summary",
+                  title: "Missing summary",
+                  summary_json: "already formatted",
+                  status: "pending",
+                  created_at_ms: 0,
+                  expires_at_ms: null,
+                },
+                {
+                  id: "p-undefined-summary",
+                  title: "Undefined summary",
+                  summary_json: undefined,
+                  status: "pending",
+                  created_at_ms: 0,
+                  expires_at_ms: null,
+                },
+                {
+                  id: "p-invalid-ts",
+                  title: "Out of range",
+                  summary_json: { note: "invalid timestamp" },
+                  status: "pending",
+                  created_at_ms: 9_000_000_000_000_000,
+                  expires_at_ms: -9_000_000_000_000_000,
+                },
+              ],
+            });
+          }
           return jsonResponse(200, { ok: true });
-        }
-        if (url === "/api/v1/staff/session-summaries/pending" && method === "GET") {
-          return jsonResponse(200, {
-            items: [
-              {
-                id: "p-non-finite-ts",
-                title: "Non finite",
-                summary_json: { note: "non-finite timestamp" },
-                status: "pending",
-                created_at_ms: Number.POSITIVE_INFINITY,
-                expires_at_ms: Number.NEGATIVE_INFINITY,
-              },
-              {
-                id: "p-null-summary",
-                title: "Missing summary",
-                summary_json: "already formatted",
-                status: "pending",
-                created_at_ms: 0,
-                expires_at_ms: null,
-              },
-              {
-                id: "p-undefined-summary",
-                title: "Undefined summary",
-                summary_json: undefined,
-                status: "pending",
-                created_at_ms: 0,
-                expires_at_ms: null,
-              },
-              {
-                id: "p-invalid-ts",
-                title: "Out of range",
-                summary_json: { note: "invalid timestamp" },
-                status: "pending",
-                created_at_ms: 9_000_000_000_000_000,
-                expires_at_ms: -9_000_000_000_000_000,
-              },
-            ],
-          });
-        }
-        return jsonResponse(200, { ok: true });
-      });
-      vi.stubGlobal("fetch", fetchMock);
+        });
+        vi.stubGlobal("fetch", fetchMock);
 
-      window.history.pushState({}, "", "/staff");
-      document.body.innerHTML = '<div id="root"></div>';
+        window.history.pushState({}, "", "/staff");
+        document.body.innerHTML = '<div id="root"></div>';
 
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
 
-      const input = document.querySelector("input") as HTMLInputElement | null;
-      const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Sign in"),
-      );
-      expect(input).toBeTruthy();
-      expect(signIn).toBeTruthy();
+        const input = document.querySelector("input") as HTMLInputElement | null;
+        const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("Sign in"),
+        );
+        expect(input).toBeTruthy();
+        expect(signIn).toBeTruthy();
 
-      await act(async () => {
-        if (input) {
-          setNativeInputValue(input, "pass");
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        signIn?.click();
-      });
+        await act(async () => {
+          if (input) {
+            setNativeInputValue(input, "pass");
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          signIn?.click();
+        });
 
-      expect(document.body.textContent ?? "").toContain("Non finite");
-      expect(document.body.textContent ?? "").toContain("Missing summary");
-      expect(document.body.textContent ?? "").toContain("Undefined summary");
-      expect(document.body.textContent ?? "").toContain("already formatted");
-      expect(document.body.textContent ?? "").not.toContain('"already formatted"');
-      expect(document.body.textContent ?? "").toContain("null");
-      expect(document.body.textContent ?? "").toContain("Out of range");
-      expect(document.body.textContent ?? "").toContain("Invalid timestamp value: Infinity");
-      expect(document.body.textContent ?? "").toContain("Invalid timestamp value: -Infinity");
-      expect(document.body.textContent ?? "").toContain(
-        "Invalid timestamp value: 9000000000000000",
-      );
-      expect(document.body.textContent ?? "").toContain(
-        "Invalid timestamp value: -9000000000000000",
-      );
-      expect(document.body.textContent ?? "").toContain("Created: 1970-01-01T00:00:00.000Z");
-      expect(document.body.textContent ?? "").toContain("Deadline: -");
+        expect(document.body.textContent ?? "").toContain("Non finite");
+        expect(document.body.textContent ?? "").toContain("Missing summary");
+        expect(document.body.textContent ?? "").toContain("Undefined summary");
+        expect(document.body.textContent ?? "").toContain("already formatted");
+        expect(document.body.textContent ?? "").not.toContain('"already formatted"');
+        expect(document.body.textContent ?? "").toContain("null");
+        expect(document.body.textContent ?? "").toContain("Out of range");
+        expect(document.body.textContent ?? "").toContain("Invalid timestamp value: Infinity");
+        expect(document.body.textContent ?? "").toContain("Invalid timestamp value: -Infinity");
+        expect(document.body.textContent ?? "").toContain(
+          "Invalid timestamp value: 9000000000000000",
+        );
+        expect(document.body.textContent ?? "").toContain(
+          "Invalid timestamp value: -9000000000000000",
+        );
+        expect(document.body.textContent ?? "").toContain("Created: 1970-01-01T00:00:00.000Z");
+        expect(document.body.textContent ?? "").toContain("Deadline: -");
 
-      await act(async () => {
-        appRoot.unmount();
-      });
-    });
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      STAFF_TEST_TIMEOUT_MS,
+    );
   });
 });
