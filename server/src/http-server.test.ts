@@ -2269,7 +2269,7 @@ describe("http-server", () => {
       }
     });
 
-    it("does not create memory pending when personal mode is disabled", async () => {
+    it("returns 400 invalid_request for UI_CONSENT_BUTTON after staff PTT cycle", async () => {
       {
         const down = await sendRequest("POST", "/api/v1/staff/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
