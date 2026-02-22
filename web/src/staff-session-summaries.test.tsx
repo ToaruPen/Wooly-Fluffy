@@ -488,12 +488,15 @@ describe("staff session summaries flows", () => {
           expect.objectContaining({ method: "POST" }),
         );
 
+        const beforeBlurVisibility = staffEvCount();
+
         await act(async () => {
           window.dispatchEvent(new Event("blur"));
         });
         await act(async () => {
           document.dispatchEvent(new Event("visibilitychange"));
         });
+        expect(staffEvCount()).toBe(beforeBlurVisibility);
       } finally {
         await act(async () => {
           appRoot.unmount();
