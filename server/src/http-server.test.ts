@@ -611,6 +611,24 @@ describe("http-server", () => {
       });
     });
 
+    it("includes speech metrics when requested via health query", async () => {
+      const response = await sendRequest("GET", "/health?metrics=1");
+
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({
+        status: "ok",
+        providers: {
+          stt: { status: "ok" },
+          tts: { status: "ok" },
+          llm: { status: "ok", kind: "stub" },
+        },
+        speech_metrics: {
+          ttfa_observation_count: 0,
+          latest_ttfa_observation: null,
+        },
+      });
+    });
+
     it("returns 404 for unknown paths", async () => {
       const response = await sendRequest("GET", "/unknown");
 

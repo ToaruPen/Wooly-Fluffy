@@ -183,9 +183,6 @@ export const createEffectExecutor = (deps: {
             chat_request_id: chatRequestId,
           });
           for (const [segmentIndex, segmentText] of segments.entries()) {
-            if (firstSegmentEmittedAtMs === null) {
-              firstSegmentEmittedAtMs = nowMs();
-            }
             deps.sendKioskCommand("kiosk.command.speech.segment", {
               utterance_id: utteranceId,
               chat_request_id: chatRequestId,
@@ -193,6 +190,9 @@ export const createEffectExecutor = (deps: {
               text: segmentText,
               is_last: segmentIndex === segments.length - 1,
             });
+            if (segmentIndex === 0) {
+              firstSegmentEmittedAtMs = nowMs();
+            }
           }
           deps.sendKioskCommand("kiosk.command.speech.end", {
             utterance_id: utteranceId,

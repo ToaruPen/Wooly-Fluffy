@@ -146,6 +146,11 @@ const parsePath = (url: string): string => {
   return end === -1 ? url : url.slice(0, end);
 };
 
+const shouldIncludeSpeechMetrics = (url: string): boolean => {
+  const parsed = new URL(url, "http://localhost");
+  return parsed.searchParams.get("metrics") === "1";
+};
+
 const readBody = async (req: IncomingMessage, maxBytes: number): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -367,12 +372,31 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     llm: createLlmProviderFromEnv(),
   };
 
+  let speechTtfaObservationCount = 0;
+  let latestSpeechTtfaObservation: {
+    emitted_at_ms: number;
+    utterance_id: string;
+    chat_request_id: string;
+    segment_count: number;
+    first_segment_length: number;
+  } | null = null;
+
   const effectExecutor = createEffectExecutor({
     providers,
     sendKioskCommand,
     enqueueEvent: (event) => enqueueEvent(event, nowMs()),
     onSttRequested: (request_id) => {
       pendingStt.add(request_id);
+    },
+    observeSpeechMetric: (metric) => {
+      speechTtfaObservationCount += 1;
+      latestSpeechTtfaObservation = {
+        emitted_at_ms: metric.emitted_at_ms,
+        utterance_id: metric.utterance_id,
+        chat_request_id: metric.chat_request_id,
+        segment_count: metric.segment_count,
+        first_segment_length: metric.first_segment_length,
+      };
     },
     storeWriteSessionSummaryPending: createStoreWriteSessionSummaryPending({
       store,
@@ -402,25 +426,47 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   };
 
   const server = createServer((req, res) => {
-    if (req.method === "GET" && req.url === "/health") {
+    if (req.method === "GET" && parsePath(req.url!) === "/health") {
       void (async () => {
         const [stt, tts, llm] = await Promise.all([
           providers.stt.health(),
           providers.tts.health(),
           providers.llm.health(),
         ]);
-        sendJson(
-          res,
-          200,
-          JSON.stringify({
-            status: "ok",
-            providers: {
-              stt,
-              tts,
-              llm: { ...llm, kind: providers.llm.kind },
-            },
-          }),
-        );
+        const body: {
+          status: "ok";
+          providers: {
+            stt: Awaited<ReturnType<Providers["stt"]["health"]>>;
+            tts: Awaited<ReturnType<Providers["tts"]["health"]>>;
+            llm: Awaited<ReturnType<Providers["llm"]["health"]>> & {
+              kind: Providers["llm"]["kind"];
+            };
+          };
+          speech_metrics?: {
+            ttfa_observation_count: number;
+            latest_ttfa_observation: {
+              emitted_at_ms: number;
+              utterance_id: string;
+              chat_request_id: string;
+              segment_count: number;
+              first_segment_length: number;
+            } | null;
+          };
+        } = {
+          status: "ok",
+          providers: {
+            stt,
+            tts,
+            llm: { ...llm, kind: providers.llm.kind },
+          },
+        };
+        if (shouldIncludeSpeechMetrics(req.url!)) {
+          body.speech_metrics = {
+            ttfa_observation_count: speechTtfaObservationCount,
+            latest_ttfa_observation: latestSpeechTtfaObservation,
+          };
+        }
+        sendJson(res, 200, JSON.stringify(body));
       })();
       return;
     }
