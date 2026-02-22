@@ -215,19 +215,21 @@ export const createPersonaConfigLoader = (
     if (personaMtimeMs !== null && personaMtimeMs === personaStat.mtimeMs) {
       return;
     }
-    personaMtimeMs = personaStat.mtimeMs;
 
     const maxBytes = policy.persona?.max_bytes ?? DEFAULT_PERSONA_MAX_BYTES;
     if (personaStat.size > maxBytes) {
       personaText = "";
+      personaMtimeMs = personaStat.mtimeMs;
       return;
     }
 
     const text = safeReadText(d, personaPath);
     if (text === null) {
       personaText = "";
+      personaMtimeMs = null;
       return;
     }
+    personaMtimeMs = personaStat.mtimeMs;
     personaText = text.trim();
   };
 

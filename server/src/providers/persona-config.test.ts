@@ -317,6 +317,34 @@ describe("persona-config", () => {
     }
   }, 5_000);
 
+  it("recovers persona text after transient read failure without mtime change", async () => {
+    const personaPath = "/tmp/persona.md";
+    const policyPath = "/tmp/policy.yaml";
+
+    const fs = createMemoryFileSystem();
+    fs.setFile(personaPath, "recoverable persona");
+    fs.setFile(policyPath, "persona:\n  max_bytes: 999\n");
+    fs.setReadFailure(personaPath, true);
+
+    const loader = createPersonaConfigLoader({
+      env: {
+        WOOLY_FLUFFY_PERSONA_PATH: personaPath,
+        WOOLY_FLUFFY_POLICY_PATH: policyPath,
+      },
+      platform: "darwin",
+      homedir: () => "/Users/test",
+      fileSystem: fs.adapter,
+      createWatcher: () => ({ close: () => {} }),
+    });
+    try {
+      expect(loader.read().persona_text).toBe("");
+      fs.setReadFailure(personaPath, false);
+      expect(loader.read().persona_text).toBe("recoverable persona");
+    } finally {
+      loader.close();
+    }
+  }, 5_000);
+
   it("falls back to empty policy when policy file read fails", async () => {
     const personaPath = "/tmp/persona.md";
     const policyPath = "/tmp/policy.yaml";

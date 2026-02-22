@@ -3655,28 +3655,31 @@ describe("llm-provider (env)", () => {
       process.env.LLM_PROVIDER_KIND = "gemini_native";
       process.env.LLM_MODEL = "gemini-2.5-flash-lite";
       process.env.LLM_API_KEY = "test-key";
-      process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = "not-a-number";
       process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/missing-persona.md";
       process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/missing-policy.yaml";
 
-      const llm = createLlmProviderFromEnv({
-        gemini_models: {
-          generateContent: async (params) => {
-            const config = params.config as { maxOutputTokens?: number };
-            expect(config.maxOutputTokens).toBeUndefined();
-            return {
-              text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
-              functionCalls: [],
-              candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
-            };
-          },
-          get: async () => ({}),
-        },
-      });
+      for (const rawValue of ["not-a-number", "64.5", "64abc", "1e2", "   "]) {
+        process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = rawValue;
 
-      await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
-      ).resolves.toMatchObject({ assistant_text: "ok" });
+        const llm = createLlmProviderFromEnv({
+          gemini_models: {
+            generateContent: async (params) => {
+              const config = params.config as { maxOutputTokens?: number };
+              expect(config.maxOutputTokens).toBeUndefined();
+              return {
+                text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+                functionCalls: [],
+                candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+              };
+            },
+            get: async () => ({}),
+          },
+        });
+
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+        ).resolves.toMatchObject({ assistant_text: "ok" });
+      }
     } finally {
       process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
       process.env.LLM_MODEL = saved.LLM_MODEL;

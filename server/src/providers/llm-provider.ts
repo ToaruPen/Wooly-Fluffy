@@ -391,13 +391,17 @@ const readOptionalEnvInt = (
   options: { name: string; min?: number; max?: number },
 ): number | null => {
   const raw = env[options.name];
-  if (typeof raw === "undefined" || raw.trim() === "") {
+  if (typeof raw === "undefined") {
     return null;
   }
-  const parsed = Number.parseInt(raw, 10);
-  if (Number.isNaN(parsed)) {
+  const normalized = raw.trim();
+  if (normalized === "") {
     return null;
   }
+  if (!/^[+-]?\d+$/.test(normalized)) {
+    return null;
+  }
+  const parsed = Number.parseInt(normalized, 10);
   return readEnvInt(env, {
     name: options.name,
     defaultValue: parsed,
