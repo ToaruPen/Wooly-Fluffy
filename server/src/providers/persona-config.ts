@@ -1,10 +1,13 @@
-// eslint-disable-next-line no-restricted-imports
-import { readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import { parse as parseYaml } from "yaml";
-import { maxValue, minValue, number, object, optional, pipe, safeParse, unknown } from "valibot";
+import { maxValue, minValue, number, object, optional, pipe, safeParse } from "valibot";
+import {
+  nodeFileSystemAdapter,
+  type FileSystemAdapter,
+  type FileSystemStat,
+} from "../file-system.js";
 
 type PersonaPolicy = {
   chat?: {
@@ -19,13 +22,13 @@ type PersonaPolicy = {
   };
 };
 
-export type PersonaConfigSnapshot = {
+type PersonaConfigSnapshot = {
   persona_text: string;
   chat_max_output_chars: number | null;
   chat_max_output_tokens: number | null;
 };
 
-export type PersonaConfigLoader = {
+type PersonaConfigLoader = {
   read: () => PersonaConfigSnapshot;
   close: () => void;
   paths: {
@@ -38,8 +41,7 @@ type PersonaConfigDeps = {
   env: NodeJS.ProcessEnv;
   platform: string;
   homedir: () => string;
-  readFileSync: typeof readFileSync;
-  statSync: typeof statSync;
+  fileSystem: FileSystemAdapter;
   createWatcher: (
     paths: string[],
     onDirty: () => void,
@@ -74,7 +76,6 @@ const defaultCreateWatcher = (
   onDirty: () => void,
   debounceMs: number,
 ): { close: () => void } => {
-  let timer: ReturnType<typeof setTimeout> | null = null;
   const watcher: FSWatcher = chokidar.watch(paths, {
     ignoreInitial: true,
     persistent: false,
@@ -83,27 +84,12 @@ const defaultCreateWatcher = (
       pollInterval: 50,
     },
   });
-  const markDirty = () => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-    timer = setTimeout(
-      () => {
-        onDirty();
-      },
-      Math.max(0, debounceMs),
-    );
-    timer.unref?.();
-  };
-  watcher.on("add", markDirty);
-  watcher.on("change", markDirty);
-  watcher.on("unlink", markDirty);
-  watcher.on("error", markDirty);
+  watcher.on("add", onDirty);
+  watcher.on("change", onDirty);
+  watcher.on("unlink", onDirty);
+  watcher.on("error", onDirty);
   return {
     close: () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
       void watcher.close();
     },
   };
@@ -113,8 +99,7 @@ const defaultDeps = (): PersonaConfigDeps => ({
   env: process.env,
   platform: process.platform,
   homedir: os.homedir,
-  readFileSync,
-  statSync,
+  fileSystem: nodeFileSystemAdapter,
   createWatcher: defaultCreateWatcher,
 });
 
@@ -123,8 +108,8 @@ const safeStat = (
   filePath: string,
 ): { mtimeMs: number; size: number } | null => {
   try {
-    const st = d.statSync(filePath);
-    if (!st.isFile()) {
+    const st: FileSystemStat = d.fileSystem.statFileSync(filePath);
+    if (!st.isFile) {
       return null;
     }
     return { mtimeMs: st.mtimeMs, size: st.size };
@@ -135,7 +120,7 @@ const safeStat = (
 
 const safeReadText = (d: PersonaConfigDeps, filePath: string): string | null => {
   try {
-    return d.readFileSync(filePath, "utf8");
+    return d.fileSystem.readTextFileSync(filePath);
   } catch {
     return null;
   }
@@ -163,10 +148,7 @@ const readPolicyYaml = (
   }
   try {
     const raw = parseYaml(text) as unknown;
-    if (safeParse(unknown(), raw).success) {
-      return { policy: normalizePolicy(raw), mtimeMs: st.mtimeMs };
-    }
-    return { policy: {}, mtimeMs: st.mtimeMs };
+    return { policy: normalizePolicy(raw), mtimeMs: st.mtimeMs };
   } catch {
     return { policy: {}, mtimeMs: st.mtimeMs };
   }
@@ -189,7 +171,7 @@ export const createPersonaConfigLoader = (
   let personaMtimeMs: number | null = null;
   let policyMtimeMs: number | null = null;
   let policy: PersonaPolicy = {};
-  let dirty = true;
+  let isDirty = true;
 
   const watchDebounceMs = (() => {
     const raw = d.env.WOOLY_FLUFFY_PERSONA_WATCH_DEBOUNCE_MS;
@@ -203,7 +185,7 @@ export const createPersonaConfigLoader = (
   const watcher = d.createWatcher(
     [personaPath, policyPath],
     () => {
-      dirty = true;
+      isDirty = true;
     },
     watchDebounceMs,
   );
@@ -212,17 +194,18 @@ export const createPersonaConfigLoader = (
     const policyRead = readPolicyYaml(d, policyPath);
     const personaStat = safeStat(d, personaPath);
     if (
-      !dirty &&
+      !isDirty &&
       policyRead.mtimeMs === policyMtimeMs &&
       (personaStat?.mtimeMs ?? null) === personaMtimeMs
     ) {
       return;
     }
-    dirty = false;
+    isDirty = false;
 
     if (policyRead.mtimeMs !== policyMtimeMs) {
       policyMtimeMs = policyRead.mtimeMs;
       policy = policyRead.policy;
+      personaMtimeMs = null;
     }
 
     if (!personaStat) {

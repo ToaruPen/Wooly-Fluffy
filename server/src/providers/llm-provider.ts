@@ -394,9 +394,13 @@ const readOptionalEnvInt = (
   if (typeof raw === "undefined" || raw.trim() === "") {
     return null;
   }
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
   return readEnvInt(env, {
     name: options.name,
-    defaultValue: 0,
+    defaultValue: parsed,
     min: options.min,
     max: options.max,
   });
@@ -1218,9 +1222,9 @@ export const createGeminiNativeLlmProvider = (
 export const createLlmProviderFromEnv = (options?: {
   fetch?: FetchFn;
   gemini_models?: GeminiNativeModelsClient;
+  read_chat_runtime_config?: ChatRuntimeConfigReader;
 }): Providers["llm"] => {
   const kind = (process.env.LLM_PROVIDER_KIND ?? "stub") as LlmProviderKind;
-  const personaConfigLoader = createPersonaConfigLoader();
 
   const chatMaxOutputCharsFromEnv = readEnvInt(process.env, {
     name: "LLM_CHAT_MAX_OUTPUT_CHARS",
@@ -1234,14 +1238,21 @@ export const createLlmProviderFromEnv = (options?: {
     max: 8_192,
   });
 
-  const readChatRuntimeConfig: ChatRuntimeConfigReader = () => {
-    const snapshot = personaConfigLoader.read();
-    return {
-      persona_text: snapshot.persona_text,
-      max_output_chars: snapshot.chat_max_output_chars ?? chatMaxOutputCharsFromEnv,
-      max_output_tokens: snapshot.chat_max_output_tokens ?? chatMaxOutputTokensFromEnv,
-    };
-  };
+  const injectedChatRuntimeConfigReader = options?.read_chat_runtime_config;
+
+  const readChatRuntimeConfig: ChatRuntimeConfigReader = injectedChatRuntimeConfigReader
+    ? () => injectedChatRuntimeConfigReader()
+    : (() => {
+        const personaConfigLoader = createPersonaConfigLoader();
+        return () => {
+          const snapshot = personaConfigLoader.read();
+          return {
+            persona_text: snapshot.persona_text,
+            max_output_chars: snapshot.chat_max_output_chars ?? chatMaxOutputCharsFromEnv,
+            max_output_tokens: snapshot.chat_max_output_tokens ?? chatMaxOutputTokensFromEnv,
+          };
+        };
+      })();
 
   const timeoutChatMs = readEnvInt(process.env, {
     name: "LLM_TIMEOUT_CHAT_MS",
