@@ -14,6 +14,8 @@
 
 ### 2. 変更対象（ファイル:行）
 
+※ 以下は `#125` 実装PRで変更される対象ファイル（本見積もりPRでは変更しない）。依存の先行導入状況は Section 10 を参照。
+
 Change-1
 file: `server/package.json`
 change: `dependencies` に `chokidar` / `yaml` / `valibot` を追加（server限定）
@@ -112,7 +114,7 @@ content: `node --input-type=module -e "await import('chokidar'); await import('y
 
 なし（依存状態を実測で確認済み）。
 
-- `npm ls -w server chokidar yaml valibot --depth=0` で `chokidar@4.0.3` / `yaml@2.8.2` / `valibot@1.2.0` を確認
+- `server/package.json` の dependencies 宣言で `chokidar@^4.0.3` / `yaml@^2.8.1` / `valibot@^1.1.0` を確認
 - `node --input-type=module -e "await import('chokidar'); await import('yaml'); await import('valibot'); console.log('dependency-smoke-ok')"` が成功
 - `git log --oneline -- server/package.json` の先頭は `f7d22b5 feat(server): add persona config loader and chat output guards`
 
