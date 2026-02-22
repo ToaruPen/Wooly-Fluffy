@@ -2,7 +2,7 @@ import os from "node:os";
 import { join } from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
 import { parse as parseYaml } from "yaml";
-import { maxValue, minValue, number, object, optional, pipe, safeParse } from "valibot";
+import { integer, maxValue, minValue, number, object, optional, pipe, safeParse } from "valibot";
 import {
   nodeFileSystemAdapter,
   type FileSystemAdapter,
@@ -55,8 +55,8 @@ const DEFAULT_WATCH_DEBOUNCE_MS = 120;
 const policySchema = object({
   chat: optional(
     object({
-      max_output_chars: optional(pipe(number(), minValue(1), maxValue(4_000))),
-      max_output_tokens: optional(pipe(number(), minValue(1), maxValue(8_192))),
+      max_output_chars: optional(pipe(number(), integer(), minValue(1), maxValue(4_000))),
+      max_output_tokens: optional(pipe(number(), integer(), minValue(1), maxValue(8_192))),
     }),
   ),
   watch: optional(
@@ -131,47 +131,26 @@ const normalizePolicy = (input: unknown): PersonaPolicy => {
   if (!parsed.success) {
     return {};
   }
-  const output = parsed.output as PersonaPolicy;
-  const chat = output.chat
-    ? {
-        max_output_chars:
-          typeof output.chat.max_output_chars === "number" &&
-          Number.isInteger(output.chat.max_output_chars)
-            ? output.chat.max_output_chars
-            : undefined,
-        max_output_tokens:
-          typeof output.chat.max_output_tokens === "number" &&
-          Number.isInteger(output.chat.max_output_tokens)
-            ? output.chat.max_output_tokens
-            : undefined,
-      }
-    : undefined;
-
-  return {
-    chat,
-    watch: output.watch,
-    persona: output.persona,
-  };
+  return parsed.output as PersonaPolicy;
 };
 
 const readPolicyYaml = (
   d: PersonaConfigDeps,
   policyPath: string,
-  knownStat?: { mtimeMs: number; size: number } | null,
+  stat: { mtimeMs: number; size: number } | null,
 ): { policy: PersonaPolicy; mtimeMs: number | null } => {
-  const st = knownStat === undefined ? safeStat(d, policyPath) : knownStat;
-  if (!st) {
+  if (!stat) {
     return { policy: {}, mtimeMs: null };
   }
   const text = safeReadText(d, policyPath);
   if (text === null) {
-    return { policy: {}, mtimeMs: st.mtimeMs };
+    return { policy: {}, mtimeMs: stat.mtimeMs };
   }
   try {
     const raw = parseYaml(text) as unknown;
-    return { policy: normalizePolicy(raw), mtimeMs: st.mtimeMs };
+    return { policy: normalizePolicy(raw), mtimeMs: stat.mtimeMs };
   } catch {
-    return { policy: {}, mtimeMs: st.mtimeMs };
+    return { policy: {}, mtimeMs: stat.mtimeMs };
   }
 };
 

@@ -373,6 +373,33 @@ describe("persona-config", () => {
     }
   }, 5_000);
 
+  it("falls back to empty policy when policy file is missing", async () => {
+    const personaPath = "/tmp/persona.md";
+    const policyPath = "/tmp/missing-policy.yaml";
+
+    const fs = createMemoryFileSystem();
+    fs.setFile(personaPath, "hello");
+
+    const loader = createPersonaConfigLoader({
+      env: {
+        WOOLY_FLUFFY_PERSONA_PATH: personaPath,
+        WOOLY_FLUFFY_POLICY_PATH: policyPath,
+      },
+      platform: "darwin",
+      homedir: () => "/Users/test",
+      fileSystem: fs.adapter,
+      createWatcher: () => ({ close: () => {} }),
+    });
+    try {
+      const snapshot = loader.read();
+      expect(snapshot.persona_text).toBe("hello");
+      expect(snapshot.chat_max_output_chars).toBeNull();
+      expect(snapshot.chat_max_output_tokens).toBeNull();
+    } finally {
+      loader.close();
+    }
+  }, 5_000);
+
   it("uses Linux default persona and policy paths when env overrides are absent", async () => {
     const fs = createMemoryFileSystem();
     const personaPath = "/home/test/.config/wooly-fluffy/persona.md";
@@ -419,6 +446,36 @@ describe("persona-config", () => {
       const snapshot = loader.read();
       expect(snapshot.persona_text).toBe("hello");
       expect(snapshot.chat_max_output_chars).toBeNull();
+    } finally {
+      loader.close();
+    }
+  }, 5_000);
+
+  it("drops policy when policy path becomes non-file after initial load", async () => {
+    const personaPath = "/tmp/persona.md";
+    const policyPath = "/tmp/policy.yaml";
+
+    const fs = createMemoryFileSystem();
+    fs.setFile(personaPath, "hello");
+    fs.setFile(policyPath, "chat:\n  max_output_chars: 101\n");
+
+    const loader = createPersonaConfigLoader({
+      env: {
+        WOOLY_FLUFFY_PERSONA_PATH: personaPath,
+        WOOLY_FLUFFY_POLICY_PATH: policyPath,
+      },
+      platform: "darwin",
+      homedir: () => "/Users/test",
+      fileSystem: fs.adapter,
+      createWatcher: () => ({ close: () => {} }),
+    });
+    try {
+      expect(loader.read().chat_max_output_chars).toBe(101);
+      fs.setIsFile(policyPath, false);
+      const snapshot = loader.read();
+      expect(snapshot.persona_text).toBe("hello");
+      expect(snapshot.chat_max_output_chars).toBeNull();
+      expect(snapshot.chat_max_output_tokens).toBeNull();
     } finally {
       loader.close();
     }

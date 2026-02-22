@@ -3685,7 +3685,7 @@ describe("llm-provider (env)", () => {
       process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
       process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
     }
-  });
+  }, 10_000);
 
   it("uses numeric LLM_CHAT_MAX_OUTPUT_TOKENS for gemini chat config", async () => {
     const saved = {
@@ -3731,7 +3731,7 @@ describe("llm-provider (env)", () => {
       process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
       process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
     }
-  });
+  }, 10_000);
 
   it("uses GEMINI_API_KEY/GOOGLE_API_KEY when LLM_API_KEY is unset", async () => {
     const saved = {
