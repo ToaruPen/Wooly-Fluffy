@@ -25,6 +25,7 @@ export type Providers = {
   };
   llm: {
     kind: LlmProviderKind;
+    close?: () => void;
     chat: {
       call: (input: ChatInput) => MaybePromise<{
         assistant_text: string;

@@ -5,6 +5,7 @@ import {
   createLlmProviderFromEnv,
   createOpenAiCompatibleLlmProvider,
 } from "./llm-provider.js";
+import * as personaConfigModule from "./persona-config.js";
 import type { ToolCall } from "../orchestrator.js";
 
 const createAbortableNeverFetch = () => {
@@ -3292,6 +3293,92 @@ describe("llm-provider (Gemini native)", () => {
 });
 
 describe("llm-provider (env)", () => {
+  it("does not create persona config loader for stub env provider", () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+    };
+    const spy = vi.spyOn(personaConfigModule, "createPersonaConfigLoader");
+    try {
+      delete process.env.LLM_PROVIDER_KIND;
+      delete process.env.LLM_BASE_URL;
+      delete process.env.LLM_MODEL;
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv();
+      expect(llm.kind).toBe("stub");
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+      expect(spy).not.toHaveBeenCalled();
+      llm.close?.();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+    }
+  });
+
+  it("closes persona config loader via llm.close", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+    const closeSpy = vi.fn();
+    const spy = vi.spyOn(personaConfigModule, "createPersonaConfigLoader").mockReturnValue({
+      read: () => ({
+        persona_text: "",
+        chat_max_output_chars: null,
+        chat_max_output_tokens: null,
+      }),
+      close: closeSpy,
+      paths: {
+        persona_path: "/tmp/persona.md",
+        policy_path: "/tmp/policy.yaml",
+      },
+    });
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "local";
+      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+      process.env.LLM_MODEL = "dummy-model";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/policy.yaml";
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv({
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{ message: { content: '{"assistant_text":"hi","expression":"neutral"}' } }],
+          }),
+        }),
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+      await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+      expect(spy).toHaveBeenCalledTimes(1);
+      llm.close?.();
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  });
+
   it("defaults to stub when LLM_PROVIDER_KIND is unset", async () => {
     const saved = {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,

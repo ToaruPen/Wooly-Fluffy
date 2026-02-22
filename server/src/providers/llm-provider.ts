@@ -1244,19 +1244,35 @@ export const createLlmProviderFromEnv = (options?: {
 
   const injectedChatRuntimeConfigReader = options?.read_chat_runtime_config;
 
+  let personaConfigLoader: ReturnType<typeof createPersonaConfigLoader> | null = null;
+  const closePersonaLoader = () => {
+    personaConfigLoader?.close();
+    personaConfigLoader = null;
+  };
+  const getPersonaConfigLoader = () => {
+    if (!personaConfigLoader) {
+      personaConfigLoader = createPersonaConfigLoader();
+    }
+    return personaConfigLoader;
+  };
+
   const readChatRuntimeConfig: ChatRuntimeConfigReader = injectedChatRuntimeConfigReader
     ? () => injectedChatRuntimeConfigReader()
-    : (() => {
-        const personaConfigLoader = createPersonaConfigLoader();
-        return () => {
-          const snapshot = personaConfigLoader.read();
-          return {
-            persona_text: snapshot.persona_text,
-            max_output_chars: snapshot.chat_max_output_chars ?? chatMaxOutputCharsFromEnv,
-            max_output_tokens: snapshot.chat_max_output_tokens ?? chatMaxOutputTokensFromEnv,
-          };
+    : () => {
+        const snapshot = getPersonaConfigLoader().read();
+        return {
+          persona_text: snapshot.persona_text,
+          max_output_chars: snapshot.chat_max_output_chars ?? chatMaxOutputCharsFromEnv,
+          max_output_tokens: snapshot.chat_max_output_tokens ?? chatMaxOutputTokensFromEnv,
         };
-      })();
+      };
+
+  const withClose = (provider: Providers["llm"]): Providers["llm"] => ({
+    ...provider,
+    close: () => {
+      closePersonaLoader();
+    },
+  });
 
   const timeoutChatMs = readEnvInt(process.env, {
     name: "LLM_TIMEOUT_CHAT_MS",
@@ -1287,7 +1303,7 @@ export const createLlmProviderFromEnv = (options?: {
     const apiKey =
       process.env.LLM_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
     if (!model || !apiKey) {
-      return {
+      return withClose({
         kind,
         chat: {
           call: async () => {
@@ -1304,23 +1320,25 @@ export const createLlmProviderFromEnv = (options?: {
           },
         },
         health: async () => ({ status: "unavailable" }),
-      };
+      });
     }
-    return createGeminiNativeLlmProvider({
-      model,
-      api_key: apiKey,
-      timeout_ms_chat: timeoutChatMs,
-      timeout_ms_inner_task: timeoutInnerTaskMs,
-      timeout_ms_health: timeoutHealthMs,
-      timeout_ms_tool: timeoutToolMs,
-      fetch: options?.fetch,
-      gemini_models: options?.gemini_models,
-      read_chat_runtime_config: readChatRuntimeConfig,
-    });
+    return withClose(
+      createGeminiNativeLlmProvider({
+        model,
+        api_key: apiKey,
+        timeout_ms_chat: timeoutChatMs,
+        timeout_ms_inner_task: timeoutInnerTaskMs,
+        timeout_ms_health: timeoutHealthMs,
+        timeout_ms_tool: timeoutToolMs,
+        fetch: options?.fetch,
+        gemini_models: options?.gemini_models,
+        read_chat_runtime_config: readChatRuntimeConfig,
+      }),
+    );
   }
 
   if (kind !== "local" && kind !== "external") {
-    return {
+    return withClose({
       kind: "stub",
       chat: {
         call: () => ({
@@ -1360,13 +1378,13 @@ export const createLlmProviderFromEnv = (options?: {
         },
       },
       health: () => ({ status: "ok" }),
-    };
+    });
   }
 
   const baseUrl = process.env.LLM_BASE_URL;
   const model = process.env.LLM_MODEL;
   if (!baseUrl || !model) {
-    return {
+    return withClose({
       kind,
       chat: {
         call: async () => {
@@ -1379,18 +1397,20 @@ export const createLlmProviderFromEnv = (options?: {
         },
       },
       health: async () => ({ status: "unavailable" }),
-    };
+    });
   }
 
-  return createOpenAiCompatibleLlmProvider({
-    kind,
-    base_url: baseUrl,
-    model,
-    api_key: process.env.LLM_API_KEY,
-    timeout_ms_chat: timeoutChatMs,
-    timeout_ms_inner_task: timeoutInnerTaskMs,
-    timeout_ms_tool: timeoutToolMs,
-    fetch: options?.fetch,
-    read_chat_runtime_config: readChatRuntimeConfig,
-  });
+  return withClose(
+    createOpenAiCompatibleLlmProvider({
+      kind,
+      base_url: baseUrl,
+      model,
+      api_key: process.env.LLM_API_KEY,
+      timeout_ms_chat: timeoutChatMs,
+      timeout_ms_inner_task: timeoutInnerTaskMs,
+      timeout_ms_tool: timeoutToolMs,
+      fetch: options?.fetch,
+      read_chat_runtime_config: readChatRuntimeConfig,
+    }),
+  );
 };
