@@ -10,7 +10,7 @@
 
 ### 1. 依頼内容の解釈
 
-#124 の前提として server ワークスペースへ `chokidar`/`yaml`/`valibot` を導入し、`npm install` 後に `npm run -w server typecheck` と `npm run -w server test` が通る状態を作る。依存導入だけで挙動変更を起こさず、理由/ライセンス情報は Issue 記録で追跡可能に保つ。
+#124 の前提として server ワークスペースの `chokidar`/`yaml`/`valibot` 依存状態を確定する（未導入なら追加、導入済みなら再検証）。`npm install` 後に `npm run -w server typecheck` と `npm run -w server test` が通る状態を維持し、依存導入だけで挙動変更を起こさず、理由/ライセンス情報は Issue 記録で追跡可能に保つ。
 
 ### 2. 変更対象（ファイル:行）
 
@@ -26,7 +26,7 @@ loc_range: 6290-6320行付近（`packages["server"].dependencies` セクショ�
 
 Change-3
 file: `docs/research/estimation/issue-125/2026-02-22.md`
-change: 見積もり前調査（候補比較・リスク・止め時）
+change: 見積もり前調査（候補比較・リスク・止め時）（本PRで追加）
 loc_range: 新規 1-170行
 
 total_loc_range: 30-120行
@@ -103,9 +103,20 @@ kind: Scope guard
 target: git diff
 content: 3依存以外の追加や実装コード変更が混入していないことを確認する
 
+Test-4
+kind: Smoke test
+target: server workspace dependencies
+content: `node --input-type=module -e "await import('chokidar'); await import('yaml'); await import('valibot'); console.log('dependency-smoke-ok')"` が成功する
+
 ### 10. 矛盾点/不明点/確認事項
 
-なし（`server/package.json` と `package-lock.json` に `chokidar` / `yaml` / `valibot` が既に存在するため、実装フェーズは「依存宣言の再追加」ではなく「AC再検証 + スコープ逸脱がないことの確認」が中心になる）
+なし（依存状態を実測で確認済み）。
+
+- `npm ls -w server chokidar yaml valibot --depth=0` で `chokidar@4.0.3` / `yaml@2.8.2` / `valibot@1.2.0` を確認
+- `node --input-type=module -e "await import('chokidar'); await import('yaml'); await import('valibot'); console.log('dependency-smoke-ok')"` が成功
+- `git log --oneline -- server/package.json` の先頭は `f7d22b5 feat(server): add persona config loader and chat output guards`
+
+上記より、2026-02-22 時点では3依存は main に先行導入済みであり、#125 実装フェーズの中心は「新規導入」ではなく「AC再検証 + スコープ逸脱がないことの確認」。
 
 ### 11. 変更しないこと
 
