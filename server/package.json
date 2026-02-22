@@ -5,7 +5,10 @@
   "type": "module",
   "dependencies": {
     "better-sqlite3": "^12.6.2",
-    "busboy": "^1.6.0"
+    "busboy": "^1.6.0",
+    "chokidar": "^4.0.3",
+    "valibot": "^1.1.0",
+    "yaml": "^2.8.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

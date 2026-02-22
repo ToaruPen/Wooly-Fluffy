@@ -5,6 +5,7 @@ import {
   createLlmProviderFromEnv,
   createOpenAiCompatibleLlmProvider,
 } from "./llm-provider.js";
+import * as personaConfigModule from "./persona-config.js";
 import type { ToolCall } from "../orchestrator.js";
 
 const createAbortableNeverFetch = () => {
@@ -320,8 +321,15 @@ describe("llm-provider (OpenAI-compatible)", () => {
       kind: "local",
       base_url: "http://lmstudio.local/v1",
       model: "dummy-model",
-      fetch: async (input) => {
+      read_chat_runtime_config: () => ({
+        persona_text: "",
+        max_output_chars: 320,
+        max_output_tokens: 55,
+      }),
+      fetch: async (input, init) => {
         if (input.endsWith("/chat/completions")) {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { max_tokens?: number };
+          expect(body.max_tokens).toBe(55);
           chatCalls += 1;
           if (chatCalls === 1) {
             return {
@@ -387,7 +395,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
     expect(chatCalls).toBe(2);
     expect(result.assistant_text).toBe("OK");
     expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather"]);
-  });
+  }, 10_000);
 
   it("throws when follow-up chat completion returns non-2xx", async () => {
     let chatCalls = 0;
@@ -1885,6 +1893,11 @@ describe("llm-provider (Gemini native)", () => {
     const llm = createGeminiNativeLlmProvider({
       model: "gemini-2.5-flash-lite",
       api_key: "test-key",
+      read_chat_runtime_config: () => ({
+        persona_text: "",
+        max_output_chars: 320,
+        max_output_tokens: 66,
+      }),
       fetch: async (input: string) => {
         if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
           return {
@@ -1906,6 +1919,8 @@ describe("llm-provider (Gemini native)", () => {
       },
       gemini_models: {
         generateContent: async (params) => {
+          const config = params.config as { maxOutputTokens?: number };
+          expect(config.maxOutputTokens).toBe(66);
           calls += 1;
           if (calls === 1) {
             return {
@@ -1964,7 +1979,7 @@ describe("llm-provider (Gemini native)", () => {
     expect(calls).toBe(2);
     expect(result.assistant_text).toBe("OK");
     expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
-  });
+  }, 10_000);
 
   it("falls back when all tool calls are blocked", async () => {
     let calls = 0;
@@ -2663,6 +2678,95 @@ describe("llm-provider (Gemini native)", () => {
   );
 
   it(
+    "passes maxOutputTokens to default gemini models client on both chat calls",
+    async () => {
+      const savedFetch = globalThis.fetch;
+      let generateCalls = 0;
+      vi.stubGlobal("fetch", (async (input: unknown, init?: { method?: string; body?: string }) => {
+        const url = String(input);
+
+        if (url.includes(":generateContent")) {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            generationConfig?: { maxOutputTokens?: number };
+          };
+          expect(body.generationConfig?.maxOutputTokens).toBe(88);
+
+          generateCalls += 1;
+          if (generateCalls === 1) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                candidates: [
+                  {
+                    content: {
+                      parts: [
+                        { functionCall: { name: "get_weather", args: { location: "Tokyo" } } },
+                      ],
+                    },
+                  },
+                ],
+              }),
+            } as Response;
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+              functionCalls: [],
+              candidates: [{ content: { parts: [{ text: "ignored" }] } }],
+            }),
+          } as Response;
+        }
+
+        if (url.includes("geocoding-api.open-meteo.com")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ results: [{ latitude: 35, longitude: 139, name: "Tokyo" }] }),
+          } as Response;
+        }
+
+        if (url.includes("api.open-meteo.com")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+          } as Response;
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+        } as Response;
+      }) as typeof fetch);
+
+      try {
+        const llm = createGeminiNativeLlmProvider({
+          model: "gemini-2.5-flash-lite",
+          api_key: "test-key",
+          read_chat_runtime_config: () => ({
+            persona_text: "",
+            max_output_chars: 320,
+            max_output_tokens: 88,
+          }),
+        });
+
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+        ).resolves.toMatchObject({ assistant_text: "ok" });
+        expect(generateCalls).toBe(2);
+      } finally {
+        vi.stubGlobal("fetch", savedFetch);
+      }
+    },
+    GEMINI_REST_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "throws when default gemini client receives non-ok response",
     async () => {
       const savedFetch = globalThis.fetch;
@@ -3189,6 +3293,92 @@ describe("llm-provider (Gemini native)", () => {
 });
 
 describe("llm-provider (env)", () => {
+  it("does not create persona config loader for stub env provider", () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+    };
+    const spy = vi.spyOn(personaConfigModule, "createPersonaConfigLoader");
+    try {
+      delete process.env.LLM_PROVIDER_KIND;
+      delete process.env.LLM_BASE_URL;
+      delete process.env.LLM_MODEL;
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv();
+      expect(llm.kind).toBe("stub");
+      llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+      expect(spy).not.toHaveBeenCalled();
+      llm.close?.();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+    }
+  }, 10_000);
+
+  it("closes persona config loader via llm.close", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+    const closeSpy = vi.fn();
+    const spy = vi.spyOn(personaConfigModule, "createPersonaConfigLoader").mockReturnValue({
+      read: () => ({
+        persona_text: "",
+        chat_max_output_chars: null,
+        chat_max_output_tokens: null,
+      }),
+      close: closeSpy,
+      paths: {
+        persona_path: "/tmp/persona.md",
+        policy_path: "/tmp/policy.yaml",
+      },
+    });
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "local";
+      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+      process.env.LLM_MODEL = "dummy-model";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/policy.yaml";
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv({
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{ message: { content: '{"assistant_text":"hi","expression":"neutral"}' } }],
+          }),
+        }),
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+      await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+      expect(spy).toHaveBeenCalledTimes(1);
+      llm.close?.();
+      expect(closeSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  }, 10_000);
+
   it("defaults to stub when LLM_PROVIDER_KIND is unset", async () => {
     const saved = {
       LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
@@ -3374,6 +3564,264 @@ describe("llm-provider (env)", () => {
       process.env.LLM_API_KEY = saved.LLM_API_KEY;
     }
   });
+
+  it("clamps assistant_text by LLM_CHAT_MAX_OUTPUT_CHARS", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      LLM_CHAT_MAX_OUTPUT_CHARS: process.env.LLM_CHAT_MAX_OUTPUT_CHARS,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+    try {
+      process.env.LLM_PROVIDER_KIND = "local";
+      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+      process.env.LLM_MODEL = "dummy-model";
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = "5";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/missing-persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/missing-policy.yaml";
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv({
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ assistant_text: "123456789", expression: "neutral" }),
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+      ).resolves.toMatchObject({ assistant_text: "12345" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = saved.LLM_CHAT_MAX_OUTPUT_CHARS;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  }, 10_000);
+
+  it("injects persona file text into OpenAI-compatible system prompt", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "local";
+      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+      process.env.LLM_MODEL = "dummy-model";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/missing-persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/missing-policy.yaml";
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv({
+        fetch: async (_input: string, init?: { body?: string }) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            messages?: Array<{ role?: string; content?: string }>;
+          };
+          const system = body.messages?.find((m) => m.role === "system")?.content ?? "";
+          expect(system).toContain("あなたは語尾をやわらかくする。");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ assistant_text: "hi", expression: "neutral" }),
+                  },
+                },
+              ],
+            }),
+          };
+        },
+        read_chat_runtime_config: () => ({
+          persona_text: "あなたは語尾をやわらかくする。",
+          max_output_chars: 320,
+          max_output_tokens: null,
+        }),
+      });
+
+      await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  }, 10_000);
+
+  it("applies chat maxLength to Gemini responseJsonSchema and persona to systemInstruction", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      LLM_CHAT_MAX_OUTPUT_CHARS: process.env.LLM_CHAT_MAX_OUTPUT_CHARS,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "gemini_native";
+      process.env.LLM_MODEL = "gemini-2.5-flash-lite";
+      process.env.LLM_API_KEY = "test-key";
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = "7";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/missing-persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/missing-policy.yaml";
+
+      const llm = createLlmProviderFromEnv({
+        gemini_models: {
+          generateContent: async (params) => {
+            const config = params.config as {
+              systemInstruction?: string;
+              responseJsonSchema?: {
+                properties?: { assistant_text?: { maxLength?: number } };
+              };
+            };
+            expect(config.systemInstruction ?? "").toContain("一人称はぼく。");
+            expect(config.responseJsonSchema?.properties?.assistant_text?.maxLength).toBe(7);
+            return {
+              text: JSON.stringify({ assistant_text: "123456789", expression: "neutral" }),
+              functionCalls: [],
+              candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+            };
+          },
+          get: async () => ({}),
+        },
+        read_chat_runtime_config: () => ({
+          persona_text: "一人称はぼく。",
+          max_output_chars: 7,
+          max_output_tokens: null,
+        }),
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toMatchObject({ assistant_text: "1234567" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = saved.LLM_CHAT_MAX_OUTPUT_CHARS;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  }, 10_000);
+
+  it("treats invalid LLM_CHAT_MAX_OUTPUT_TOKENS as unset", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      LLM_CHAT_MAX_OUTPUT_TOKENS: process.env.LLM_CHAT_MAX_OUTPUT_TOKENS,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "gemini_native";
+      process.env.LLM_MODEL = "gemini-2.5-flash-lite";
+      process.env.LLM_API_KEY = "test-key";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/missing-persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/missing-policy.yaml";
+
+      for (const rawValue of ["not-a-number", "64.5", "64abc", "1e2", "   "]) {
+        process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = rawValue;
+
+        const llm = createLlmProviderFromEnv({
+          gemini_models: {
+            generateContent: async (params) => {
+              const config = params.config as { maxOutputTokens?: number };
+              expect(config.maxOutputTokens).toBeUndefined();
+              return {
+                text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+                functionCalls: [],
+                candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+              };
+            },
+            get: async () => ({}),
+          },
+        });
+
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+        ).resolves.toMatchObject({ assistant_text: "ok" });
+      }
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = saved.LLM_CHAT_MAX_OUTPUT_TOKENS;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  }, 10_000);
+
+  it("uses numeric LLM_CHAT_MAX_OUTPUT_TOKENS for gemini chat config", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      LLM_CHAT_MAX_OUTPUT_TOKENS: process.env.LLM_CHAT_MAX_OUTPUT_TOKENS,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "gemini_native";
+      process.env.LLM_MODEL = "gemini-2.5-flash-lite";
+      process.env.LLM_API_KEY = "test-key";
+      process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = "77";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = "/tmp/missing-persona.md";
+      process.env.WOOLY_FLUFFY_POLICY_PATH = "/tmp/missing-policy.yaml";
+
+      const llm = createLlmProviderFromEnv({
+        gemini_models: {
+          generateContent: async (params) => {
+            const config = params.config as { maxOutputTokens?: number };
+            expect(config.maxOutputTokens).toBe(77);
+            return {
+              text: JSON.stringify({ assistant_text: "ok", expression: "neutral" }),
+              functionCalls: [],
+              candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+            };
+          },
+          get: async () => ({}),
+        },
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toMatchObject({ assistant_text: "ok" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = saved.LLM_CHAT_MAX_OUTPUT_TOKENS;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+    }
+  }, 10_000);
 
   it("uses GEMINI_API_KEY/GOOGLE_API_KEY when LLM_API_KEY is unset", async () => {
     const saved = {

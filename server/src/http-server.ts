@@ -655,6 +655,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   tickTimer.unref();
   server.on("close", () => {
     clearInterval(tickTimer);
+    providers.llm.close?.();
   });
 
   return server;
