@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { request } from "http";
 import type { IncomingHttpHeaders } from "http";
 import type { Server } from "http";
-import { createHttpServer } from "./http-server.js";
+import { createHttpServer, shouldIncludeSpeechMetrics } from "./http-server.js";
 import { createStore } from "./store.js";
 import { ServerResponse } from "http";
 
@@ -495,6 +495,10 @@ afterEach(async () => {
 
 describe("http-server", () => {
   describe("health and baseline routes", () => {
+    it("returns false for malformed metrics URL values", () => {
+      expect(shouldIncludeSpeechMetrics("http://[bad")).toBe(false);
+    });
+
     it("returns healthcheck status", async () => {
       const response = await sendRequest("GET", "/health");
 
@@ -607,6 +611,24 @@ describe("http-server", () => {
           stt: { status: "ok" },
           tts: { status: "unavailable" },
           llm: { status: "ok", kind: "stub" },
+        },
+      });
+    });
+
+    it("includes speech metrics when requested via health query", async () => {
+      const response = await sendRequest("GET", "/health?metrics=1");
+
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({
+        status: "ok",
+        providers: {
+          stt: { status: "ok" },
+          tts: { status: "ok" },
+          llm: { status: "ok", kind: "stub" },
+        },
+        speech_metrics: {
+          ttfa_observation_count: 0,
+          latest_ttfa_observation: null,
         },
       });
     });
@@ -1413,7 +1435,7 @@ describe("http-server", () => {
     it("speaks fallback text when stt provider throws", async () => {
       process.env.TEST_STT_THROW = "1";
 
-      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 7, async () => {
+      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 10, async () => {
         const down = await sendRequest("POST", "/api/v1/staff/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
           body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
@@ -1438,10 +1460,13 @@ describe("http-server", () => {
       });
 
       expect(messages.some((m) => m.type === "kiosk.command.speak")).toBe(true);
+      expect(messages.some((m) => m.type === "kiosk.command.speech.start")).toBe(true);
+      expect(messages.some((m) => m.type === "kiosk.command.speech.segment")).toBe(true);
+      expect(messages.some((m) => m.type === "kiosk.command.speech.end")).toBe(true);
 
       const health = await sendRequest("GET", "/health");
       expect(health.status).toBe(200);
-    });
+    }, 10_000);
 
     it("does not block /health while stt transcription is in flight", async () => {
       process.env.TEST_STT_DELAY_MS = "500";

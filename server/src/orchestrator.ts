@@ -123,7 +123,7 @@ export type OrchestratorEffect =
   | { type: "CALL_STT"; request_id: string }
   | { type: "CALL_CHAT"; request_id: string; input: ChatInput }
   | ({ type: "CALL_INNER_TASK"; request_id: string } & InnerTaskInput)
-  | { type: "SAY"; text: string }
+  | { type: "SAY"; text: string; chat_request_id?: string }
   | { type: "KIOSK_TOOL_CALLS"; tool_calls: ToolCallLite[] }
   | { type: "SET_EXPRESSION"; expression: Expression }
   | { type: "PLAY_MOTION"; motion_id: string; motion_instance_id: string }
@@ -689,7 +689,7 @@ export const reduceOrchestrator = (
           tool_calls: event.tool_calls.map(toToolCallLite),
         });
       }
-      effects.push({ type: "SAY", text: event.assistant_text });
+      effects.push({ type: "SAY", text: event.assistant_text, chat_request_id: event.request_id });
       if (cleared.mode === "PERSONAL" && cleared.memory_candidate === null) {
         const { id, state: withId } = nextRequestId(cleared, "inner");
         return {
@@ -733,7 +733,7 @@ export const reduceOrchestrator = (
             motion_id: "idle",
             motion_instance_id: `motion-${event.request_id}`,
           },
-          { type: "SAY", text: CHAT_FALLBACK_TEXT },
+          { type: "SAY", text: CHAT_FALLBACK_TEXT, chat_request_id: event.request_id },
         ],
       };
     }

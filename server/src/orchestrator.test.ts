@@ -69,7 +69,7 @@ describe("orchestrator", () => {
     expect(chatResult.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
       { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-2" },
-      { type: "SAY", text: "やあ" },
+      { type: "SAY", text: "やあ", chat_request_id: "chat-2" },
     ]);
   });
 
@@ -235,7 +235,7 @@ describe("orchestrator", () => {
         type: "KIOSK_TOOL_CALLS",
         tool_calls: [{ id: "call-1", function: { name: "get_weather" } }],
       },
-      { type: "SAY", text: "ok" },
+      { type: "SAY", text: "ok", chat_request_id: "chat-1" },
     ]);
   });
 
@@ -288,7 +288,7 @@ describe("orchestrator", () => {
     expect(result.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "happy" },
       { type: "PLAY_MOTION", motion_id: "cheer", motion_instance_id: "motion-chat-1" },
-      { type: "SAY", text: "やったー" },
+      { type: "SAY", text: "やったー", chat_request_id: "chat-1" },
     ]);
   });
 
@@ -316,7 +316,7 @@ describe("orchestrator", () => {
     expect(result.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
       { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
-      { type: "SAY", text: "了解" },
+      { type: "SAY", text: "了解", chat_request_id: "chat-1" },
     ]);
   });
 
@@ -345,7 +345,7 @@ describe("orchestrator", () => {
     expect(result.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
       { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
-      { type: "SAY", text: "ok" },
+      { type: "SAY", text: "ok", chat_request_id: "chat-1" },
     ]);
   });
 
@@ -374,7 +374,7 @@ describe("orchestrator", () => {
     expect(result.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "neutral" },
       { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
-      { type: "SAY", text: "ok" },
+      { type: "SAY", text: "ok", chat_request_id: "chat-1" },
     ]);
   });
 
@@ -1301,7 +1301,7 @@ describe("orchestrator", () => {
 
     expect(chatFailed.effects).toEqual([
       { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
-      { type: "SAY", text: "ごめんね、もう一回言ってね" },
+      { type: "SAY", text: "ごめんね、もう一回言ってね", chat_request_id: "chat-1" },
     ]);
   });
 
@@ -1477,7 +1477,7 @@ describe("orchestrator", () => {
     expect(ok.effects).toEqual([
       { type: "SET_EXPRESSION", expression: "happy" },
       { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-chat-1" },
-      { type: "SAY", text: "ok" },
+      { type: "SAY", text: "ok", chat_request_id: "chat-1" },
     ]);
     expect(ok.next_state.phase).toBe("idle");
   });
