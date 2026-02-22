@@ -448,6 +448,7 @@ describe("staff session summaries flows", () => {
         });
       });
       expect(document.body.textContent ?? "").toContain("After lunch");
+      expect(document.body.textContent ?? "").toContain('{"note":"Played cards"}');
 
       await act(async () => {
         handlers?.onMessage?.({
@@ -624,6 +625,7 @@ describe("staff session summaries flows", () => {
       expect(document.body.textContent ?? "").toContain("Missing summary");
       expect(document.body.textContent ?? "").toContain("Undefined summary");
       expect(document.body.textContent ?? "").toContain("already formatted");
+      expect(document.body.textContent ?? "").not.toContain('"already formatted"');
       expect(document.body.textContent ?? "").toContain("null");
       expect(document.body.textContent ?? "").toContain("Invalid timestamp value: Infinity");
       expect(document.body.textContent ?? "").toContain("Invalid timestamp value: -Infinity");
