@@ -35,11 +35,6 @@ const store = (() => {
 
 const runHousekeeping = () => {
   try {
-    store.housekeepExpired();
-  } catch (err) {
-    console.error(err);
-  }
-  try {
     store.housekeepExpiredSessionSummaries();
   } catch (err) {
     console.error(err);

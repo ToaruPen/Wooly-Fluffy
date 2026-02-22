@@ -5,17 +5,6 @@ import { createSessionCookie } from "../staff-session.js";
 
 type Store = ReturnType<typeof createStore>;
 
-type PendingRow = {
-  id: string;
-  personal_name: string;
-  kind: string;
-  value: string;
-  source_quote: string | null;
-  status: string;
-  created_at_ms: number;
-  expires_at_ms: number;
-};
-
 type PendingSessionSummaryRow = {
   id: string;
   title: string;
@@ -35,7 +24,6 @@ type HandleStaffRoutesInput = {
   ok_body: string;
   not_found_body: string;
   readJson: (req: IncomingMessage, maxBytes: number) => Promise<unknown>;
-  mapPendingToDto: (item: PendingRow) => object;
   mapSessionSummaryToDto: (item: PendingSessionSummaryRow) => object;
   sendJson: (res: ServerResponse, statusCode: number, body: string) => void;
   sendError: (res: ServerResponse, statusCode: number, code: string, message: string) => void;
@@ -66,7 +54,6 @@ const isStaffEventType = (
   value === "STAFF_EMERGENCY_STOP" ||
   value === "STAFF_RESUME";
 
-const STAFF_PENDING_PREFIX = "/api/v1/staff/pending/";
 const STAFF_SESSION_SUMMARIES_PREFIX = "/api/v1/staff/session-summaries/";
 
 export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
@@ -80,7 +67,6 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
     ok_body,
     not_found_body,
     readJson,
-    mapPendingToDto,
     mapSessionSummaryToDto,
     sendJson,
     sendError,
@@ -201,66 +187,6 @@ export const handleStaffRoutes = (input: HandleStaffRoutesInput): boolean => {
         }
         safeSendError(res, 400, "invalid_json", "Invalid JSON");
       });
-    return true;
-  }
-
-  if (path === "/api/v1/staff/pending") {
-    if (!requireStaffLan()) {
-      return true;
-    }
-    if (req.method !== "GET") {
-      sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-      return true;
-    }
-    if (!requireStaffSession()) {
-      return true;
-    }
-    const items = store.listPending().map(mapPendingToDto);
-    sendJson(res, 200, JSON.stringify({ items }));
-    return true;
-  }
-
-  if (path.startsWith(STAFF_PENDING_PREFIX) && path.endsWith("/confirm")) {
-    if (!requireStaffLan()) {
-      return true;
-    }
-    if (req.method !== "POST") {
-      sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-      return true;
-    }
-    if (!requireStaffSession()) {
-      return true;
-    }
-    const id = path.slice(STAFF_PENDING_PREFIX.length, -"/confirm".length);
-    const didConfirm = store.confirmById(id);
-    if (!didConfirm) {
-      sendJson(res, 404, not_found_body);
-      return true;
-    }
-    broadcastStaffSnapshotIfChanged();
-    sendJson(res, 200, ok_body);
-    return true;
-  }
-
-  if (path.startsWith(STAFF_PENDING_PREFIX) && path.endsWith("/deny")) {
-    if (!requireStaffLan()) {
-      return true;
-    }
-    if (req.method !== "POST") {
-      sendError(res, 405, "method_not_allowed", "Method Not Allowed");
-      return true;
-    }
-    if (!requireStaffSession()) {
-      return true;
-    }
-    const id = path.slice(STAFF_PENDING_PREFIX.length, -"/deny".length);
-    const didDeny = store.denyById(id);
-    if (!didDeny) {
-      sendJson(res, 404, not_found_body);
-      return true;
-    }
-    broadcastStaffSnapshotIfChanged();
-    sendJson(res, 200, ok_body);
     return true;
   }
 

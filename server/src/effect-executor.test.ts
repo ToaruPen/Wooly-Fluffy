@@ -316,6 +316,26 @@ describe("effect-executor", () => {
     expect(writes).toEqual([{ personal_name: "taro", kind: "likes", value: "apples" }]);
   });
 
+  it("throws when STORE_WRITE_PENDING is emitted without legacy handler", () => {
+    const providers = createStubProviders();
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: () => {},
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+    });
+
+    expect(() => {
+      executor.executeEffects([
+        {
+          type: "STORE_WRITE_PENDING",
+          input: { personal_name: "taro", kind: "likes", value: "apples" },
+        },
+      ]);
+    }).toThrow("Legacy STORE_WRITE_PENDING effect is no longer supported");
+  });
+
   it("calls storeWriteSessionSummaryPending for STORE_WRITE_SESSION_SUMMARY_PENDING", () => {
     const providers = createStubProviders();
 

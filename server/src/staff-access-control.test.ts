@@ -121,7 +121,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const response = await sendRequest("GET", "/api/v1/staff/pending");
+    const response = await sendRequest("GET", "/api/v1/staff/session-summaries/pending");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "forbidden", message: "Forbidden" },
@@ -178,7 +178,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny");
+    const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/deny");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "forbidden", message: "Forbidden" },
@@ -205,7 +205,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm");
+    const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/confirm");
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "forbidden", message: "Forbidden" },
@@ -232,7 +232,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const response = await sendRequest("GET", "/api/v1/staff/pending");
+    const response = await sendRequest("GET", "/api/v1/staff/session-summaries/pending");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "unauthorized", message: "Unauthorized" },
@@ -259,7 +259,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/deny");
+    const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/deny");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "unauthorized", message: "Unauthorized" },
@@ -286,7 +286,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const response = await sendRequest("POST", "/api/v1/staff/pending/nope/confirm");
+    const response = await sendRequest("POST", "/api/v1/staff/session-summaries/nope/confirm");
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
       error: { code: "unauthorized", message: "Unauthorized" },
@@ -756,7 +756,7 @@ describe("staff access control", () => {
     expect(typeof first).toBe("string");
     const cookie = cookieFromSetCookie(String(first ?? ""));
 
-    const pending = await sendRequest("GET", "/api/v1/staff/pending", {
+    const pending = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
       headers: { cookie },
     });
     expect(pending.status).toBe(200);
@@ -792,7 +792,7 @@ describe("staff access control", () => {
     const staff = cookieFromSetCookie(String(first ?? ""));
 
     const noisyCookie = ` ; foo; =bar; ${staff}; a=b`;
-    const pending = await sendRequest("GET", "/api/v1/staff/pending", {
+    const pending = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
       headers: { cookie: noisyCookie },
     });
     expect(pending.status).toBe(200);
@@ -818,7 +818,7 @@ describe("staff access control", () => {
     }
     port = address.port;
 
-    const pending = await sendRequest("GET", "/api/v1/staff/pending", {
+    const pending = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
       headers: { cookie: "a=b" },
     });
     expect(pending.status).toBe(401);
@@ -862,7 +862,7 @@ describe("staff access control", () => {
     const cookie = cookieFromSetCookie(String(first ?? ""));
 
     nowMs = 181_000;
-    const pending = await sendRequest("GET", "/api/v1/staff/pending", {
+    const pending = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
       headers: { cookie },
     });
     expect(pending.status).toBe(401);
@@ -912,7 +912,7 @@ describe("staff access control", () => {
     expect(keepalive.status).toBe(200);
 
     nowMs = 358_999;
-    const pending = await sendRequest("GET", "/api/v1/staff/pending", {
+    const pending = await sendRequest("GET", "/api/v1/staff/session-summaries/pending", {
       headers: { cookie },
     });
     expect(pending.status).toBe(200);

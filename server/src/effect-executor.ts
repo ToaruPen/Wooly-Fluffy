@@ -14,12 +14,14 @@ const isThenable = <T>(value: unknown): value is Promise<T> =>
 type LlmChatResult = Awaited<ReturnType<Providers["llm"]["chat"]["call"]>>;
 type LlmInnerTaskResult = Awaited<ReturnType<Providers["llm"]["inner_task"]["call"]>>;
 
-type StoreWritePending = (
-  input: Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }>["input"],
-) => void;
-
 type StoreWriteSessionSummaryPending = (
   input: Extract<OrchestratorEffect, { type: "STORE_WRITE_SESSION_SUMMARY_PENDING" }>["input"],
+) => void;
+
+type StoreWritePendingLegacy = (
+  input: Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }> extends never
+    ? never
+    : Extract<OrchestratorEffect, { type: "STORE_WRITE_PENDING" }>["input"],
 ) => void;
 
 type EffectExecutor = {
@@ -32,7 +34,7 @@ export const createEffectExecutor = (deps: {
   sendKioskCommand: KioskCommandSender;
   enqueueEvent: (event: OrchestratorEvent) => void;
   onSttRequested: (request_id: string) => void;
-  storeWritePending: StoreWritePending;
+  storeWritePending?: StoreWritePendingLegacy;
   storeWriteSessionSummaryPending: StoreWriteSessionSummaryPending;
 }) => {
   let saySeq = 0;
@@ -149,11 +151,14 @@ export const createEffectExecutor = (deps: {
             tool_calls: effect.tool_calls,
           });
           break;
-        case "STORE_WRITE_PENDING":
-          deps.storeWritePending(effect.input);
-          break;
         case "STORE_WRITE_SESSION_SUMMARY_PENDING":
           deps.storeWriteSessionSummaryPending(effect.input);
+          break;
+        case "STORE_WRITE_PENDING":
+          if (!deps.storeWritePending) {
+            throw new Error("Legacy STORE_WRITE_PENDING effect is no longer supported");
+          }
+          deps.storeWritePending(effect.input);
           break;
         case "SET_MODE":
         case "SHOW_CONSENT_UI":

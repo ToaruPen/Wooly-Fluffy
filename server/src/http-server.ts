@@ -14,10 +14,7 @@ import {
   type OrchestratorState,
 } from "./orchestrator.js";
 import { createEffectExecutor } from "./effect-executor.js";
-import {
-  createStoreWritePending,
-  createStoreWriteSessionSummaryPending,
-} from "./http/pending-writer.js";
+import { createStoreWriteSessionSummaryPending } from "./http/pending-writer.js";
 import type { createStore } from "./store.js";
 import { isLanAddress } from "./access-control.js";
 import type { Providers } from "./providers/types.js";
@@ -204,25 +201,6 @@ const readJson = async (req: IncomingMessage, maxBytes: number): Promise<unknown
   }
 };
 
-const mapPendingToDto = (item: {
-  id: string;
-  personal_name: string;
-  kind: string;
-  value: string;
-  source_quote: string | null;
-  status: string;
-  created_at_ms: number;
-  expires_at_ms: number;
-}) => ({
-  id: item.id,
-  personal_name: item.personal_name,
-  kind: item.kind,
-  value: item.value,
-  status: item.status,
-  created_at_ms: item.created_at_ms,
-  expires_at_ms: item.expires_at_ms,
-});
-
 const mapSessionSummaryToDto = (item: {
   id: string;
   title: string;
@@ -283,12 +261,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   });
 
   const orchestratorConfig: OrchestratorConfig = {
-    consent_timeout_ms: readEnvInt(process.env, {
-      name: "WF_CONSENT_TIMEOUT_MS",
-      defaultValue: DEFAULT_ORCHESTRATOR_CONFIG.consent_timeout_ms,
-      min: 1_000,
-      max: 10 * 60 * 1000,
-    }),
+    consent_timeout_ms: DEFAULT_ORCHESTRATOR_CONFIG.consent_timeout_ms,
     inactivity_timeout_ms: readEnvInt(process.env, {
       name: "WF_INACTIVITY_TIMEOUT_MS",
       defaultValue: DEFAULT_ORCHESTRATOR_CONFIG.inactivity_timeout_ms,
@@ -330,8 +303,6 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   let lastKioskSnapshotJson = "";
   let lastStaffSnapshotJson = "";
 
-  const getStaffPendingCount = () => store.listPending().length;
-
   const getStaffSessionSummaryPendingCount = () => store.listPendingSessionSummaries().length;
 
   const broadcastKioskSnapshotIfChanged = () => {
@@ -347,8 +318,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
   };
 
   const broadcastStaffSnapshotIfChanged = () => {
-    const pendingCount = getStaffPendingCount();
-    const snapshot = createStaffSnapshot(state, pendingCount, getStaffSessionSummaryPendingCount());
+    const snapshot = createStaffSnapshot(state, 0, getStaffSessionSummaryPendingCount());
     const json = JSON.stringify(snapshot);
     if (json === lastStaffSnapshotJson) {
       return;
@@ -404,7 +374,6 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
     onSttRequested: (request_id) => {
       pendingStt.add(request_id);
     },
-    storeWritePending: createStoreWritePending({ store, broadcastStaffSnapshotIfChanged }),
     storeWriteSessionSummaryPending: createStoreWriteSessionSummaryPending({
       store,
       broadcastStaffSnapshotIfChanged,
@@ -485,7 +454,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         req,
         res,
         "staff.snapshot",
-        createStaffSnapshot(state, getStaffPendingCount(), getStaffSessionSummaryPendingCount()),
+        createStaffSnapshot(state, 0, getStaffSessionSummaryPendingCount()),
         sseKeepAliveIntervalMs,
         (client) => {
           staffClients.add(client);
@@ -509,7 +478,6 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
         ok_body: okBody,
         not_found_body: notFoundBody,
         readJson,
-        mapPendingToDto,
         mapSessionSummaryToDto,
         sendJson,
         sendError,
@@ -562,16 +530,7 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
       }
       readJson(req, 128_000)
         .then((body) => {
-          const parsed = body as { type?: unknown; answer?: unknown };
-          if (parsed.type === "UI_CONSENT_BUTTON") {
-            if (parsed.answer !== "yes" && parsed.answer !== "no") {
-              sendError(res, 400, "invalid_request", "Invalid request");
-              return;
-            }
-            enqueueEvent({ type: "UI_CONSENT_BUTTON", answer: parsed.answer }, nowMs());
-            sendJson(res, 200, okBody);
-            return;
-          }
+          const parsed = body as { type?: unknown };
 
           if (parsed.type === "KIOSK_PTT_DOWN") {
             enqueueEvent({ type: "KIOSK_PTT_DOWN" }, nowMs());
