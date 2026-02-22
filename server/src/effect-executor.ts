@@ -38,6 +38,8 @@ type SpeechMetric = {
   first_segment_length: number;
 };
 
+const MIN_SPEECH_SEGMENT_LENGTH = 5;
+
 const splitSpeechSegments = (text: string): string[] => {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
@@ -56,11 +58,11 @@ const splitSpeechSegments = (text: string): string[] => {
       continue;
     }
     const lastIndex = merged.length - 1;
-    if (unit.length < 5) {
+    if (unit.length < MIN_SPEECH_SEGMENT_LENGTH) {
       merged[merged.length - 1] = `${merged[merged.length - 1]}${unit}`;
       continue;
     }
-    if (merged[lastIndex].length < 5) {
+    if (merged[lastIndex].length < MIN_SPEECH_SEGMENT_LENGTH) {
       merged[lastIndex] = `${merged[lastIndex]}${unit}`;
       continue;
     }

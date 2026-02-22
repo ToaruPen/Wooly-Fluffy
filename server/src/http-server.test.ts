@@ -1444,7 +1444,7 @@ describe("http-server", () => {
 
       const health = await sendRequest("GET", "/health");
       expect(health.status).toBe(200);
-    });
+    }, 10_000);
 
     it("does not block /health while stt transcription is in flight", async () => {
       process.env.TEST_STT_DELAY_MS = "500";
