@@ -49,9 +49,8 @@ const splitSpeechSegments = (text: string): string[] => {
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  const units = raw.length > 0 ? raw : [trimmed];
   const merged: string[] = [];
-  for (const unit of units) {
+  for (const unit of raw) {
     if (merged.length === 0) {
       merged.push(unit);
       continue;
@@ -66,11 +65,6 @@ const splitSpeechSegments = (text: string): string[] => {
       continue;
     }
     merged.push(unit);
-  }
-
-  if (merged.length > 1 && merged[merged.length - 1].length < 5) {
-    const tail = merged.pop()!;
-    merged[merged.length - 1] = `${merged[merged.length - 1]}${tail}`;
   }
 
   return merged;

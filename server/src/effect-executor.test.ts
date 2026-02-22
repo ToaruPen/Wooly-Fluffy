@@ -439,6 +439,43 @@ describe("effect-executor", () => {
     ]);
   });
 
+  it("does not emit speech.segment or TTFA metric for blank text", () => {
+    const providers = createStubProviders();
+    const sent: Array<{ type: string; data: object }> = [];
+    const metrics: Array<Record<string, unknown>> = [];
+
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+      observeSpeechMetric: (metric) => {
+        metrics.push(metric as Record<string, unknown>);
+      },
+    });
+
+    executor.executeEffects([{ type: "SAY", text: "   " }]);
+
+    expect(sent).toEqual([
+      {
+        type: "kiosk.command.speech.start",
+        data: { utterance_id: "say-1", chat_request_id: "say-1" },
+      },
+      {
+        type: "kiosk.command.speech.end",
+        data: { utterance_id: "say-1", chat_request_id: "say-1" },
+      },
+      {
+        type: "kiosk.command.speak",
+        data: { say_id: "say-1", text: "   " },
+      },
+    ]);
+    expect(metrics).toEqual([]);
+  });
+
   it("records TTFA observation without text payload", () => {
     const providers = createStubProviders();
     const metrics: Array<Record<string, unknown>> = [];
