@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerMessage } from "./sse-client";
 
 let connectHandlers: {
@@ -53,6 +53,10 @@ vi.mock("./sse-client", async () => {
 const KIOSK_LOCAL_PTT_TEST_TIMEOUT_MS = 10_000;
 
 describe("KioskPage local PTT", () => {
+  beforeEach(() => {
+    connectHandlers = null;
+  });
+
   it("sends KIOSK_PTT_DOWN on Space keydown and KIOSK_PTT_UP on keyup", async () => {
     vi.resetModules();
     postJsonWithTimeout.mockClear();

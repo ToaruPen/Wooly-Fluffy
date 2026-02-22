@@ -259,6 +259,10 @@ describe("staff session summaries flows", () => {
       expect(staffEvCount()).toBe(beforeSel);
       document.body.removeChild(selectEl);
 
+      const originalActiveElementDescriptor = Object.getOwnPropertyDescriptor(
+        document,
+        "activeElement",
+      );
       Object.defineProperty(document, "activeElement", { value: null, configurable: true });
       const beforeNull = staffEvCount();
       try {
@@ -268,7 +272,11 @@ describe("staff session summaries flows", () => {
         });
         expect(staffEvCount()).toBeGreaterThan(beforeNull);
       } finally {
-        delete (document as unknown as Record<string, unknown>).activeElement;
+        if (originalActiveElementDescriptor) {
+          Object.defineProperty(document, "activeElement", originalActiveElementDescriptor);
+        } else {
+          delete (document as unknown as Record<string, unknown>).activeElement;
+        }
       }
 
       await act(async () => {
@@ -613,8 +621,14 @@ describe("staff session summaries flows", () => {
         connectSseMock,
       );
 
+      expect(typeof handlers?.onSnapshot).toBe("function");
+      const onSnapshot = handlers?.onSnapshot;
+      if (!onSnapshot) {
+        throw new Error("Missing staff snapshot handler");
+      }
+
       await act(async () => {
-        handlers?.onSnapshot({
+        onSnapshot({
           state: { mode: "PERSONAL", personal_name: "taro", phase: "idle" },
           pending: { count: 0, session_summary_count: 0 },
         });
