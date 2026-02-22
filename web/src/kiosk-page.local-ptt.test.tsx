@@ -465,6 +465,141 @@ describe("KioskPage local PTT", () => {
     document.body.removeChild(container);
   });
 
+  it("ignores visibilitychange when local PTT is not held", async () => {
+    vi.resetModules();
+    postJsonWithTimeout.mockClear();
+
+    const { KioskPage } = await import("./kiosk-page");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<KioskPage />);
+      await Promise.resolve();
+    });
+
+    const beforeUpCalls = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_UP",
+    ).length;
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+
+    const afterUpCalls = postJsonWithTimeout.mock.calls.filter(
+      ([path, body]) =>
+        path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_UP",
+    ).length;
+    expect(afterUpCalls).toBe(beforeUpCalls);
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it("handles interactive focus and non-space keyup guards", async () => {
+    vi.resetModules();
+    postJsonWithTimeout.mockClear();
+
+    const { KioskPage } = await import("./kiosk-page");
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<KioskPage />);
+      await Promise.resolve();
+    });
+
+    const countDown = () =>
+      postJsonWithTimeout.mock.calls.filter(
+        ([path, body]) =>
+          path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_DOWN",
+      ).length;
+    const countUp = () =>
+      postJsonWithTimeout.mock.calls.filter(
+        ([path, body]) =>
+          path === "/api/v1/kiosk/event" && (body as { type?: unknown }).type === "KIOSK_PTT_UP",
+      ).length;
+
+    const beforeNonSpaceKeyUp = postJsonWithTimeout.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyA", key: "a" }));
+      await Promise.resolve();
+    });
+    expect(postJsonWithTimeout.mock.calls.length).toBe(beforeNonSpaceKeyUp);
+
+    const beforeSpaceKeyUpWhileIdle = postJsonWithTimeout.mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { code: "Space", key: " " }));
+      await Promise.resolve();
+    });
+    expect(postJsonWithTimeout.mock.calls.length).toBe(beforeSpaceKeyUpWhileIdle);
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    const beforeInput = countDown();
+    await act(async () => {
+      input.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " " }));
+      await Promise.resolve();
+    });
+    expect(countDown()).toBe(beforeInput);
+    document.body.removeChild(input);
+
+    const roleButton = document.createElement("div");
+    roleButton.setAttribute("role", "button");
+    roleButton.tabIndex = 0;
+    document.body.appendChild(roleButton);
+    const beforeRole = countDown();
+    await act(async () => {
+      roleButton.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " " }));
+      await Promise.resolve();
+    });
+    expect(countDown()).toBe(beforeRole);
+    document.body.removeChild(roleButton);
+
+    const editDiv = document.createElement("div");
+    editDiv.setAttribute("contenteditable", "true");
+    editDiv.tabIndex = 0;
+    document.body.appendChild(editDiv);
+    const beforeEdit = countDown();
+    await act(async () => {
+      editDiv.focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " " }));
+      await Promise.resolve();
+    });
+    expect(countDown()).toBe(beforeEdit);
+    document.body.removeChild(editDiv);
+
+    const beforeNullDown = countDown();
+    const beforeNullUp = countUp();
+    Object.defineProperty(document, "activeElement", { value: null, configurable: true });
+    try {
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " " }));
+        window.dispatchEvent(new KeyboardEvent("keyup", { code: "Space", key: " " }));
+        await Promise.resolve();
+      });
+    } finally {
+      delete (document as unknown as Record<string, unknown>).activeElement;
+    }
+    expect(countDown()).toBe(beforeNullDown + 1);
+    expect(countUp()).toBe(beforeNullUp + 1);
+
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
   it("does not send duplicate down when button is pressed while Space is held", async () => {
     vi.resetModules();
     postJsonWithTimeout.mockClear();
