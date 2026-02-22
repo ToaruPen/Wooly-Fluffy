@@ -1272,8 +1272,11 @@ export const createLlmProviderFromEnv = (options?: {
     return {
       ...provider,
       close: () => {
-        originalClose();
-        closePersonaLoader();
+        try {
+          originalClose();
+        } finally {
+          closePersonaLoader();
+        }
       },
     };
   };
