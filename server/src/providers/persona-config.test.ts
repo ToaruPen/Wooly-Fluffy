@@ -189,8 +189,41 @@ describe("persona-config", () => {
     try {
       expect(loader.read().persona_text).toBe("cached persona");
       const beforePersonaReadCount = fs.getReadCountFor(personaPath);
+      const beforePolicyReadCount = fs.getReadCountFor(policyPath);
       expect(loader.read().persona_text).toBe("cached persona");
       expect(fs.getReadCountFor(personaPath)).toBe(beforePersonaReadCount);
+      expect(fs.getReadCountFor(policyPath)).toBe(beforePolicyReadCount);
+    } finally {
+      loader.close();
+    }
+  }, 5_000);
+
+  it("ignores fractional chat limits in policy schema", async () => {
+    const personaPath = "/tmp/persona.md";
+    const policyPath = "/tmp/policy.yaml";
+
+    const fs = createMemoryFileSystem();
+    fs.setFile(personaPath, "hello");
+    fs.setFile(
+      policyPath,
+      ["chat:", "  max_output_chars: 120.5", "  max_output_tokens: 64.25"].join("\n"),
+    );
+
+    const loader = createPersonaConfigLoader({
+      env: {
+        WOOLY_FLUFFY_PERSONA_PATH: personaPath,
+        WOOLY_FLUFFY_POLICY_PATH: policyPath,
+      },
+      platform: "darwin",
+      homedir: () => "/Users/test",
+      fileSystem: fs.adapter,
+      createWatcher: () => ({ close: () => {} }),
+    });
+    try {
+      const snapshot = loader.read();
+      expect(snapshot.persona_text).toBe("hello");
+      expect(snapshot.chat_max_output_chars).toBeNull();
+      expect(snapshot.chat_max_output_tokens).toBeNull();
     } finally {
       loader.close();
     }

@@ -131,14 +131,35 @@ const normalizePolicy = (input: unknown): PersonaPolicy => {
   if (!parsed.success) {
     return {};
   }
-  return parsed.output as PersonaPolicy;
+  const output = parsed.output as PersonaPolicy;
+  const chat = output.chat
+    ? {
+        max_output_chars:
+          typeof output.chat.max_output_chars === "number" &&
+          Number.isInteger(output.chat.max_output_chars)
+            ? output.chat.max_output_chars
+            : undefined,
+        max_output_tokens:
+          typeof output.chat.max_output_tokens === "number" &&
+          Number.isInteger(output.chat.max_output_tokens)
+            ? output.chat.max_output_tokens
+            : undefined,
+      }
+    : undefined;
+
+  return {
+    chat,
+    watch: output.watch,
+    persona: output.persona,
+  };
 };
 
 const readPolicyYaml = (
   d: PersonaConfigDeps,
   policyPath: string,
+  knownStat?: { mtimeMs: number; size: number } | null,
 ): { policy: PersonaPolicy; mtimeMs: number | null } => {
-  const st = safeStat(d, policyPath);
+  const st = knownStat === undefined ? safeStat(d, policyPath) : knownStat;
   if (!st) {
     return { policy: {}, mtimeMs: null };
   }
@@ -191,18 +212,17 @@ export const createPersonaConfigLoader = (
   );
 
   const reloadIfNeeded = () => {
-    const policyRead = readPolicyYaml(d, policyPath);
     const personaStat = safeStat(d, personaPath);
-    if (
-      !isDirty &&
-      policyRead.mtimeMs === policyMtimeMs &&
-      (personaStat?.mtimeMs ?? null) === personaMtimeMs
-    ) {
+    const policyStat = safeStat(d, policyPath);
+    const nextPolicyMtimeMs = policyStat?.mtimeMs ?? null;
+    const isPolicyChanged = nextPolicyMtimeMs !== policyMtimeMs;
+    if (!isDirty && !isPolicyChanged && (personaStat?.mtimeMs ?? null) === personaMtimeMs) {
       return;
     }
     isDirty = false;
 
-    if (policyRead.mtimeMs !== policyMtimeMs) {
+    if (isPolicyChanged) {
+      const policyRead = readPolicyYaml(d, policyPath, policyStat);
       policyMtimeMs = policyRead.mtimeMs;
       policy = policyRead.policy;
       personaMtimeMs = null;
