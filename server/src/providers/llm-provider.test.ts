@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+// eslint-disable-next-line no-restricted-imports
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   createGeminiNativeLlmProvider,
@@ -3372,6 +3376,170 @@ describe("llm-provider (env)", () => {
       process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
       process.env.LLM_MODEL = saved.LLM_MODEL;
       process.env.LLM_API_KEY = saved.LLM_API_KEY;
+    }
+  });
+
+  it("clamps assistant_text by LLM_CHAT_MAX_OUTPUT_CHARS", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      LLM_CHAT_MAX_OUTPUT_CHARS: process.env.LLM_CHAT_MAX_OUTPUT_CHARS,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+    const dir = await mkdtemp(join(tmpdir(), "wf-persona-test-"));
+    try {
+      process.env.LLM_PROVIDER_KIND = "local";
+      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+      process.env.LLM_MODEL = "dummy-model";
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = "5";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = join(dir, "missing-persona.md");
+      process.env.WOOLY_FLUFFY_POLICY_PATH = join(dir, "missing-policy.yaml");
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv({
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ assistant_text: "123456789", expression: "neutral" }),
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+      ).resolves.toMatchObject({ assistant_text: "12345" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = saved.LLM_CHAT_MAX_OUTPUT_CHARS;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("injects persona file text into OpenAI-compatible system prompt", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_BASE_URL: process.env.LLM_BASE_URL,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+
+    const dir = await mkdtemp(join(tmpdir(), "wf-persona-test-"));
+    const personaPath = join(dir, "persona.md");
+    await writeFile(personaPath, "あなたは語尾をやわらかくする。", "utf8");
+    try {
+      process.env.LLM_PROVIDER_KIND = "local";
+      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+      process.env.LLM_MODEL = "dummy-model";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = personaPath;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = join(dir, "missing-policy.yaml");
+      delete process.env.LLM_API_KEY;
+
+      const llm = createLlmProviderFromEnv({
+        fetch: async (_input: string, init?: { body?: string }) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            messages?: Array<{ role?: string; content?: string }>;
+          };
+          const system = body.messages?.find((m) => m.role === "system")?.content ?? "";
+          expect(system).toContain("あなたは語尾をやわらかくする。");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ assistant_text: "hi", expression: "neutral" }),
+                  },
+                },
+              ],
+            }),
+          };
+        },
+      });
+
+      await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies chat maxLength to Gemini responseJsonSchema and persona to systemInstruction", async () => {
+    const saved = {
+      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+      LLM_MODEL: process.env.LLM_MODEL,
+      LLM_API_KEY: process.env.LLM_API_KEY,
+      LLM_CHAT_MAX_OUTPUT_CHARS: process.env.LLM_CHAT_MAX_OUTPUT_CHARS,
+      WOOLY_FLUFFY_PERSONA_PATH: process.env.WOOLY_FLUFFY_PERSONA_PATH,
+      WOOLY_FLUFFY_POLICY_PATH: process.env.WOOLY_FLUFFY_POLICY_PATH,
+    };
+
+    const dir = await mkdtemp(join(tmpdir(), "wf-persona-test-"));
+    const personaPath = join(dir, "persona.md");
+    await writeFile(personaPath, "一人称はぼく。", "utf8");
+
+    try {
+      process.env.LLM_PROVIDER_KIND = "gemini_native";
+      process.env.LLM_MODEL = "gemini-2.5-flash-lite";
+      process.env.LLM_API_KEY = "test-key";
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = "7";
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = personaPath;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = join(dir, "missing-policy.yaml");
+
+      const llm = createLlmProviderFromEnv({
+        gemini_models: {
+          generateContent: async (params) => {
+            const config = params.config as {
+              systemInstruction?: string;
+              responseJsonSchema?: {
+                properties?: { assistant_text?: { maxLength?: number } };
+              };
+            };
+            expect(config.systemInstruction ?? "").toContain("一人称はぼく。");
+            expect(config.responseJsonSchema?.properties?.assistant_text?.maxLength).toBe(7);
+            return {
+              text: JSON.stringify({ assistant_text: "123456789", expression: "neutral" }),
+              functionCalls: [],
+              candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+            };
+          },
+          get: async () => ({}),
+        },
+      });
+
+      await expect(
+        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
+      ).resolves.toMatchObject({ assistant_text: "1234567" });
+    } finally {
+      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
+      process.env.LLM_MODEL = saved.LLM_MODEL;
+      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = saved.LLM_CHAT_MAX_OUTPUT_CHARS;
+      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
+      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
