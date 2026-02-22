@@ -293,6 +293,8 @@ Server (required unless noted):
 - `LLM_MODEL` (required for `local`/`external`/`gemini_native`): model id string
 - `LLM_API_KEY` (required for `external`/`gemini_native`): API key string (keep secret)
   - For Gemini native, `GEMINI_API_KEY` / `GOOGLE_API_KEY` are also accepted.
+- `WOOLY_FLUFFY_PERSONA_PATH` (optional): persona markdown path. default: `~/Library/Application Support/wooly-fluffy/persona.md`
+- `WOOLY_FLUFFY_POLICY_PATH` (optional): policy yaml path. default: `~/Library/Application Support/wooly-fluffy/policy.yaml`
 - `WHISPER_CPP_CLI_PATH` (required for STT): path to `whisper-cli`
 - `WHISPER_CPP_MODEL_PATH` (required for STT): path to `.bin` model file (adopted: `ggml-large-v3-turbo.bin`)
 
@@ -309,6 +311,9 @@ Server (optional tuning):
 - `LLM_TIMEOUT_INNER_TASK_MS` (optional): LLM inner task timeout in ms (default: 4000; clamp: 500..120000)
 - `LLM_TIMEOUT_HEALTH_MS` (optional): LLM health timeout in ms (default: 1500; clamp: 200..30000)
 - `LLM_TOOL_TIMEOUT_MS` (optional): tool execution timeout cap in ms (default: 2000; clamp: 200..120000)
+- `LLM_CHAT_MAX_OUTPUT_CHARS` (optional): app-side clamp for `assistant_text` (default: 320; clamp: 1..2000)
+- `LLM_CHAT_MAX_OUTPUT_TOKENS` (optional): model-side chat output token cap (default: disabled; clamp: 1..8192)
+- `WOOLY_FLUFFY_PERSONA_WATCH_DEBOUNCE_MS` (optional): persona/policy watch debounce in ms (default: 120; clamp: 0..3000)
   - Note: tool timeout uses `min(LLM_TOOL_TIMEOUT_MS, LLM_TIMEOUT_CHAT_MS)`
 
 #### Local env file (macOS)
@@ -372,6 +377,10 @@ export LLM_MODEL="<lm-studio-model-id>"
 # export TTS_ENGINE_URL="http://127.0.0.1:10101"
 # export TTS_SPEAKER_ID="888753760"  # example; get ids from: GET $TTS_ENGINE_URL/speakers
 # export DB_PATH="$(pwd)/var/wooly-fluffy.sqlite3"
+# export LLM_CHAT_MAX_OUTPUT_CHARS="320"
+# export LLM_CHAT_MAX_OUTPUT_TOKENS="256"
+# export WOOLY_FLUFFY_PERSONA_PATH="$HOME/Library/Application Support/wooly-fluffy/persona.md"
+# export WOOLY_FLUFFY_POLICY_PATH="$HOME/Library/Application Support/wooly-fluffy/policy.yaml"
 ```
 
 ### Minimal manual smoke steps
