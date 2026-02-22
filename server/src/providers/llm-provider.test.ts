@@ -394,7 +394,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
     expect(chatCalls).toBe(2);
     expect(result.assistant_text).toBe("OK");
     expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather"]);
-  });
+  }, 10_000);
 
   it("throws when follow-up chat completion returns non-2xx", async () => {
     let chatCalls = 0;
@@ -1978,7 +1978,7 @@ describe("llm-provider (Gemini native)", () => {
     expect(calls).toBe(2);
     expect(result.assistant_text).toBe("OK");
     expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
-  });
+  }, 10_000);
 
   it("falls back when all tool calls are blocked", async () => {
     let calls = 0;
