@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { request } from "http";
 import type { IncomingHttpHeaders } from "http";
 import type { Server } from "http";
-import { createHttpServer } from "./http-server.js";
+import { createHttpServer, shouldIncludeSpeechMetrics } from "./http-server.js";
 import { createStore } from "./store.js";
 import { ServerResponse } from "http";
 
@@ -495,6 +495,10 @@ afterEach(async () => {
 
 describe("http-server", () => {
   describe("health and baseline routes", () => {
+    it("returns false for malformed metrics URL values", () => {
+      expect(shouldIncludeSpeechMetrics("http://[bad")).toBe(false);
+    });
+
     it("returns healthcheck status", async () => {
       const response = await sendRequest("GET", "/health");
 

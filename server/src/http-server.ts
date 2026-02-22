@@ -146,7 +146,7 @@ const parsePath = (url: string): string => {
   return end === -1 ? url : url.slice(0, end);
 };
 
-const shouldIncludeSpeechMetrics = (url: string): boolean => {
+export const shouldIncludeSpeechMetrics = (url: string): boolean => {
   try {
     const parsed = new URL(url, "http://localhost");
     return parsed.searchParams.get("metrics") === "1";
