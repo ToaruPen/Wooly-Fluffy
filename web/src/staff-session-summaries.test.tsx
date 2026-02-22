@@ -79,10 +79,18 @@ const bootStaffPage = async (
 
   await act(async () => {});
 
+  if (connectSseMock.mock.calls.length === 0) {
+    throw new Error("Expected connectSse to be called during staff boot");
+  }
+  const handlers = connectSseMock.mock.calls[0]?.[1];
+  if (!handlers) {
+    throw new Error("Missing connectSse handlers from first connectSse call");
+  }
+
   return {
     appRoot: appRoot!,
     fetchMock: globalThis.fetch as ReturnType<typeof vi.fn>,
-    handlers: connectSseMock.mock.calls[0]?.[1],
+    handlers,
   };
 };
 
