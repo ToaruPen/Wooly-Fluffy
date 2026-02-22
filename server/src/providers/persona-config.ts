@@ -144,7 +144,7 @@ const readPolicyYaml = (
   }
   const text = safeReadText(d, policyPath);
   if (text === null) {
-    return { policy: {}, mtimeMs: stat.mtimeMs };
+    return { policy: {}, mtimeMs: null };
   }
   try {
     const raw = parseYaml(text) as unknown;

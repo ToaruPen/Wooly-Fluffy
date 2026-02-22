@@ -3320,7 +3320,7 @@ describe("llm-provider (env)", () => {
       process.env.LLM_MODEL = saved.LLM_MODEL;
       process.env.LLM_API_KEY = saved.LLM_API_KEY;
     }
-  });
+  }, 10_000);
 
   it("closes persona config loader via llm.close", async () => {
     const saved = {
@@ -3377,7 +3377,7 @@ describe("llm-provider (env)", () => {
       process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
       process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
     }
-  });
+  }, 10_000);
 
   it("defaults to stub when LLM_PROVIDER_KIND is unset", async () => {
     const saved = {

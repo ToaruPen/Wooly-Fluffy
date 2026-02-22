@@ -1267,12 +1267,16 @@ export const createLlmProviderFromEnv = (options?: {
         };
       };
 
-  const withClose = (provider: Providers["llm"]): Providers["llm"] => ({
-    ...provider,
-    close: () => {
-      closePersonaLoader();
-    },
-  });
+  const withClose = (provider: Providers["llm"]): Providers["llm"] => {
+    const originalClose = provider.close ?? (() => {});
+    return {
+      ...provider,
+      close: () => {
+        originalClose();
+        closePersonaLoader();
+      },
+    };
+  };
 
   const timeoutChatMs = readEnvInt(process.env, {
     name: "LLM_TIMEOUT_CHAT_MS",

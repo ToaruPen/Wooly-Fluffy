@@ -374,6 +374,34 @@ describe("persona-config", () => {
     }
   }, 5_000);
 
+  it("recovers policy after transient read failure without mtime change", async () => {
+    const personaPath = "/tmp/persona.md";
+    const policyPath = "/tmp/policy.yaml";
+
+    const fs = createMemoryFileSystem();
+    fs.setFile(personaPath, "hello");
+    fs.setFile(policyPath, "chat:\n  max_output_chars: 140\n");
+    fs.setReadFailure(policyPath, true);
+
+    const loader = createPersonaConfigLoader({
+      env: {
+        WOOLY_FLUFFY_PERSONA_PATH: personaPath,
+        WOOLY_FLUFFY_POLICY_PATH: policyPath,
+      },
+      platform: "darwin",
+      homedir: () => "/Users/test",
+      fileSystem: fs.adapter,
+      createWatcher: () => ({ close: () => {} }),
+    });
+    try {
+      expect(loader.read().chat_max_output_chars).toBeNull();
+      fs.setReadFailure(policyPath, false);
+      expect(loader.read().chat_max_output_chars).toBe(140);
+    } finally {
+      loader.close();
+    }
+  }, 5_000);
+
   it("falls back to empty policy on YAML parse errors", async () => {
     const personaPath = "/tmp/persona.md";
     const policyPath = "/tmp/policy.yaml";
