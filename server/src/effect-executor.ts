@@ -29,16 +29,66 @@ type EffectExecutor = {
   transcribeStt: (input: { request_id: string; mode: Mode; wav: Buffer }) => void;
 };
 
+type SpeechMetric = {
+  type: "speech.ttfa.observation";
+  emitted_at_ms: number;
+  utterance_id: string;
+  chat_request_id: string;
+  segment_count: number;
+  first_segment_length: number;
+};
+
+const splitSpeechSegments = (text: string): string[] => {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  const raw = trimmed
+    .split(/(?<=[。！？])/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  const units = raw.length > 0 ? raw : [trimmed];
+  const merged: string[] = [];
+  for (const unit of units) {
+    if (merged.length === 0) {
+      merged.push(unit);
+      continue;
+    }
+    const lastIndex = merged.length - 1;
+    if (unit.length < 5) {
+      merged[merged.length - 1] = `${merged[merged.length - 1]}${unit}`;
+      continue;
+    }
+    if (merged[lastIndex].length < 5) {
+      merged[lastIndex] = `${merged[lastIndex]}${unit}`;
+      continue;
+    }
+    merged.push(unit);
+  }
+
+  if (merged.length > 1 && merged[merged.length - 1].length < 5) {
+    const tail = merged.pop()!;
+    merged[merged.length - 1] = `${merged[merged.length - 1]}${tail}`;
+  }
+
+  return merged;
+};
+
 export const createEffectExecutor = (deps: {
   providers: Providers;
   sendKioskCommand: KioskCommandSender;
   enqueueEvent: (event: OrchestratorEvent) => void;
   onSttRequested: (request_id: string) => void;
+  now_ms?: () => number;
+  observeSpeechMetric?: (metric: SpeechMetric) => void;
   storeWritePending?: StoreWritePendingLegacy;
   storeWriteSessionSummaryPending: StoreWriteSessionSummaryPending;
 }) => {
   let saySeq = 0;
   let currentExpression: string | null = null;
+  const nowMs = deps.now_ms ?? (() => Date.now());
 
   const executeEffects = (effects: OrchestratorEffect[]): OrchestratorEvent[] => {
     const events: OrchestratorEvent[] = [];
@@ -127,8 +177,41 @@ export const createEffectExecutor = (deps: {
         }
         case "SAY": {
           saySeq += 1;
+          const utteranceId = `say-${saySeq}`;
+          const chatRequestId = utteranceId;
+          const segments = splitSpeechSegments(effect.text);
+
+          deps.sendKioskCommand("kiosk.command.speech.start", {
+            utterance_id: utteranceId,
+            chat_request_id: chatRequestId,
+          });
+          for (const [segmentIndex, segmentText] of segments.entries()) {
+            deps.sendKioskCommand("kiosk.command.speech.segment", {
+              utterance_id: utteranceId,
+              chat_request_id: chatRequestId,
+              segment_index: segmentIndex,
+              text: segmentText,
+              is_last: segmentIndex === segments.length - 1,
+            });
+          }
+          deps.sendKioskCommand("kiosk.command.speech.end", {
+            utterance_id: utteranceId,
+            chat_request_id: chatRequestId,
+          });
+
+          if (segments.length > 0) {
+            deps.observeSpeechMetric?.({
+              type: "speech.ttfa.observation",
+              emitted_at_ms: nowMs(),
+              utterance_id: utteranceId,
+              chat_request_id: chatRequestId,
+              segment_count: segments.length,
+              first_segment_length: segments[0].length,
+            });
+          }
+
           const base = {
-            say_id: `say-${saySeq}`,
+            say_id: utteranceId,
             text: effect.text,
           };
           deps.sendKioskCommand(

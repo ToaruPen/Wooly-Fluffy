@@ -1413,7 +1413,7 @@ describe("http-server", () => {
     it("speaks fallback text when stt provider throws", async () => {
       process.env.TEST_STT_THROW = "1";
 
-      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 7, async () => {
+      const messages = await readSseDataMessages("/api/v1/kiosk/stream", 10, async () => {
         const down = await sendRequest("POST", "/api/v1/staff/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
           body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
@@ -1438,6 +1438,9 @@ describe("http-server", () => {
       });
 
       expect(messages.some((m) => m.type === "kiosk.command.speak")).toBe(true);
+      expect(messages.some((m) => m.type === "kiosk.command.speech.start")).toBe(true);
+      expect(messages.some((m) => m.type === "kiosk.command.speech.segment")).toBe(true);
+      expect(messages.some((m) => m.type === "kiosk.command.speech.end")).toBe(true);
 
       const health = await sendRequest("GET", "/health");
       expect(health.status).toBe(200);
