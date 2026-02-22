@@ -37,5 +37,9 @@ jobs:
           CODEX_REVIEW_REQUIRE_GH_AUTH: "1"
         run: |
           set -euo pipefail
-          : "${CODEX_BOT_LOGINS:?Set repository variable CODEX_BOT_LOGINS}"
+          if [[ -z "${CODEX_BOT_LOGINS:-}" ]]; then
+            CODEX_BOT_LOGINS='chatgpt-codex-connector[bot],coderabbitai[bot]'
+            echo "[codex-review-event] warn: vars.CODEX_BOT_LOGINS is unset; using default bot list" >&2
+          fi
+          export CODEX_BOT_LOGINS
           bash ./scripts/codex-review-event.sh
