@@ -147,8 +147,12 @@ const parsePath = (url: string): string => {
 };
 
 const shouldIncludeSpeechMetrics = (url: string): boolean => {
-  const parsed = new URL(url, "http://localhost");
-  return parsed.searchParams.get("metrics") === "1";
+  try {
+    const parsed = new URL(url, "http://localhost");
+    return parsed.searchParams.get("metrics") === "1";
+  } catch {
+    return false;
+  }
 };
 
 const readBody = async (req: IncomingMessage, maxBytes: number): Promise<Buffer> => {
