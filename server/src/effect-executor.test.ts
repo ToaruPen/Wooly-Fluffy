@@ -408,6 +408,48 @@ describe("effect-executor", () => {
     ]);
   });
 
+  it("uses provided chat_request_id for speech events", () => {
+    const providers = createStubProviders();
+
+    const sent: Array<{ type: string; data: object }> = [];
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+    });
+
+    executor.executeEffects([{ type: "SAY", text: "hello", chat_request_id: "chat-42" }]);
+
+    expect(sent).toEqual([
+      {
+        type: "kiosk.command.speech.start",
+        data: { utterance_id: "say-1", chat_request_id: "chat-42" },
+      },
+      {
+        type: "kiosk.command.speech.segment",
+        data: {
+          utterance_id: "say-1",
+          chat_request_id: "chat-42",
+          segment_index: 0,
+          text: "hello",
+          is_last: true,
+        },
+      },
+      {
+        type: "kiosk.command.speech.end",
+        data: { utterance_id: "say-1", chat_request_id: "chat-42" },
+      },
+      {
+        type: "kiosk.command.speak",
+        data: { say_id: "say-1", text: "hello" },
+      },
+    ]);
+  });
+
   it("splits sentence by punctuation and merges short fragments", () => {
     const providers = createStubProviders();
 
@@ -479,10 +521,13 @@ describe("effect-executor", () => {
   it("records TTFA observation without text payload", () => {
     const providers = createStubProviders();
     const metrics: Array<Record<string, unknown>> = [];
+    const sent: Array<{ type: string; data: object }> = [];
 
     const executor = createEffectExecutor({
       providers,
-      sendKioskCommand: () => {},
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
       enqueueEvent: () => {},
       onSttRequested: () => {},
       storeWritePending: () => {},
@@ -493,6 +538,30 @@ describe("effect-executor", () => {
     });
 
     executor.executeEffects([{ type: "SAY", text: "こんにちは。よろしくね。" }]);
+
+    const segments = sent.filter((x) => x.type === "kiosk.command.speech.segment");
+    expect(segments).toEqual([
+      {
+        type: "kiosk.command.speech.segment",
+        data: {
+          utterance_id: "say-1",
+          chat_request_id: "say-1",
+          segment_index: 0,
+          text: "こんにちは。",
+          is_last: false,
+        },
+      },
+      {
+        type: "kiosk.command.speech.segment",
+        data: {
+          utterance_id: "say-1",
+          chat_request_id: "say-1",
+          segment_index: 1,
+          text: "よろしくね。",
+          is_last: true,
+        },
+      },
+    ]);
 
     expect(metrics).toEqual([
       {

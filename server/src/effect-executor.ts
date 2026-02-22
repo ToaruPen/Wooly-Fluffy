@@ -174,14 +174,18 @@ export const createEffectExecutor = (deps: {
         case "SAY": {
           saySeq += 1;
           const utteranceId = `say-${saySeq}`;
-          const chatRequestId = utteranceId;
+          const chatRequestId = effect.chat_request_id ?? utteranceId;
           const segments = splitSpeechSegments(effect.text);
+          let firstSegmentEmittedAtMs: number | null = null;
 
           deps.sendKioskCommand("kiosk.command.speech.start", {
             utterance_id: utteranceId,
             chat_request_id: chatRequestId,
           });
           for (const [segmentIndex, segmentText] of segments.entries()) {
+            if (firstSegmentEmittedAtMs === null) {
+              firstSegmentEmittedAtMs = nowMs();
+            }
             deps.sendKioskCommand("kiosk.command.speech.segment", {
               utterance_id: utteranceId,
               chat_request_id: chatRequestId,
@@ -195,10 +199,10 @@ export const createEffectExecutor = (deps: {
             chat_request_id: chatRequestId,
           });
 
-          if (segments.length > 0) {
+          if (segments.length > 0 && firstSegmentEmittedAtMs !== null) {
             deps.observeSpeechMetric?.({
               type: "speech.ttfa.observation",
-              emitted_at_ms: nowMs(),
+              emitted_at_ms: firstSegmentEmittedAtMs,
               utterance_id: utteranceId,
               chat_request_id: chatRequestId,
               segment_count: segments.length,
