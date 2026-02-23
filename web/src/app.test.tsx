@@ -4558,7 +4558,7 @@ describe("app", () => {
       async () => {
         vi.resetModules();
 
-        const originalDev = import.meta.env.DEV;
+        const isDevOriginal = import.meta.env.DEV;
         import.meta.env.DEV = false;
 
         const closeSpy = vi.fn();
@@ -4672,7 +4672,7 @@ describe("app", () => {
             appRoot.unmount();
           });
         } finally {
-          import.meta.env.DEV = originalDev;
+          import.meta.env.DEV = isDevOriginal;
           if (originalCreateObjectURL === undefined) {
             delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
           } else {
