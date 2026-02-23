@@ -18,6 +18,11 @@ const resetDom = () => {
 
 afterEach(() => {
   vi.doUnmock("./sse-client");
+  vi.doUnmock("./components/audio-player");
+  vi.doUnmock("./components/vrm-avatar");
+  vi.doUnmock("./kiosk-ptt");
+  vi.doUnmock("./kiosk-audio");
+  vi.doUnmock("./kiosk-tool-calls");
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   vi.resetModules();
@@ -4086,5 +4091,603 @@ describe("app", () => {
       });
       container.remove();
     });
+  });
+
+  describe("kiosk segment coverage helpers", () => {
+    it(
+      "guards invalid speech.start / speech.segment / speech.end data and covers segment edge cases",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          static latest: FakeAudio | null = null;
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.latest = this;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          // Cover: speech.start with invalid data (lines 858-860)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: null,
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 2,
+              data: "not-object",
+            });
+          });
+
+          // Cover: speech.segment with invalid data (lines 872-874)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 3,
+              data: null,
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 4,
+              data: 42,
+            });
+          });
+
+          // Cover: speech.end with invalid data (lines 890-891)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 5,
+              data: null,
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 6,
+              data: "not-object",
+            });
+          });
+
+          // Start a valid speech sequence so segment queue is active
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 10,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+              },
+            });
+          });
+
+          // Cover: enqueueSpeechSegment duplicate segment_index (lines 531-533)
+          // Send both segments synchronously so the duplicate arrives while the
+          // first is still pending in the Map (before fetch resolves).
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 11,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+                segment_index: 0,
+                text: "first",
+                is_last: false,
+              },
+            });
+            // Duplicate segment_index=0 should be ignored (items.has guard)
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 12,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+                segment_index: 0,
+                text: "dup",
+                is_last: false,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          // Let the first segment play
+          await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+          });
+
+          // Complete playback of first segment
+          if (FakeAudio.latest?.onended) {
+            act(() => {
+              FakeAudio.latest?.onended?.();
+            });
+          }
+
+          // Cover: enqueueSpeechSegment with segment_index < nextPlayIndex (lines 528-530)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 13,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+                segment_index: 0,
+                text: "stale",
+                is_last: false,
+              },
+            });
+          });
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers segment TTS fetch failure and failed-item skip",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          static latest: FakeAudio | null = null;
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.latest = this;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        let ttsCallIndex = 0;
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              ttsCallIndex += 1;
+              if (ttsCallIndex === 1) {
+                throw new Error("TTS offline");
+              }
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          // Start segment queue
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: {
+                utterance_id: "u-fail",
+                chat_request_id: "cr-fail",
+              },
+            });
+          });
+
+          // Enqueue segment 0 - TTS will fail (only segment, is_last=true)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "u-fail",
+                chat_request_id: "cr-fail",
+                segment_index: 0,
+                text: "fail-seg",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+          });
+
+          expect(document.body.textContent ?? "").toContain("おとがでないみたい");
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers utterance ID history eviction and finalizeEndedSegmentUtteranceIfIdle mismatch",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          // Cover: rememberSegmentUtteranceId eviction (lines 219-225)
+          for (let i = 0; i < 130; i++) {
+            await act(async () => {
+              handlers.onMessage?.({
+                type: "kiosk.command.speech.start",
+                seq: 100 + i,
+                data: {
+                  utterance_id: `u-evict-${i}`,
+                  chat_request_id: `cr-evict-${i}`,
+                },
+              });
+            });
+          }
+
+          // Cover: speech.end for a different utterance than current queue
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 300,
+              data: {
+                utterance_id: "u-evict-0",
+                chat_request_id: "cr-evict-0",
+              },
+            });
+          });
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers maybePlayPendingSpeak when audio is locked and pushDevSpeechProbe non-DEV guard",
+      async () => {
+        vi.resetModules();
+
+        const originalDev = import.meta.env.DEV;
+        import.meta.env.DEV = false;
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          static latest: FakeAudio | null = null;
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.latest = this;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => {
+            const err = new Error("blocked");
+            (err as unknown as { name: string }).name = "NotAllowedError";
+            throw err;
+          });
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: {
+                utterance_id: "u-dev",
+                chat_request_id: "cr-dev",
+              },
+            });
+          });
+
+          // Enqueue a segment — the floating TTS fetch chain eventually calls
+          // setTtsWav, React renders AudioPlayer, its useEffect fires audio.play(),
+          // which rejects with NotAllowedError, triggering re-lock.
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "u-dev",
+                chat_request_id: "cr-dev",
+                segment_index: 0,
+                text: "hello",
+                is_last: false,
+              },
+            });
+            // Drain fetch promise chain: fetch(async) → arrayBuffer(async) →
+            // .then → .finally → setTtsWav, then AudioPlayer useEffect →
+            // play() → .then → .catch(NotAllowedError) → re-lock setState
+            for (let i = 0; i < 10; i++) await Promise.resolve();
+          });
+
+          expect(document.body.textContent ?? "").toContain("おとをだすには 1かい タップしてね");
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          import.meta.env.DEV = originalDev;
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
   });
 });
