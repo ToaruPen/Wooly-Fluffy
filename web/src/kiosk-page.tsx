@@ -952,6 +952,7 @@ export const KioskPage = () => {
       },
     });
 
+    const utteranceIds = segmentUtteranceIdsRef.current;
     return () => {
       if (import.meta.env.DEV) {
         const w = window as Window & {
@@ -968,10 +969,17 @@ export const KioskPage = () => {
         void sessionPromise.then((s: PttSession) => s.stop()).catch(ignoreStopError);
       }
       resetSegmentQueue(null);
-      segmentUtteranceIdsRef.current.clear();
+      utteranceIds.clear();
       client.close();
     };
-  }, [enqueueSpeechSegment, flushKioskPtt, playTts, resetSegmentQueue]);
+  }, [
+    enqueueSpeechSegment,
+    finalizeEndedSegmentUtteranceIfIdle,
+    flushKioskPtt,
+    playTts,
+    rememberSegmentUtteranceId,
+    resetSegmentQueue,
+  ]);
 
   const phase = snapshot?.state.phase ?? null;
   const isConsentVisible = snapshot?.state.consent_ui_visible ?? false;

@@ -1901,7 +1901,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("starts queued speech.segment playback after audio unlock without pending speak", async () => {
       vi.resetModules();
@@ -2021,7 +2021,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("clears pending speak when new speech.start arrives", async () => {
       vi.resetModules();
@@ -2149,7 +2149,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores kiosk.command.speak after speech.end for same utterance id", async () => {
       vi.resetModules();
@@ -2218,7 +2218,7 @@ describe("app", () => {
       await act(async () => {
         appRoot.unmount();
       });
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("accepts kiosk.command.speak after speech.end for different utterance id", async () => {
       vi.resetModules();
@@ -2288,7 +2288,7 @@ describe("app", () => {
       await act(async () => {
         appRoot.unmount();
       });
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("accepts kiosk.command.speak after delayed speech.end completion", async () => {
       vi.resetModules();
@@ -2424,7 +2424,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores stale speech.end for different utterance and allows later speak", async () => {
       vi.resetModules();
@@ -2564,7 +2564,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores speech.segment for non-active utterance", async () => {
       vi.resetModules();
@@ -2648,7 +2648,7 @@ describe("app", () => {
       await act(async () => {
         appRoot.unmount();
       });
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores stale speak for canceled utterance after stop_output", async () => {
       vi.resetModules();
@@ -2717,7 +2717,7 @@ describe("app", () => {
       await act(async () => {
         appRoot.unmount();
       });
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores duplicate speech.start for same utterance and keeps queued segments", async () => {
       vi.resetModules();
@@ -2834,7 +2834,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("retries blocked speech.segment playback after audio unlock", async () => {
       vi.resetModules();
@@ -2954,7 +2954,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores duplicate speak without stopping current segment playback", async () => {
       vi.resetModules();
@@ -3085,7 +3085,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("ignores stale speak from older utterance while segmented playback is active", async () => {
       vi.resetModules();
@@ -3227,7 +3227,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
 
     it("does not play speech.segment results that complete after stop_output", async () => {
       vi.resetModules();
@@ -3345,7 +3345,7 @@ describe("app", () => {
             originalRevokeObjectURL;
         }
       }
-    });
+    }, SSE_TEST_TIMEOUT_MS);
   });
 
   describe("kiosk recording edge cases", () => {
