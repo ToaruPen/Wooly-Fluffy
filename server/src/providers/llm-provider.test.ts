@@ -7,36 +7,7 @@ import {
 } from "./llm-provider.js";
 import * as personaConfigModule from "./persona-config.js";
 import type { ToolCall } from "../orchestrator.js";
-
-const createAbortableNeverFetch = () => {
-  return (_input: string, init?: { method?: string; signal?: AbortSignal }) =>
-    new Promise<{
-      ok: boolean;
-      status: number;
-      json: () => Promise<unknown>;
-    }>((_resolve, reject) => {
-      const signal = init?.signal;
-      if (!signal) {
-        reject(new Error("missing_signal"));
-        return;
-      }
-      if (signal.aborted) {
-        const err = new Error("aborted");
-        err.name = "AbortError";
-        reject(err);
-        return;
-      }
-      signal.addEventListener(
-        "abort",
-        () => {
-          const err = new Error("aborted");
-          err.name = "AbortError";
-          reject(err);
-        },
-        { once: true },
-      );
-    });
-};
+import { createAbortableNeverFetch } from "../test-helpers/fetch.js";
 
 describe("llm-provider (OpenAI-compatible)", () => {
   it("normalizes trailing slash in base_url", async () => {

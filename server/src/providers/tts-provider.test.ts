@@ -1,34 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createVoicevoxCompatibleTtsProvider } from "./tts-provider.js";
-
-const createAbortableNeverFetch = () => {
-  return (_input: string, init?: { method?: string; signal?: AbortSignal }) =>
-    new Promise<{
-      ok: boolean;
-      status: number;
-      json: () => Promise<unknown>;
-      arrayBuffer: () => Promise<ArrayBuffer>;
-    }>((_resolve, reject) => {
-      const signal = init?.signal;
-      if (!signal) {
-        reject(new Error("missing_signal"));
-        return;
-      }
-      if (signal.aborted) {
-        reject(new Error("aborted"));
-        return;
-      }
-      signal.addEventListener(
-        "abort",
-        () => {
-          const err = new Error("aborted");
-          err.name = "AbortError";
-          reject(err);
-        },
-        { once: true },
-      );
-    });
-};
+import { createAbortableNeverFetch } from "../test-helpers/fetch.js";
 
 describe("tts-provider (VOICEVOX-compatible)", () => {
   it("treats blank TTS_ENGINE_URL as unset and falls back to legacy engine url", async () => {
