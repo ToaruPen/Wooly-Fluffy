@@ -9,6 +9,8 @@ import * as personaConfigModule from "./persona-config.js";
 import type { ToolCall } from "../orchestrator.js";
 import { createAbortableNeverFetch } from "../test-helpers/fetch.js";
 
+const STREAM_TEST_TIMEOUT_MS = 5_000;
+
 const createSseBody = (
   events: string[],
   options?: { delimiter?: "\n\n" | "\r\n\r\n" },
@@ -26,133 +28,159 @@ const createSseBody = (
 };
 
 describe("llm-provider (OpenAI-compatible)", () => {
-  it("provides chat.stream and yields delta text", async () => {
-    const llm = createOpenAiCompatibleLlmProvider({
-      kind: "local",
-      base_url: "http://lmstudio.local/v1",
-      model: "dummy-model",
-      fetch: async (_input: string, init?: { body?: string }) => {
-        expect(String(init?.body ?? "")).toContain('"stream":true');
-        return {
+  it(
+    "provides chat.stream and yields delta text",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        read_chat_runtime_config: () => ({
+          persona_text: "",
+          max_output_chars: 320,
+          max_output_tokens: 77,
+        }),
+        fetch: async (_input: string, init?: { body?: string }) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            stream?: boolean;
+            max_tokens?: number;
+          };
+          expect(body.stream).toBe(true);
+          expect(body.max_tokens).toBe(77);
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            body: createSseBody([
+              JSON.stringify({ choices: [{ delta: { content: "こんにちは。" } }] }),
+              JSON.stringify({ choices: [{ delta: { content: "よろしくね。" } }] }),
+              "[DONE]",
+            ]),
+          };
+        },
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of llm.chat.stream?.({
+        mode: "ROOM",
+        personal_name: null,
+        text: "hi",
+      }) ?? []) {
+        chunks.push(chunk.delta_text);
+      }
+
+      expect(chunks).toEqual(["こんにちは。", "よろしくね。"]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "parses CRLF-delimited SSE data events for chat.stream",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
           ok: true,
           status: 200,
           json: async () => ({}),
-          body: createSseBody([
-            JSON.stringify({ choices: [{ delta: { content: "こんにちは。" } }] }),
-            JSON.stringify({ choices: [{ delta: { content: "よろしくね。" } }] }),
-            "[DONE]",
-          ]),
-        };
-      },
-    });
-
-    const chunks: string[] = [];
-    for await (const chunk of llm.chat.stream?.({
-      mode: "ROOM",
-      personal_name: null,
-      text: "hi",
-    }) ?? []) {
-      chunks.push(chunk.delta_text);
-    }
-
-    expect(chunks).toEqual(["こんにちは。", "よろしくね。"]);
-  });
-
-  it("parses CRLF-delimited SSE data events for chat.stream", async () => {
-    const llm = createOpenAiCompatibleLlmProvider({
-      kind: "local",
-      base_url: "http://lmstudio.local/v1",
-      model: "dummy-model",
-      fetch: async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-        body: createSseBody(
-          [
-            JSON.stringify({ choices: [{ delta: { content: "A" } }] }),
-            JSON.stringify({ choices: [{ delta: { content: "B" } }] }),
-            "[DONE]",
-          ],
-          { delimiter: "\r\n\r\n" },
-        ),
-      }),
-    });
-
-    const chunks: string[] = [];
-    for await (const chunk of llm.chat.stream?.({
-      mode: "ROOM",
-      personal_name: null,
-      text: "hi",
-    }) ?? []) {
-      chunks.push(chunk.delta_text);
-    }
-
-    expect(chunks).toEqual(["A", "B"]);
-  });
-
-  it("parses final SSE data event without trailing blank line", async () => {
-    const llm = createOpenAiCompatibleLlmProvider({
-      kind: "local",
-      base_url: "http://lmstudio.local/v1",
-      model: "dummy-model",
-      fetch: async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-        body: new ReadableStream<Uint8Array>({
-          start(controller) {
-            const encoder = new TextEncoder();
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ choices: [{ delta: { content: "A" } }] })}\n\n` +
-                  `data: ${JSON.stringify({ choices: [{ delta: { content: "B" } }] })}`,
-              ),
-            );
-            controller.close();
-          },
+          body: createSseBody(
+            [
+              JSON.stringify({ choices: [{ delta: { content: "A" } }] }),
+              JSON.stringify({ choices: [{ delta: { content: "B" } }] }),
+              "[DONE]",
+            ],
+            { delimiter: "\r\n\r\n" },
+          ),
         }),
-      }),
-    });
+      });
 
-    const chunks: string[] = [];
-    for await (const chunk of llm.chat.stream?.({
-      mode: "ROOM",
-      personal_name: null,
-      text: "hi",
-    }) ?? []) {
-      chunks.push(chunk.delta_text);
-    }
+      const chunks: string[] = [];
+      for await (const chunk of llm.chat.stream?.({
+        mode: "ROOM",
+        personal_name: null,
+        text: "hi",
+      }) ?? []) {
+        chunks.push(chunk.delta_text);
+      }
 
-    expect(chunks).toEqual(["A", "B"]);
-  });
+      expect(chunks).toEqual(["A", "B"]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
 
-  it("times out chat.stream when SSE stays open without events", async () => {
-    const llm = createOpenAiCompatibleLlmProvider({
-      kind: "local",
-      base_url: "http://lmstudio.local/v1",
-      model: "dummy-model",
-      timeout_ms_chat: 1,
-      fetch: async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-        body: new ReadableStream<Uint8Array>({
-          start() {},
+  it(
+    "parses final SSE data event without trailing blank line",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content: "A" } }] })}\n\n` +
+                    `data: ${JSON.stringify({ choices: [{ delta: { content: "B" } }] })}`,
+                ),
+              );
+              controller.close();
+            },
+          }),
         }),
-      }),
-    });
+      });
 
-    await expect(
-      (async () => {
-        for await (const _chunk of llm.chat.stream?.({
-          mode: "ROOM",
-          personal_name: null,
-          text: "hi",
-        }) ?? []) {
-        }
-      })(),
-    ).rejects.toThrow(/timed out/);
-  });
+      const chunks: string[] = [];
+      for await (const chunk of llm.chat.stream?.({
+        mode: "ROOM",
+        personal_name: null,
+        text: "hi",
+      }) ?? []) {
+        chunks.push(chunk.delta_text);
+      }
+
+      expect(chunks).toEqual(["A", "B"]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "times out chat.stream when SSE stays open without events",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        timeout_ms_chat: 1,
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body: new ReadableStream<Uint8Array>({
+            start() {},
+          }),
+        }),
+      });
+
+      await expect(
+        (async () => {
+          for await (const _chunk of llm.chat.stream?.({
+            mode: "ROOM",
+            personal_name: null,
+            text: "hi",
+          }) ?? []) {
+          }
+        })(),
+      ).rejects.toThrow(/timed out/);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
 
   it("normalizes trailing slash in base_url", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
@@ -1612,48 +1640,52 @@ describe("llm-provider (OpenAI-compatible)", () => {
     ).resolves.toMatchObject({ assistant_text: "hi" });
   });
 
-  it("uses global fetch body for chat.stream when fetch option is omitted", async () => {
-    const originalFetch = globalThis.fetch;
-    try {
-      (globalThis as unknown as { fetch: unknown }).fetch = (async (
-        _input: unknown,
-        init?: unknown,
-      ) => {
-        const payload = JSON.parse(
-          String((init as { body?: string } | undefined)?.body ?? "{}"),
-        ) as { stream?: boolean };
-        expect(payload.stream).toBe(true);
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({}),
-          body: createSseBody([
-            JSON.stringify({ choices: [{ delta: { content: "A" } }] }),
-            JSON.stringify({ choices: [{ delta: { content: "B" } }] }),
-            "[DONE]",
-          ]),
-        };
-      }) as unknown;
+  it(
+    "uses global fetch body for chat.stream when fetch option is omitted",
+    async () => {
+      const originalFetch = globalThis.fetch;
+      try {
+        (globalThis as unknown as { fetch: unknown }).fetch = (async (
+          _input: unknown,
+          init?: unknown,
+        ) => {
+          const payload = JSON.parse(
+            String((init as { body?: string } | undefined)?.body ?? "{}"),
+          ) as { stream?: boolean };
+          expect(payload.stream).toBe(true);
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            body: createSseBody([
+              JSON.stringify({ choices: [{ delta: { content: "A" } }] }),
+              JSON.stringify({ choices: [{ delta: { content: "B" } }] }),
+              "[DONE]",
+            ]),
+          };
+        }) as unknown;
 
-      const llm = createOpenAiCompatibleLlmProvider({
-        kind: "local",
-        base_url: "http://lmstudio.local/v1",
-        model: "dummy-model",
-      });
+        const llm = createOpenAiCompatibleLlmProvider({
+          kind: "local",
+          base_url: "http://lmstudio.local/v1",
+          model: "dummy-model",
+        });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
+        const chunks: string[] = [];
+        for await (const chunk of llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? []) {
+          chunks.push(chunk.delta_text);
+        }
+        expect(chunks).toEqual(["A", "B"]);
+      } finally {
+        (globalThis as unknown as { fetch: unknown }).fetch = originalFetch as unknown;
       }
-      expect(chunks).toEqual(["A", "B"]);
-    } finally {
-      (globalThis as unknown as { fetch: unknown }).fetch = originalFetch as unknown;
-    }
-  });
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
 
   it("uses global fetch when fetch option is omitted", async () => {
     const originalFetch = globalThis.fetch;

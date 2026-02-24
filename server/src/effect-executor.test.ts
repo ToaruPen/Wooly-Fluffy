@@ -22,6 +22,8 @@ const flushMicrotasks = async (): Promise<void> => {
   });
 };
 
+const STREAM_TEST_TIMEOUT_MS = 5_000;
+
 const createStubProviders = (overrides?: {
   chatCall?: Providers["llm"]["chat"]["call"];
   chatStream?: NonNullable<Providers["llm"]["chat"]["stream"]>;
@@ -678,598 +680,631 @@ describe("effect-executor", () => {
     expect(pendingWrites).toEqual([]);
   });
 
-  it("streams speech segments from chat.stream before CHAT_RESULT", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "こんにちは。よろしくね。",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* () {
-        yield { delta_text: "こんにちは。" };
-        yield { delta_text: "よろしくね。" };
-      },
-    });
+  it(
+    "streams speech segments from chat.stream before CHAT_RESULT",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "こんにちは。よろしくね。",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          yield { delta_text: "こんにちは。" };
+          yield { delta_text: "よろしくね。" };
+        },
+      });
 
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
 
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-1",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-1",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
 
-    expect(sent).toEqual([
-      {
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: { utterance_id: "chat-stream-1", chat_request_id: "chat-stream-1" },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-1",
+            chat_request_id: "chat-stream-1",
+            segment_index: 0,
+            text: "こんにちは。",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-1",
+            chat_request_id: "chat-stream-1",
+            segment_index: 1,
+            text: "よろしくね。",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: { utterance_id: "chat-stream-1", chat_request_id: "chat-stream-1" },
+        },
+      ]);
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-1",
+          assistant_text: "こんにちは。よろしくね。",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+
+      sent.length = 0;
+      executor.executeEffects([
+        { type: "SAY", text: "こんにちは。よろしくね。", chat_request_id: "chat-stream-1" },
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "chat-stream-1", text: "こんにちは。よろしくね。" },
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "streams sentence segments when chat.stream uses ASCII punctuation",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "Hello. How are you?",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          yield { delta_text: "Hello." };
+          yield { delta_text: " How are you?" };
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-ascii",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: { utterance_id: "chat-stream-ascii", chat_request_id: "chat-stream-ascii" },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-ascii",
+            chat_request_id: "chat-stream-ascii",
+            segment_index: 0,
+            text: "Hello.",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-ascii",
+            chat_request_id: "chat-stream-ascii",
+            segment_index: 1,
+            text: "How are you?",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: { utterance_id: "chat-stream-ascii", chat_request_id: "chat-stream-ascii" },
+        },
+      ]);
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-ascii",
+          assistant_text: "Hello. How are you?",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not suppress SAY when stream emits no segments",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "fallback-text",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          yield { delta_text: "" };
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-empty",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-empty",
+          assistant_text: "fallback-text",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+      expect(sent).toEqual([]);
+
+      sent.length = 0;
+      executor.executeEffects([
+        { type: "SAY", text: "fallback-text", chat_request_id: "chat-stream-empty" },
+      ]);
+      expect(sent[0]).toEqual({
         type: "kiosk.command.speech.start",
-        data: { utterance_id: "chat-stream-1", chat_request_id: "chat-stream-1" },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-1",
-          chat_request_id: "chat-stream-1",
-          segment_index: 0,
-          text: "こんにちは。",
-          is_last: false,
+        data: { utterance_id: "say-1", chat_request_id: "chat-stream-empty" },
+      });
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps conversation alive when stream fails and still emits CHAT_RESULT",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "fallback",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          yield* [];
+          throw new Error("stream_failed");
         },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-1",
-          chat_request_id: "chat-stream-1",
-          segment_index: 1,
-          text: "よろしくね。",
-          is_last: false,
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
         },
-      },
-      {
-        type: "kiosk.command.speech.end",
-        data: { utterance_id: "chat-stream-1", chat_request_id: "chat-stream-1" },
-      },
-    ]);
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-1",
-        assistant_text: "こんにちは。よろしくね。",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
 
-    sent.length = 0;
-    executor.executeEffects([
-      { type: "SAY", text: "こんにちは。よろしくね。", chat_request_id: "chat-stream-1" },
-    ]);
-    expect(sent).toEqual([
-      {
-        type: "kiosk.command.speak",
-        data: { say_id: "say-1", text: "こんにちは。よろしくね。" },
-      },
-    ]);
-  });
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-failed",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
 
-  it("streams sentence segments when chat.stream uses ASCII punctuation", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "Hello. How are you?",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* () {
-        yield { delta_text: "Hello." };
-        yield { delta_text: " How are you?" };
-      },
-    });
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-failed",
+          assistant_text: "fallback",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+      expect(sent).toEqual([]);
 
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
-
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-ascii",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
-
-    expect(sent).toEqual([
-      {
+      sent.length = 0;
+      executor.executeEffects([
+        { type: "SAY", text: "fallback", chat_request_id: "chat-stream-failed" },
+      ]);
+      expect(sent[0]).toEqual({
         type: "kiosk.command.speech.start",
-        data: { utterance_id: "chat-stream-ascii", chat_request_id: "chat-stream-ascii" },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-ascii",
-          chat_request_id: "chat-stream-ascii",
-          segment_index: 0,
-          text: "Hello.",
-          is_last: false,
+        data: { utterance_id: "say-1", chat_request_id: "chat-stream-failed" },
+      });
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "suppresses SAY when stream emitted segments before failing",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "partial then fallback",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          yield { delta_text: "先に読む。" };
+          throw new Error("stream_failed_after_partial");
         },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-ascii",
-          chat_request_id: "chat-stream-ascii",
-          segment_index: 1,
-          text: "How are you?",
-          is_last: false,
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
         },
-      },
-      {
-        type: "kiosk.command.speech.end",
-        data: { utterance_id: "chat-stream-ascii", chat_request_id: "chat-stream-ascii" },
-      },
-    ]);
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-ascii",
-        assistant_text: "Hello. How are you?",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
-  });
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
 
-  it("does not suppress SAY when stream emits no segments", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "fallback-text",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* () {
-        yield { delta_text: "" };
-      },
-    });
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-partial-fail",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
 
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-partial-fail",
+          assistant_text: "partial then fallback",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: {
+            utterance_id: "chat-stream-partial-fail",
+            chat_request_id: "chat-stream-partial-fail",
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-partial-fail",
+            chat_request_id: "chat-stream-partial-fail",
+            segment_index: 0,
+            text: "先に読む。",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: {
+            utterance_id: "chat-stream-partial-fail",
+            chat_request_id: "chat-stream-partial-fail",
+          },
+        },
+      ]);
 
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-empty",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
-
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-empty",
-        assistant_text: "fallback-text",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
-    expect(sent).toEqual([]);
-
-    sent.length = 0;
-    executor.executeEffects([
-      { type: "SAY", text: "fallback-text", chat_request_id: "chat-stream-empty" },
-    ]);
-    expect(sent[0]).toEqual({
-      type: "kiosk.command.speech.start",
-      data: { utterance_id: "say-1", chat_request_id: "chat-stream-empty" },
-    });
-  });
-
-  it("keeps conversation alive when stream fails and still emits CHAT_RESULT", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "fallback",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* () {
-        throw new Error("stream_failed");
-      },
-    });
-
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
-
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-failed",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
-
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-failed",
-        assistant_text: "fallback",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
-    expect(sent).toEqual([]);
-
-    sent.length = 0;
-    executor.executeEffects([
-      { type: "SAY", text: "fallback", chat_request_id: "chat-stream-failed" },
-    ]);
-    expect(sent[0]).toEqual({
-      type: "kiosk.command.speech.start",
-      data: { utterance_id: "say-1", chat_request_id: "chat-stream-failed" },
-    });
-  });
-
-  it("suppresses SAY when stream emitted segments before failing", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "partial then fallback",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* () {
-        yield { delta_text: "先に読む。" };
-        throw new Error("stream_failed_after_partial");
-      },
-    });
-
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
-
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-partial-fail",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
-
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-partial-fail",
-        assistant_text: "partial then fallback",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
-    expect(sent).toEqual([
-      {
-        type: "kiosk.command.speech.start",
-        data: {
-          utterance_id: "chat-stream-partial-fail",
+      sent.length = 0;
+      executor.executeEffects([
+        {
+          type: "SAY",
+          text: "partial then fallback",
           chat_request_id: "chat-stream-partial-fail",
         },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-partial-fail",
-          chat_request_id: "chat-stream-partial-fail",
-          segment_index: 0,
-          text: "先に読む。",
-          is_last: false,
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "chat-stream-partial-fail", text: "partial then fallback" },
         },
-      },
-      {
-        type: "kiosk.command.speech.end",
-        data: {
-          utterance_id: "chat-stream-partial-fail",
-          chat_request_id: "chat-stream-partial-fail",
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not suppress SAY after CHAT_FAILED even when stream emitted segments",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
+          throw new Error("chat_failed");
         },
-      },
-    ]);
-
-    sent.length = 0;
-    executor.executeEffects([
-      {
-        type: "SAY",
-        text: "partial then fallback",
-        chat_request_id: "chat-stream-partial-fail",
-      },
-    ]);
-    expect(sent).toEqual([
-      {
-        type: "kiosk.command.speak",
-        data: { say_id: "say-1", text: "partial then fallback" },
-      },
-    ]);
-  });
-
-  it("does not suppress SAY after CHAT_FAILED even when stream emitted segments", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => {
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 0);
-        });
-        throw new Error("chat_failed");
-      },
-      chatStream: async function* () {
-        yield { delta_text: "先に読む。" };
-      },
-    });
-
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
-
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-call-failed",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
-
-    expect(queued).toEqual([{ type: "CHAT_FAILED", request_id: "chat-stream-call-failed" }]);
-    expect(sent).toEqual([
-      {
-        type: "kiosk.command.speech.start",
-        data: {
-          utterance_id: "chat-stream-call-failed",
-          chat_request_id: "chat-stream-call-failed",
+        chatStream: async function* () {
+          yield { delta_text: "先に読む。" };
         },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-call-failed",
-          chat_request_id: "chat-stream-call-failed",
-          segment_index: 0,
-          text: "先に読む。",
-          is_last: false,
-        },
-      },
-      {
-        type: "kiosk.command.speech.end",
-        data: {
-          utterance_id: "chat-stream-call-failed",
-          chat_request_id: "chat-stream-call-failed",
-        },
-      },
-    ]);
+      });
 
-    sent.length = 0;
-    executor.executeEffects([
-      {
-        type: "SAY",
-        text: "fallback text",
-        chat_request_id: "chat-stream-call-failed",
-      },
-    ]);
-    expect(sent).toEqual([
-      {
-        type: "kiosk.command.speech.start",
-        data: { utterance_id: "say-1", chat_request_id: "chat-stream-call-failed" },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "say-1",
-          chat_request_id: "chat-stream-call-failed",
-          segment_index: 0,
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-call-failed",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+
+      expect(queued).toEqual([{ type: "CHAT_FAILED", request_id: "chat-stream-call-failed" }]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: {
+            utterance_id: "chat-stream-call-failed",
+            chat_request_id: "chat-stream-call-failed",
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-call-failed",
+            chat_request_id: "chat-stream-call-failed",
+            segment_index: 0,
+            text: "先に読む。",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: {
+            utterance_id: "chat-stream-call-failed",
+            chat_request_id: "chat-stream-call-failed",
+          },
+        },
+      ]);
+
+      sent.length = 0;
+      executor.executeEffects([
+        {
+          type: "SAY",
           text: "fallback text",
-          is_last: true,
+          chat_request_id: "chat-stream-call-failed",
         },
-      },
-      {
-        type: "kiosk.command.speech.end",
-        data: { utterance_id: "say-1", chat_request_id: "chat-stream-call-failed" },
-      },
-      {
-        type: "kiosk.command.speak",
-        data: { say_id: "say-1", text: "fallback text" },
-      },
-    ]);
-  });
-
-  it("ends streaming utterance when chat finishes but stream keeps hanging", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "done",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* (_input, options) {
-        yield { delta_text: "先に読む。" };
-        await new Promise<void>((resolve) => {
-          options?.signal?.addEventListener(
-            "abort",
-            () => {
-              resolve();
-            },
-            { once: true },
-          );
-        });
-      },
-    });
-
-    const queued: OrchestratorEvent[] = [];
-    const sent: Array<{ type: string; data: object }> = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: (type, data) => {
-        sent.push({ type, data });
-      },
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
-
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-hang-after-start",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
-
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-hang-after-start",
-        assistant_text: "done",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
-    expect(sent).toEqual([
-      {
-        type: "kiosk.command.speech.start",
-        data: {
-          utterance_id: "chat-stream-hang-after-start",
-          chat_request_id: "chat-stream-hang-after-start",
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-call-failed" },
         },
-      },
-      {
-        type: "kiosk.command.speech.segment",
-        data: {
-          utterance_id: "chat-stream-hang-after-start",
-          chat_request_id: "chat-stream-hang-after-start",
-          segment_index: 0,
-          text: "先に読む。",
-          is_last: false,
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-call-failed",
+            segment_index: 0,
+            text: "fallback text",
+            is_last: true,
+          },
         },
-      },
-      {
-        type: "kiosk.command.speech.end",
-        data: {
-          utterance_id: "chat-stream-hang-after-start",
-          chat_request_id: "chat-stream-hang-after-start",
+        {
+          type: "kiosk.command.speech.end",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-call-failed" },
         },
-      },
-    ]);
-  });
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "say-1", text: "fallback text" },
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
 
-  it("does not block CHAT_RESULT when stream never completes", async () => {
-    const providers = createStubProviders({
-      chatCall: async () => ({
-        assistant_text: "result-while-stream-pending",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      }),
-      chatStream: async function* () {
-        await new Promise<void>(() => {});
-      },
-    });
+  it(
+    "ends streaming utterance when chat finishes but stream keeps hanging",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "done",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* (_input, options) {
+          yield { delta_text: "先に読む。" };
+          await new Promise<void>((resolve) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => {
+                resolve();
+              },
+              { once: true },
+            );
+          });
+        },
+      });
 
-    const queued: OrchestratorEvent[] = [];
-    const executor = createEffectExecutor({
-      providers,
-      sendKioskCommand: () => {},
-      enqueueEvent: (event) => queued.push(event),
-      onSttRequested: () => {},
-      storeWritePending: () => {},
-    });
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
 
-    const events = executor.executeEffects([
-      {
-        type: "CALL_CHAT",
-        request_id: "chat-stream-hangs",
-        input: { mode: "ROOM", personal_name: null, text: "hi" },
-      },
-    ]);
-    expect(events).toEqual([]);
-    await flushMicrotasks();
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-hang-after-start",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
 
-    expect(queued).toEqual([
-      {
-        type: "CHAT_RESULT",
-        request_id: "chat-stream-hangs",
-        assistant_text: "result-while-stream-pending",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      },
-    ]);
-  });
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-hang-after-start",
+          assistant_text: "done",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: {
+            utterance_id: "chat-stream-hang-after-start",
+            chat_request_id: "chat-stream-hang-after-start",
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-hang-after-start",
+            chat_request_id: "chat-stream-hang-after-start",
+            segment_index: 0,
+            text: "先に読む。",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: {
+            utterance_id: "chat-stream-hang-after-start",
+            chat_request_id: "chat-stream-hang-after-start",
+          },
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not block CHAT_RESULT when stream never completes",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "result-while-stream-pending",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          await new Promise<void>(() => {});
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: () => {},
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-hangs",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-hangs",
+          assistant_text: "result-while-stream-pending",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
 
   it("enqueues CHAT_FAILED when CALL_CHAT provider throws", async () => {
     const providers = createStubProviders({

@@ -141,43 +141,43 @@ export const createEffectExecutor = (deps: {
                   let firstSegmentLength = 0;
                   let firstSegmentEmittedAtMs: number | null = null;
                   let streamBuffer = "";
-                  let streamStarted = false;
-                  let streamEnded = false;
-                  let chatFinalized = false;
-                  let firstSegmentGateResolved = false;
+                  let isStreamStarted = false;
+                  let isStreamEnded = false;
+                  let isChatFinalized = false;
+                  let isFirstSegmentGateResolved = false;
                   let firstSegmentGateResolve: () => void = () => {};
                   const firstSegmentGate = new Promise<void>((resolve) => {
                     firstSegmentGateResolve = resolve;
                   });
                   const resolveFirstSegmentGate = () => {
-                    if (firstSegmentGateResolved) {
+                    if (isFirstSegmentGateResolved) {
                       return;
                     }
-                    firstSegmentGateResolved = true;
+                    isFirstSegmentGateResolved = true;
                     firstSegmentGateResolve();
                   };
                   const utteranceId = effect.request_id;
 
                   const sendStreamStart = () => {
-                    if (streamStarted) {
+                    if (isStreamStarted) {
                       return;
                     }
                     deps.sendKioskCommand("kiosk.command.speech.start", {
                       utterance_id: utteranceId,
                       chat_request_id: effect.request_id,
                     });
-                    streamStarted = true;
+                    isStreamStarted = true;
                   };
 
                   const sendStreamEnd = () => {
-                    if (!streamStarted || streamEnded) {
+                    if (!isStreamStarted || isStreamEnded) {
                       return;
                     }
                     deps.sendKioskCommand("kiosk.command.speech.end", {
                       utterance_id: utteranceId,
                       chat_request_id: effect.request_id,
                     });
-                    streamEnded = true;
+                    isStreamEnded = true;
                   };
 
                   const streamPromise = (async () => {
@@ -185,7 +185,7 @@ export const createEffectExecutor = (deps: {
                       for await (const chunk of streamFn(effect.input, {
                         signal: streamAbortController.signal,
                       })) {
-                        if (chatFinalized && emittedSegmentCount === 0) {
+                        if (isChatFinalized && emittedSegmentCount === 0) {
                           break;
                         }
                         if (chunk.delta_text.length === 0) {
@@ -213,7 +213,7 @@ export const createEffectExecutor = (deps: {
                         }
                       }
 
-                      if (!chatFinalized || emittedSegmentCount > 0) {
+                      if (!isChatFinalized || emittedSegmentCount > 0) {
                         const tailSegments = splitSpeechSegments(streamBuffer);
                         if (tailSegments.length > 0) {
                           for (const [index, segmentText] of tailSegments.entries()) {
@@ -261,7 +261,7 @@ export const createEffectExecutor = (deps: {
                         setTimeout(resolve, 0);
                       }),
                     ]);
-                    chatFinalized = true;
+                    isChatFinalized = true;
                     if (emittedSegmentCount > 0) {
                       streamedChatRequestIds.set(effect.request_id, nowMs());
                     }
@@ -281,7 +281,7 @@ export const createEffectExecutor = (deps: {
                         setTimeout(resolve, 0);
                       }),
                     ]);
-                    chatFinalized = true;
+                    isChatFinalized = true;
                     streamAbortController.abort();
                     deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });
                   }
@@ -357,13 +357,13 @@ export const createEffectExecutor = (deps: {
           break;
         }
         case "SAY": {
-          const alreadyStreamedForChat =
+          const hasStreamedForChat =
             typeof effect.chat_request_id === "string" &&
             streamedChatRequestIds.delete(effect.chat_request_id);
           saySeq += 1;
           const utteranceId = `say-${saySeq}`;
           const chatRequestId = effect.chat_request_id ?? utteranceId;
-          if (!alreadyStreamedForChat) {
+          if (!hasStreamedForChat) {
             const segments = splitSpeechSegments(effect.text);
             let firstSegmentEmittedAtMs: number | null = null;
 
@@ -401,7 +401,7 @@ export const createEffectExecutor = (deps: {
           }
 
           const base = {
-            say_id: utteranceId,
+            say_id: hasStreamedForChat ? chatRequestId : utteranceId,
             text: effect.text,
           };
           deps.sendKioskCommand(

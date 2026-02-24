@@ -496,13 +496,15 @@ const readSseDataEvents = async function* (
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let streamReadError: unknown = null;
+  let streamCancelError: unknown = null;
   try {
     while (true) {
-      const { value, done } = await readWithAbort({
+      const { value, done: isDone } = await readWithAbort({
         signal,
         run: () => reader.read(),
       });
-      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !isDone });
       while (true) {
         const eventBoundary = /\r?\n\r?\n/.exec(buffer);
         if (!eventBoundary || typeof eventBoundary.index !== "number") {
@@ -515,7 +517,7 @@ const readSseDataEvents = async function* (
           yield parsed;
         }
       }
-      if (done) {
+      if (isDone) {
         const trailing = parseDataLines(buffer);
         if (trailing) {
           yield trailing;
@@ -523,15 +525,23 @@ const readSseDataEvents = async function* (
         break;
       }
     }
+  } catch (err) {
+    streamReadError = err;
   } finally {
     try {
       await reader.cancel();
     } catch (err) {
       if (!isAbortLikeError(err) && !(err instanceof TypeError)) {
-        throw err;
+        streamCancelError = err;
       }
     }
     reader.releaseLock();
+  }
+  if (streamReadError !== null) {
+    throw streamReadError;
+  }
+  if (streamCancelError !== null) {
+    throw streamCancelError;
   }
 };
 
@@ -945,7 +955,12 @@ export const createOpenAiCompatibleLlmProvider = (
       .filter((value): value is string => typeof value === "string" && value.length > 0)
       .join("\n\n");
 
-    const body = {
+    const body: {
+      model: string;
+      stream: true;
+      messages: Array<{ role: string; content: string }>;
+      max_tokens?: number;
+    } = {
       model,
       stream: true,
       messages: [
@@ -960,11 +975,14 @@ export const createOpenAiCompatibleLlmProvider = (
         },
       ],
     };
+    if (typeof chatRuntimeConfig.max_output_tokens === "number") {
+      body.max_tokens = chatRuntimeConfig.max_output_tokens;
+    }
 
     const timeoutController = new AbortController();
-    let timedOut = false;
+    let isTimedOut = false;
     const timeoutId = setTimeout(() => {
-      timedOut = true;
+      isTimedOut = true;
       timeoutController.abort();
     }, timeoutChatMs);
     const linkedSignal = options?.signal;
@@ -1006,7 +1024,7 @@ export const createOpenAiCompatibleLlmProvider = (
         }
       }
     } catch (err) {
-      if (timedOut && isAbortLikeError(err)) {
+      if (isTimedOut && isAbortLikeError(err)) {
         throw new Error(`llm chat stream timed out after ${timeoutChatMs}ms`);
       }
       throw err;
