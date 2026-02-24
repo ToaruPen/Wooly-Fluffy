@@ -19,6 +19,8 @@ import { performGestureAudioUnlock } from "./audio-unlock";
 const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
 
 const KIOSK_PTT_EVENT_TIMEOUT_MS = 3_000;
+const SEGMENT_TTS_PREFETCH_LIMIT = 3;
+const SEGMENT_UTTERANCE_ID_HISTORY_LIMIT = 128;
 
 const isInteractiveElement = (el: Element | null): boolean => {
   if (!el) return false;
@@ -81,6 +83,81 @@ const isRecordStopData = (data: unknown): data is { stt_request_id: string } => 
   return typeof record.stt_request_id === "string";
 };
 
+const isSpeechStartData = (
+  data: unknown,
+): data is { utterance_id: string; chat_request_id: string } => {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+  const record = data as Record<string, unknown>;
+  return typeof record.utterance_id === "string" && typeof record.chat_request_id === "string";
+};
+
+const isSpeechSegmentData = (
+  data: unknown,
+): data is {
+  utterance_id: string;
+  chat_request_id: string;
+  segment_index: number;
+  text: string;
+  is_last: boolean;
+} => {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+  const record = data as Record<string, unknown>;
+  return (
+    typeof record.utterance_id === "string" &&
+    typeof record.chat_request_id === "string" &&
+    Number.isInteger(record.segment_index) &&
+    Number(record.segment_index) >= 0 &&
+    typeof record.text === "string" &&
+    typeof record.is_last === "boolean"
+  );
+};
+
+type SegmentQueueItem =
+  | { status: "pending"; text: string }
+  | { status: "fetching"; text: string }
+  | { status: "ready"; text: string; wav: ArrayBuffer }
+  | { status: "failed"; text: string; error: string };
+
+type SegmentQueueState = {
+  generation: number;
+  utteranceId: string | null;
+  items: Map<number, SegmentQueueItem>;
+  activeFetches: number;
+  nextPlayIndex: number;
+  isPlaying: boolean;
+  firstSegmentReceivedAtMs: number | null;
+  firstPlaybackStartedAtMs: number | null;
+};
+
+type PlayingSegmentState = {
+  generation: number;
+  index: number;
+  text: string;
+  wav: ArrayBuffer;
+};
+
+type DevSpeechProbe = {
+  utterance_id: string;
+  first_segment_received_at_ms: number;
+  first_playback_started_at_ms: number;
+  ttfa_ms: number;
+};
+
+const createSegmentQueueState = (): SegmentQueueState => ({
+  generation: 0,
+  utteranceId: null,
+  items: new Map<number, SegmentQueueItem>(),
+  activeFetches: 0,
+  nextPlayIndex: 0,
+  isPlaying: false,
+  firstSegmentReceivedAtMs: null,
+  firstPlaybackStartedAtMs: null,
+});
+
 export const KioskPage = () => {
   const [snapshot, setSnapshot] = useState<KioskSnapshot | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -127,6 +204,44 @@ export const KioskPage = () => {
   const pendingSayIdRef = useRef<string | null>(null);
   const lastSpokenTextRef = useRef<string | null>(null);
   const lastSpokenSayIdRef = useRef<string | null>(null);
+  const currentPlaybackSourceRef = useRef<"speak" | "segment" | null>(null);
+  const playingSegmentRef = useRef<PlayingSegmentState | null>(null);
+  const segmentQueueRef = useRef<SegmentQueueState>(createSegmentQueueState());
+  const segmentUtteranceIdsRef = useRef<Set<string>>(new Set());
+  const pendingSegmentEndUtteranceIdRef = useRef<string | null>(null);
+
+  const rememberSegmentUtteranceId = useCallback((utteranceId: string) => {
+    const known = segmentUtteranceIdsRef.current;
+    if (known.has(utteranceId)) {
+      return;
+    }
+    known.add(utteranceId);
+    while (known.size > SEGMENT_UTTERANCE_ID_HISTORY_LIMIT) {
+      const first = known.values().next();
+      /* v8 ignore next 3 -- Set.size > limit guarantees non-empty iterator */
+      if (first.done) {
+        break;
+      }
+      known.delete(first.value);
+    }
+  }, []);
+
+  const finalizeEndedSegmentUtteranceIfIdle = useCallback(() => {
+    const endedUtteranceId = pendingSegmentEndUtteranceIdRef.current;
+    if (!endedUtteranceId) {
+      return;
+    }
+    const queue = segmentQueueRef.current;
+    /* v8 ignore next 3 -- speech.end handler pre-filters mismatched utteranceId */
+    if (queue.utteranceId !== endedUtteranceId) {
+      return;
+    }
+    if (queue.items.size > 0 || queue.activeFetches > 0 || queue.isPlaying) {
+      return;
+    }
+    queue.utteranceId = null;
+    pendingSegmentEndUtteranceIdRef.current = null;
+  }, []);
 
   const sendKioskEvent = useCallback(async (type: "KIOSK_PTT_DOWN" | "KIOSK_PTT_UP") => {
     try {
@@ -166,7 +281,7 @@ export const KioskPage = () => {
     const sendPromise = sendKioskEvent(type);
     kioskPttInFlightPromiseRef.current = sendPromise;
     void sendPromise
-      .then((isOk) => {
+      .then((isOk: boolean) => {
         if (!isMountedRef.current) {
           return;
         }
@@ -238,47 +353,262 @@ export const KioskPage = () => {
 
   const stopTtsAudio = useCallback(() => {
     ttsGenerationRef.current += 1;
+    ttsPlayIdRef.current += 1;
+    setTtsPlayId(ttsPlayIdRef.current);
     setTtsWav(null);
     setMouthOpen(0);
+    currentPlaybackSourceRef.current = null;
+    playingSegmentRef.current = null;
+    segmentQueueRef.current.isPlaying = false;
   }, []);
+
+  const pushDevSpeechProbe = useCallback((probe: DevSpeechProbe) => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    const w = window as Window & {
+      __wfSpeechTtfaProbe?: { latest?: DevSpeechProbe; history: DevSpeechProbe[] };
+    };
+    if (!w.__wfSpeechTtfaProbe) {
+      w.__wfSpeechTtfaProbe = { history: [] };
+    }
+    w.__wfSpeechTtfaProbe.latest = probe;
+    w.__wfSpeechTtfaProbe.history.push(probe);
+  }, []);
+
+  const resetSegmentQueue = useCallback(
+    (utteranceId: string | null) => {
+      stopTtsAudio();
+      const queue = segmentQueueRef.current;
+      queue.generation += 1;
+      queue.utteranceId = utteranceId;
+      queue.items.clear();
+      queue.activeFetches = 0;
+      queue.nextPlayIndex = 0;
+      queue.isPlaying = false;
+      queue.firstSegmentReceivedAtMs = null;
+      queue.firstPlaybackStartedAtMs = null;
+      pendingSegmentEndUtteranceIdRef.current = null;
+    },
+    [stopTtsAudio],
+  );
+
+  const fetchTtsWav = useCallback(async (text: string): Promise<ArrayBuffer> => {
+    const res = await postJson("/api/v1/kiosk/tts", { text });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return await res.arrayBuffer();
+  }, []);
+
+  const maybePlayNextSegment = useCallback(() => {
+    const queue = segmentQueueRef.current;
+    if (queue.isPlaying) {
+      return;
+    }
+    if (!isAudioUnlockedRef.current) {
+      if (queue.items.size > 0) {
+        setIsAudioUnlockNeeded(true);
+      }
+      return;
+    }
+
+    while (true) {
+      const item = queue.items.get(queue.nextPlayIndex);
+      if (!item) {
+        finalizeEndedSegmentUtteranceIfIdle();
+        return;
+      }
+      if (item.status === "failed") {
+        setAudioError(item.error);
+        queue.items.delete(queue.nextPlayIndex);
+        queue.nextPlayIndex += 1;
+        continue;
+      }
+      if (item.status !== "ready") {
+        return;
+      }
+
+      queue.items.delete(queue.nextPlayIndex);
+      const playingIndex = queue.nextPlayIndex;
+      queue.nextPlayIndex += 1;
+      queue.isPlaying = true;
+      currentPlaybackSourceRef.current = "segment";
+      playingSegmentRef.current = {
+        generation: queue.generation,
+        index: playingIndex,
+        text: item.text,
+        wav: item.wav,
+      };
+      ttsPlayIdRef.current += 1;
+      setTtsPlayId(ttsPlayIdRef.current);
+      setAudioError(null);
+      setTtsWav(item.wav);
+
+      if (queue.firstPlaybackStartedAtMs === null) {
+        queue.firstPlaybackStartedAtMs = Date.now();
+        if (queue.utteranceId && queue.firstSegmentReceivedAtMs !== null) {
+          pushDevSpeechProbe({
+            utterance_id: queue.utteranceId,
+            first_segment_received_at_ms: queue.firstSegmentReceivedAtMs,
+            first_playback_started_at_ms: queue.firstPlaybackStartedAtMs,
+            ttfa_ms: queue.firstPlaybackStartedAtMs - queue.firstSegmentReceivedAtMs,
+          });
+        }
+      }
+      return;
+    }
+  }, [finalizeEndedSegmentUtteranceIfIdle, pushDevSpeechProbe]);
+
+  const pumpSegmentFetches = useCallback(() => {
+    const queue = segmentQueueRef.current;
+    while (queue.activeFetches < SEGMENT_TTS_PREFETCH_LIMIT) {
+      let nextEntry: [number, SegmentQueueItem] | null = null;
+      for (const entry of queue.items.entries()) {
+        const [index, item] = entry;
+        if (item.status !== "pending") {
+          continue;
+        }
+        /* v8 ignore next -- Map iteration order makes index < nextEntry[0] unreachable */
+        if (!nextEntry || index < nextEntry[0]) {
+          nextEntry = [index, item];
+        }
+      }
+      if (!nextEntry) {
+        break;
+      }
+
+      const [segmentIndex, item] = nextEntry;
+      queue.items.set(segmentIndex, { status: "fetching", text: item.text });
+      queue.activeFetches += 1;
+      const generation = queue.generation;
+
+      void fetchTtsWav(item.text)
+        .then((wav: ArrayBuffer) => {
+          const latest = segmentQueueRef.current;
+          // Stale-generation guard: queue was reset while the fetch was in flight.
+          /* v8 ignore next 3 */
+          if (latest.generation !== generation) {
+            return;
+          }
+          const current = latest.items.get(segmentIndex);
+          // Stale-item guard: item was consumed or replaced during the fetch.
+          /* v8 ignore next 3 */
+          if (!current || current.status !== "fetching") {
+            return;
+          }
+          latest.items.set(segmentIndex, { status: "ready", text: item.text, wav });
+          setAudioError(null);
+        })
+        .catch((error: unknown) => {
+          const latest = segmentQueueRef.current;
+          // Stale-generation guard: queue was reset while the fetch was in flight.
+          /* v8 ignore next 3 */
+          if (latest.generation !== generation) {
+            return;
+          }
+          // Stale-item guard: item was consumed or replaced during the fetch.
+          /* v8 ignore next 4 */
+          const current = latest.items.get(segmentIndex);
+          if (!current || current.status !== "fetching") {
+            return;
+          }
+          /* v8 ignore next -- defensive non-Error fallback */
+          const message = error instanceof Error ? error.message : "Network error";
+          latest.items.set(segmentIndex, { status: "failed", text: item.text, error: message });
+        })
+        .finally(() => {
+          const latest = segmentQueueRef.current;
+          if (latest.generation === generation) {
+            latest.activeFetches = Math.max(0, latest.activeFetches - 1);
+          }
+          pumpSegmentFetches();
+          maybePlayNextSegment();
+          finalizeEndedSegmentUtteranceIfIdle();
+        });
+    }
+  }, [fetchTtsWav, finalizeEndedSegmentUtteranceIfIdle, maybePlayNextSegment]);
+
+  const enqueueSpeechSegment = useCallback(
+    (data: { utterance_id: string; segment_index: number; text: string }) => {
+      const queue = segmentQueueRef.current;
+      if (queue.utteranceId === null || queue.utteranceId !== data.utterance_id) {
+        return false;
+      }
+
+      const latest = segmentQueueRef.current;
+      if (data.segment_index < latest.nextPlayIndex) {
+        return false;
+      }
+      if (latest.items.has(data.segment_index)) {
+        return false;
+      }
+      if (latest.firstSegmentReceivedAtMs === null) {
+        latest.firstSegmentReceivedAtMs = Date.now();
+      }
+      latest.items.set(data.segment_index, {
+        status: "pending",
+        text: data.text,
+      });
+      setAudioError(null);
+      pumpSegmentFetches();
+      maybePlayNextSegment();
+      return true;
+    },
+    [maybePlayNextSegment, pumpSegmentFetches],
+  );
 
   const playTts = useCallback(
     async (text: string) => {
       stopTtsAudio();
       const generation = ttsGenerationRef.current;
       try {
-        const res = await postJson("/api/v1/kiosk/tts", { text });
-        if (!res.ok) {
-          if (ttsGenerationRef.current !== generation) {
-            return;
-          }
-          setAudioError(`HTTP ${res.status}`);
-          return;
-        }
+        const wav = await fetchTtsWav(text);
 
         if (ttsGenerationRef.current !== generation) {
           return;
         }
 
-        const wav = await res.arrayBuffer();
-
-        if (ttsGenerationRef.current !== generation) {
-          return;
-        }
-
-        ttsPlayIdRef.current = generation;
-        setTtsPlayId(generation);
+        currentPlaybackSourceRef.current = "speak";
+        ttsPlayIdRef.current += 1;
+        setTtsPlayId(ttsPlayIdRef.current);
         setTtsWav(wav);
-      } catch {
+      } catch (error: unknown) {
         if (ttsGenerationRef.current !== generation) {
           return;
         }
         stopTtsAudio();
-        setAudioError("Network error");
+        /* v8 ignore next -- defensive non-Error fallback */
+        setAudioError(error instanceof Error ? error.message : "Network error");
       }
     },
-    [stopTtsAudio],
+    [fetchTtsWav, stopTtsAudio],
   );
+
+  const maybePlayPendingSpeak = useCallback(() => {
+    // Defensive guard: audio can be locked between segment playback start and end
+    // due to browser race conditions. Unreachable in jsdom.
+    /* v8 ignore next 3 */
+    if (!isAudioUnlockedRef.current) {
+      return;
+    }
+    const queue = segmentQueueRef.current;
+    if (queue.isPlaying || queue.items.size > 0) {
+      return;
+    }
+    const pending = pendingTtsTextRef.current;
+    if (!pending) {
+      return;
+    }
+
+    const pendingSayId = pendingSayIdRef.current;
+    if (pendingSayId) {
+      lastPlayedSayIdRef.current = pendingSayId;
+    }
+    pendingTtsTextRef.current = null;
+    pendingSayIdRef.current = null;
+    void playTts(pending);
+  }, [playTts]);
 
   const unlockAudio = useCallback(() => {
     if (isAudioUnlockedRef.current) {
@@ -367,19 +697,9 @@ export const KioskPage = () => {
     if (!isAudioUnlocked) {
       return;
     }
-    const pending = pendingTtsTextRef.current;
-    if (!pending) {
-      return;
-    }
-
-    const pendingSayId = pendingSayIdRef.current;
-    if (pendingSayId) {
-      lastPlayedSayIdRef.current = pendingSayId;
-    }
-    pendingTtsTextRef.current = null;
-    pendingSayIdRef.current = null;
-    void playTts(pending);
-  }, [isAudioUnlocked, playTts]);
+    maybePlayNextSegment();
+    maybePlayPendingSpeak();
+  }, [isAudioUnlocked, maybePlayNextSegment, maybePlayPendingSpeak]);
 
   useEffect(() => {
     const ignoreStopError = (_err: unknown) => undefined;
@@ -456,7 +776,7 @@ export const KioskPage = () => {
             pttStartRef.current = null;
             const sessionPromise = session ? Promise.resolve(session) : startPromise;
             if (sessionPromise) {
-              void sessionPromise.then((s) => s.stop()).catch(ignoreStopError);
+              void sessionPromise.then((s: PttSession) => s.stop()).catch(ignoreStopError);
             }
             return;
           }
@@ -474,7 +794,7 @@ export const KioskPage = () => {
 
           const sttRequestId = data.stt_request_id;
           void sessionPromise
-            .then((s) => s.stop())
+            .then((s: PttSession) => s.stop())
             .then(async (blob: Blob) => {
               const file = await convertRecordingBlobToWavFile({
                 blob,
@@ -502,6 +822,19 @@ export const KioskPage = () => {
             return;
           }
           const sayId = data.say_id;
+          if (segmentUtteranceIdsRef.current.has(sayId)) {
+            return;
+          }
+          if (lastPlayedSayIdRef.current === sayId) {
+            return;
+          }
+          if (
+            segmentQueueRef.current.utteranceId !== null ||
+            segmentQueueRef.current.items.size > 0 ||
+            segmentQueueRef.current.isPlaying
+          ) {
+            return;
+          }
           const text = data.text;
           const expression = parseExpressionLabel((data as Record<string, unknown>).expression);
           lastSpokenSayIdRef.current = sayId;
@@ -530,12 +863,53 @@ export const KioskPage = () => {
             return;
           }
 
-          if (lastPlayedSayIdRef.current === sayId) {
-            return;
-          }
           lastPlayedSayIdRef.current = sayId;
 
           void playTts(text);
+          return;
+        }
+
+        if (message.type === "kiosk.command.speech.start") {
+          const data = message.data;
+          if (!isSpeechStartData(data)) {
+            return;
+          }
+          pendingTtsTextRef.current = null;
+          pendingSayIdRef.current = null;
+          if (segmentQueueRef.current.utteranceId !== data.utterance_id) {
+            resetSegmentQueue(data.utterance_id);
+          }
+          rememberSegmentUtteranceId(data.utterance_id);
+          return;
+        }
+
+        if (message.type === "kiosk.command.speech.segment") {
+          const data = message.data;
+          if (!isSpeechSegmentData(data)) {
+            return;
+          }
+          if (!enqueueSpeechSegment(data)) {
+            return;
+          }
+          rememberSegmentUtteranceId(data.utterance_id);
+          setSpeech({
+            sayId: data.utterance_id,
+            text: data.text,
+            expression: "neutral",
+          });
+          return;
+        }
+
+        if (message.type === "kiosk.command.speech.end") {
+          const data = message.data;
+          if (!isSpeechStartData(data)) {
+            return;
+          }
+          if (segmentQueueRef.current.utteranceId !== data.utterance_id) {
+            return;
+          }
+          pendingSegmentEndUtteranceIdRef.current = data.utterance_id;
+          finalizeEndedSegmentUtteranceIfIdle();
           return;
         }
 
@@ -561,7 +935,7 @@ export const KioskPage = () => {
 
         if (message.type === "kiosk.command.stop_output") {
           setSpeech(null);
-          stopTtsAudio();
+          resetSegmentQueue(null);
           setAudioError(null);
           pendingTtsTextRef.current = null;
           pendingSayIdRef.current = null;
@@ -594,6 +968,7 @@ export const KioskPage = () => {
       },
     });
 
+    const utteranceIds = segmentUtteranceIdsRef.current;
     return () => {
       if (import.meta.env.DEV) {
         const w = window as Window & {
@@ -607,12 +982,20 @@ export const KioskPage = () => {
       pttStartRef.current = null;
       const sessionPromise = session ? Promise.resolve(session) : startPromise;
       if (sessionPromise) {
-        void sessionPromise.then((s) => s.stop()).catch(ignoreStopError);
+        void sessionPromise.then((s: PttSession) => s.stop()).catch(ignoreStopError);
       }
-      stopTtsAudio();
+      resetSegmentQueue(null);
+      utteranceIds.clear();
       client.close();
     };
-  }, [flushKioskPtt, playTts, stopTtsAudio]);
+  }, [
+    enqueueSpeechSegment,
+    finalizeEndedSegmentUtteranceIfIdle,
+    flushKioskPtt,
+    playTts,
+    rememberSegmentUtteranceId,
+    resetSegmentQueue,
+  ]);
 
   const phase = snapshot?.state.phase ?? null;
   const isConsentVisible = snapshot?.state.consent_ui_visible ?? false;
@@ -857,19 +1240,45 @@ export const KioskPage = () => {
           if (ttsPlayIdRef.current !== playId) {
             return;
           }
+          if (currentPlaybackSourceRef.current === "segment") {
+            segmentQueueRef.current.isPlaying = false;
+            playingSegmentRef.current = null;
+          }
           setMouthOpen(0);
           setTtsWav(null);
+          if (currentPlaybackSourceRef.current === "segment") {
+            maybePlayNextSegment();
+            finalizeEndedSegmentUtteranceIfIdle();
+            maybePlayPendingSpeak();
+          }
         }}
         onError={(playId, message) => {
           if (ttsPlayIdRef.current !== playId) {
             return;
           }
+          if (currentPlaybackSourceRef.current === "segment") {
+            segmentQueueRef.current.isPlaying = false;
+          }
           if (message === AUDIO_ERROR_PLAY_BLOCKED) {
-            const pending = lastSpokenTextRef.current;
-            const pendingSayId = lastSpokenSayIdRef.current;
-            if (pending) {
-              pendingTtsTextRef.current = pending;
-              pendingSayIdRef.current = pendingSayId;
+            if (currentPlaybackSourceRef.current === "segment") {
+              const playing = playingSegmentRef.current;
+              const queue = segmentQueueRef.current;
+              if (playing && playing.generation === queue.generation) {
+                queue.nextPlayIndex = Math.min(queue.nextPlayIndex, playing.index);
+                queue.items.set(playing.index, {
+                  status: "ready",
+                  text: playing.text,
+                  wav: playing.wav,
+                });
+              }
+              playingSegmentRef.current = null;
+            } else {
+              const pending = lastSpokenTextRef.current;
+              const pendingSayId = lastSpokenSayIdRef.current;
+              if (pending) {
+                pendingTtsTextRef.current = pending;
+                pendingSayIdRef.current = pendingSayId;
+              }
             }
             setMouthOpen(0);
             setTtsWav(null);
@@ -879,9 +1288,15 @@ export const KioskPage = () => {
             return;
           }
 
+          playingSegmentRef.current = null;
           setMouthOpen(0);
           setTtsWav(null);
           setAudioError(message);
+          if (currentPlaybackSourceRef.current === "segment") {
+            maybePlayNextSegment();
+            finalizeEndedSegmentUtteranceIfIdle();
+            maybePlayPendingSpeak();
+          }
         }}
       />
     </div>

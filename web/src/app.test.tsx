@@ -18,6 +18,11 @@ const resetDom = () => {
 
 afterEach(() => {
   vi.doUnmock("./sse-client");
+  vi.doUnmock("./components/audio-player");
+  vi.doUnmock("./components/vrm-avatar");
+  vi.doUnmock("./kiosk-ptt");
+  vi.doUnmock("./kiosk-audio");
+  vi.doUnmock("./kiosk-tool-calls");
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   vi.resetModules();
@@ -1694,6 +1699,1714 @@ describe("app", () => {
         appRoot.unmount();
       });
     });
+
+    it(
+      "plays speech.segment in FIFO order and ignores duplicate speak for same utterance",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn((blob: Blob) => {
+          return `blob:size-${blob.size}`;
+        });
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const deferredTts = new Map<string, (res: Response) => void>();
+        let inFlight = 0;
+        let maxInFlight = 0;
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            const payload = JSON.parse(String(init?.body ?? "{}")) as { text?: unknown };
+            const text = typeof payload.text === "string" ? payload.text : "";
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            return await new Promise<Response>((resolve) => {
+              deferredTts.set(text, (response) => {
+                inFlight -= 1;
+                resolve(response);
+              });
+            });
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-42", chat_request_id: "chat-42" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-42",
+                chat_request_id: "chat-42",
+                segment_index: 1,
+                text: "two",
+                is_last: false,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 3,
+              data: {
+                utterance_id: "say-42",
+                chat_request_id: "chat-42",
+                segment_index: 0,
+                text: "one",
+                is_last: false,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 4,
+              data: {
+                utterance_id: "say-42",
+                chat_request_id: "chat-42",
+                segment_index: 2,
+                text: "three",
+                is_last: false,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 5,
+              data: {
+                utterance_id: "say-42",
+                chat_request_id: "chat-42",
+                segment_index: 3,
+                text: "four",
+                is_last: true,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 6,
+              data: { say_id: "say-42", text: "full speak text" },
+            });
+            await Promise.resolve();
+          });
+
+          expect(maxInFlight).toBeLessThanOrEqual(3);
+          expect(fetchMock.mock.calls.length).toBe(3);
+          expect(
+            fetchMock.mock.calls.some(([, init]) => String(init?.body).includes("full speak text")),
+          ).toBe(false);
+
+          await act(async () => {
+            deferredTts.get("two")?.(wavResponse(200, [1, 2]));
+            await Promise.resolve();
+          });
+          expect(FakeAudio.instances.length).toBe(0);
+
+          await act(async () => {
+            deferredTts.get("one")?.(wavResponse(200, [1]));
+            await Promise.resolve();
+          });
+          expect(FakeAudio.instances.map((a) => a.src)).toEqual(["blob:size-1"]);
+
+          await act(async () => {
+            deferredTts.get("three")?.(wavResponse(200, [1, 2, 3]));
+            deferredTts.get("four")?.(wavResponse(200, [1, 2, 3, 4]));
+            await Promise.resolve();
+          });
+          expect(maxInFlight).toBeLessThanOrEqual(3);
+          expect(fetchMock.mock.calls.length).toBe(4);
+
+          await act(async () => {
+            FakeAudio.instances[0]?.onended?.();
+            await Promise.resolve();
+          });
+          expect(FakeAudio.instances.map((a) => a.src)).toEqual(["blob:size-1", "blob:size-2"]);
+
+          await act(async () => {
+            FakeAudio.instances[1]?.onended?.();
+            await Promise.resolve();
+          });
+          expect(FakeAudio.instances.map((a) => a.src)).toEqual([
+            "blob:size-1",
+            "blob:size-2",
+            "blob:size-3",
+          ]);
+
+          await act(async () => {
+            FakeAudio.instances[2]?.onended?.();
+            await Promise.resolve();
+          });
+          expect(FakeAudio.instances.map((a) => a.src)).toEqual([
+            "blob:size-1",
+            "blob:size-2",
+            "blob:size-3",
+            "blob:size-4",
+          ]);
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "starts queued speech.segment playback after audio unlock without pending speak",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:seg");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          onended: (() => void) | null = null;
+          constructor(_src: string) {
+            void _src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        let resolveTts: ((res: Response) => void) | null = null;
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return await new Promise<Response>((resolve) => {
+                resolveTts = resolve;
+              });
+            }
+            return jsonResponse(404, { error: { code: "not_found", message: url } });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-unlock", chat_request_id: "chat-unlock" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-unlock",
+                chat_request_id: "chat-unlock",
+                segment_index: 0,
+                text: "hello",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            resolveTts?.(wavResponse(200, [1, 2, 3]));
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(0);
+
+          await unlockKioskAudio();
+          await act(async () => {
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(1);
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "clears pending speak when new speech.start arrives",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn((blob: Blob) => {
+          return `blob:size-${blob.size}`;
+        });
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          src: string;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const deferredTts = new Map<string, (res: Response) => void>();
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              const payload = JSON.parse(String(init?.body ?? "{}")) as { text?: unknown };
+              const text = typeof payload.text === "string" ? payload.text : "";
+              return await new Promise<Response>((resolve) => {
+                deferredTts.set(text, resolve);
+              });
+            }
+            return jsonResponse(404, { error: { code: "not_found", message: url } });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 1,
+              data: { say_id: "say-old", text: "old speak" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 2,
+              data: { utterance_id: "say-new", chat_request_id: "chat-new" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 3,
+              data: {
+                utterance_id: "say-new",
+                chat_request_id: "chat-new",
+                segment_index: 0,
+                text: "new segment",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            deferredTts.get("new segment")?.(wavResponse(200, [7]));
+            await Promise.resolve();
+          });
+
+          await unlockKioskAudio();
+          await act(async () => {
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.map((a) => a.src)).toEqual(["blob:size-1"]);
+          expect(deferredTts.has("old speak")).toBe(false);
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores kiosk.command.speak after speech.end for same utterance id",
+      async () => {
+        vi.resetModules();
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            return wavResponse(200, [1, 2, 3]);
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/kiosk");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const handlers = connectSseMock.mock.calls[0]![1];
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "ROOM",
+              personal_name: null,
+              phase: "idle",
+              consent_ui_visible: false,
+            },
+          });
+        });
+        await unlockKioskAudio();
+
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.start",
+            seq: 1,
+            data: { utterance_id: "say-closed", chat_request_id: "chat-closed" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.end",
+            seq: 2,
+            data: { utterance_id: "say-closed", chat_request_id: "chat-closed" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 3,
+            data: { say_id: "say-closed", text: "fallback full text" },
+          });
+          await Promise.resolve();
+        });
+
+        expect(fetchMock.mock.calls.length).toBe(0);
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "accepts kiosk.command.speak after speech.end for different utterance id",
+      async () => {
+        vi.resetModules();
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            return wavResponse(200, [1, 2, 3]);
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/kiosk");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const handlers = connectSseMock.mock.calls[0]![1];
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "ROOM",
+              personal_name: null,
+              phase: "idle",
+              consent_ui_visible: false,
+            },
+          });
+        });
+        await unlockKioskAudio();
+
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.start",
+            seq: 1,
+            data: { utterance_id: "say-closed", chat_request_id: "chat-closed" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.end",
+            seq: 2,
+            data: { utterance_id: "say-closed", chat_request_id: "chat-closed" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 3,
+            data: { say_id: "say-next", text: "next full text" },
+          });
+          await Promise.resolve();
+        });
+
+        expect(fetchMock.mock.calls.length).toBe(1);
+        expect(String(fetchMock.mock.calls[0]?.[1]?.body ?? "")).toContain("next full text");
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "accepts kiosk.command.speak after delayed speech.end completion",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn((blob: Blob) => {
+          return `blob:size-${blob.size}`;
+        });
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const deferredTts = new Map<string, (res: Response) => void>();
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            const payload = JSON.parse(String(init?.body ?? "{}")) as { text?: unknown };
+            const text = typeof payload.text === "string" ? payload.text : "";
+            return await new Promise<Response>((resolve) => {
+              deferredTts.set(text, resolve);
+            });
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-closed", chat_request_id: "chat-closed" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-closed",
+                chat_request_id: "chat-closed",
+                segment_index: 0,
+                text: "segment text",
+                is_last: true,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 3,
+              data: { utterance_id: "say-closed", chat_request_id: "chat-closed" },
+            });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            deferredTts.get("segment text")?.(wavResponse(200, [1]));
+            await Promise.resolve();
+          });
+
+          act(() => {
+            FakeAudio.instances[0]?.onended?.();
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 4,
+              data: { say_id: "say-next", text: "next full text" },
+            });
+            await Promise.resolve();
+          });
+
+          expect(fetchMock.mock.calls.length).toBe(2);
+          expect(String(fetchMock.mock.calls[1]?.[1]?.body ?? "")).toContain("next full text");
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores stale speech.end for different utterance and allows later speak",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn((blob: Blob) => {
+          return `blob:size-${blob.size}`;
+        });
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          onended: (() => void) | null = null;
+          constructor(_src: string) {
+            void _src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const deferredTts = new Map<string, (res: Response) => void>();
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            const payload = JSON.parse(String(init?.body ?? "{}")) as { text?: unknown };
+            const text = typeof payload.text === "string" ? payload.text : "";
+            return await new Promise<Response>((resolve) => {
+              deferredTts.set(text, resolve);
+            });
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-active", chat_request_id: "chat-active" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-active",
+                chat_request_id: "chat-active",
+                segment_index: 0,
+                text: "active segment",
+                is_last: true,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 3,
+              data: { utterance_id: "say-active", chat_request_id: "chat-active" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 4,
+              data: { utterance_id: "say-stale", chat_request_id: "chat-stale" },
+            });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            deferredTts.get("active segment")?.(wavResponse(200, [1]));
+            await Promise.resolve();
+          });
+
+          act(() => {
+            FakeAudio.instances[0]?.onended?.();
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 5,
+              data: { say_id: "say-next", text: "next full text" },
+            });
+            await Promise.resolve();
+          });
+
+          expect(fetchMock.mock.calls.length).toBe(2);
+          expect(String(fetchMock.mock.calls[1]?.[1]?.body ?? "")).toContain("next full text");
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores speech.segment for non-active utterance",
+      async () => {
+        vi.resetModules();
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            return wavResponse(200, [1, 2, 3]);
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/kiosk");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const handlers = connectSseMock.mock.calls[0]![1];
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "ROOM",
+              personal_name: null,
+              phase: "idle",
+              consent_ui_visible: false,
+            },
+          });
+        });
+        await unlockKioskAudio();
+
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.start",
+            seq: 1,
+            data: { utterance_id: "say-active", chat_request_id: "chat-active" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.segment",
+            seq: 2,
+            data: {
+              utterance_id: "say-active",
+              chat_request_id: "chat-active",
+              segment_index: 0,
+              text: "active segment",
+              is_last: false,
+            },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.segment",
+            seq: 3,
+            data: {
+              utterance_id: "say-stale",
+              chat_request_id: "chat-stale",
+              segment_index: 0,
+              text: "stale segment",
+              is_last: false,
+            },
+          });
+          await Promise.resolve();
+        });
+
+        const bodies = fetchMock.mock.calls.map(([, init]) => String(init?.body ?? ""));
+        expect(bodies.some((body) => body.includes("active segment"))).toBe(true);
+        expect(bodies.some((body) => body.includes("stale segment"))).toBe(false);
+        expect(document.body.textContent?.includes("stale segment")).toBe(false);
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores stale speak for canceled utterance after stop_output",
+      async () => {
+        vi.resetModules();
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            return wavResponse(200, [1, 2, 3]);
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        window.history.pushState({}, "", "/kiosk");
+        document.body.innerHTML = '<div id="root"></div>';
+
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
+        });
+
+        const handlers = connectSseMock.mock.calls[0]![1];
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "ROOM",
+              personal_name: null,
+              phase: "idle",
+              consent_ui_visible: false,
+            },
+          });
+        });
+        await unlockKioskAudio();
+
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "kiosk.command.speech.start",
+            seq: 1,
+            data: { utterance_id: "say-canceled", chat_request_id: "chat-canceled" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.stop_output",
+            seq: 2,
+            data: {},
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 3,
+            data: { say_id: "say-canceled", text: "stale canceled text" },
+          });
+          await Promise.resolve();
+        });
+
+        expect(fetchMock.mock.calls.length).toBe(0);
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores duplicate speech.start for same utterance and keeps queued segments",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:seg");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          constructor(_src: string) {
+            void _src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        let resolveTts: ((res: Response) => void) | null = null;
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            return await new Promise<Response>((resolve) => {
+              resolveTts = resolve;
+            });
+          }
+          return jsonResponse(404, { error: { code: "not_found", message: url } });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-dupe", chat_request_id: "chat-dupe" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-dupe",
+                chat_request_id: "chat-dupe",
+                segment_index: 0,
+                text: "hello",
+                is_last: true,
+              },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 3,
+              data: { utterance_id: "say-dupe", chat_request_id: "chat-dupe" },
+            });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            resolveTts?.(wavResponse(200, [1, 2, 3]));
+            await Promise.resolve();
+          });
+
+          expect(fetchMock.mock.calls.length).toBe(1);
+          expect(FakeAudio.instances.length).toBe(1);
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "retries blocked speech.segment playback after audio unlock",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:seg");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          play: () => Promise<void>;
+          pause = vi.fn(() => undefined);
+          constructor(_src: string) {
+            void _src;
+            const order = FakeAudio.instances.length;
+            this.play = vi.fn(async () => {
+              if (order === 0) {
+                const err = new Error("blocked");
+                (err as Error & { name: string }).name = "NotAllowedError";
+                throw err;
+              }
+            });
+            FakeAudio.instances.push(this);
+          }
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, { error: { code: "not_found", message: url } });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-blocked", chat_request_id: "chat-blocked" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-blocked",
+                chat_request_id: "chat-blocked",
+                segment_index: 0,
+                text: "blocked segment",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(1);
+
+          await unlockKioskAudio();
+          await act(async () => {
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(2);
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores duplicate speak without stopping current segment playback",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:seg");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          onended: (() => void) | null = null;
+          pause = vi.fn(() => undefined);
+          play = vi.fn(async () => undefined);
+          constructor(_src: string) {
+            void _src;
+            FakeAudio.instances.push(this);
+          }
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, { error: { code: "not_found", message: url } });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 1,
+              data: { say_id: "say-old", text: "old" },
+            });
+            await Promise.resolve();
+          });
+
+          act(() => {
+            FakeAudio.instances[0]?.onended?.();
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 2,
+              data: { utterance_id: "say-new", chat_request_id: "chat-new" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 3,
+              data: {
+                utterance_id: "say-new",
+                chat_request_id: "chat-new",
+                segment_index: 0,
+                text: "segment",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(2);
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 4,
+              data: { say_id: "say-old", text: "old" },
+            });
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(2);
+          expect(FakeAudio.instances[1]?.pause).not.toHaveBeenCalled();
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "ignores stale speak from older utterance while segmented playback is active",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:seg");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          onended: (() => void) | null = null;
+          pause = vi.fn(() => undefined);
+          play = vi.fn(async () => undefined);
+          constructor(_src: string) {
+            void _src;
+            FakeAudio.instances.push(this);
+          }
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, { error: { code: "not_found", message: url } });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 1,
+              data: { say_id: "say-old-1", text: "old one" },
+            });
+            await Promise.resolve();
+          });
+          act(() => {
+            FakeAudio.instances[0]?.onended?.();
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 2,
+              data: { say_id: "say-old-2", text: "old two" },
+            });
+            await Promise.resolve();
+          });
+          act(() => {
+            FakeAudio.instances[1]?.onended?.();
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 3,
+              data: { utterance_id: "say-new", chat_request_id: "chat-new" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 4,
+              data: {
+                utterance_id: "say-new",
+                chat_request_id: "chat-new",
+                segment_index: 0,
+                text: "new segment",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(3);
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speak",
+              seq: 5,
+              data: { say_id: "say-old-1", text: "stale old one" },
+            });
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(3);
+          expect(FakeAudio.instances[2]?.pause).not.toHaveBeenCalled();
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "does not play speech.segment results that complete after stop_output",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:seg");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          constructor(_src: string) {
+            void _src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: () => {},
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        let resolveTts: ((res: Response) => void) | null = null;
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return await new Promise<Response>((resolve) => {
+                resolveTts = resolve;
+              });
+            }
+            return jsonResponse(404, { error: { code: "not_found", message: url } });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: { utterance_id: "say-99", chat_request_id: "chat-99" },
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "say-99",
+                chat_request_id: "chat-99",
+                segment_index: 0,
+                text: "hello",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 3, data: {} });
+            await Promise.resolve();
+          });
+
+          await act(async () => {
+            resolveTts?.(wavResponse(200, [1, 2, 3]));
+            await Promise.resolve();
+          });
+
+          expect(FakeAudio.instances.length).toBe(0);
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
   });
 
   describe("kiosk recording edge cases", () => {
@@ -2378,5 +4091,603 @@ describe("app", () => {
       });
       container.remove();
     });
+  });
+
+  describe("kiosk segment coverage helpers", () => {
+    it(
+      "guards invalid speech.start / speech.segment / speech.end data and covers segment edge cases",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          static latest: FakeAudio | null = null;
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.latest = this;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          // Cover: speech.start with invalid data (lines 858-860)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: null,
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 2,
+              data: "not-object",
+            });
+          });
+
+          // Cover: speech.segment with invalid data (lines 872-874)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 3,
+              data: null,
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 4,
+              data: 42,
+            });
+          });
+
+          // Cover: speech.end with invalid data (lines 890-891)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 5,
+              data: null,
+            });
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 6,
+              data: "not-object",
+            });
+          });
+
+          // Start a valid speech sequence so segment queue is active
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 10,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+              },
+            });
+          });
+
+          // Cover: enqueueSpeechSegment duplicate segment_index (lines 531-533)
+          // Send both segments synchronously so the duplicate arrives while the
+          // first is still pending in the Map (before fetch resolves).
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 11,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+                segment_index: 0,
+                text: "first",
+                is_last: false,
+              },
+            });
+            // Duplicate segment_index=0 should be ignored (items.has guard)
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 12,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+                segment_index: 0,
+                text: "dup",
+                is_last: false,
+              },
+            });
+            await Promise.resolve();
+          });
+
+          // Let the first segment play
+          await act(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+          });
+
+          // Complete playback of first segment
+          if (FakeAudio.latest?.onended) {
+            act(() => {
+              FakeAudio.latest?.onended?.();
+            });
+          }
+
+          // Cover: enqueueSpeechSegment with segment_index < nextPlayIndex (lines 528-530)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 13,
+              data: {
+                utterance_id: "u-cov",
+                chat_request_id: "cr-cov",
+                segment_index: 0,
+                text: "stale",
+                is_last: false,
+              },
+            });
+          });
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers segment TTS fetch failure and failed-item skip",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          static latest: FakeAudio | null = null;
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.latest = this;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        let ttsCallIndex = 0;
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              ttsCallIndex += 1;
+              if (ttsCallIndex === 1) {
+                throw new Error("TTS offline");
+              }
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          // Start segment queue
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: {
+                utterance_id: "u-fail",
+                chat_request_id: "cr-fail",
+              },
+            });
+          });
+
+          // Enqueue segment 0 - TTS will fail (only segment, is_last=true)
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "u-fail",
+                chat_request_id: "cr-fail",
+                segment_index: 0,
+                text: "fail-seg",
+                is_last: true,
+              },
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+          });
+
+          expect(document.body.textContent ?? "").toContain("おとがでないみたい");
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers utterance ID history eviction and finalizeEndedSegmentUtteranceIfIdle mismatch",
+      async () => {
+        vi.resetModules();
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => undefined);
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          // Cover: rememberSegmentUtteranceId eviction (lines 219-225)
+          for (let i = 0; i < 130; i++) {
+            await act(async () => {
+              handlers.onMessage?.({
+                type: "kiosk.command.speech.start",
+                seq: 100 + i,
+                data: {
+                  utterance_id: `u-evict-${i}`,
+                  chat_request_id: `cr-evict-${i}`,
+                },
+              });
+            });
+          }
+
+          // Cover: speech.end for a different utterance than current queue
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.end",
+              seq: 300,
+              data: {
+                utterance_id: "u-evict-0",
+                chat_request_id: "cr-evict-0",
+              },
+            });
+          });
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      "covers maybePlayPendingSpeak when audio is locked and pushDevSpeechProbe non-DEV guard",
+      async () => {
+        vi.resetModules();
+
+        const isDevOriginal = import.meta.env.DEV;
+        import.meta.env.DEV = false;
+
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+          close: closeSpy,
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
+
+        const originalCreateObjectURL = (URL as unknown as { createObjectURL?: unknown })
+          .createObjectURL;
+        const originalRevokeObjectURL = (URL as unknown as { revokeObjectURL?: unknown })
+          .revokeObjectURL;
+        (URL as unknown as { createObjectURL?: unknown }).createObjectURL = vi.fn(() => "blob:tts");
+        (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL = vi.fn(() => undefined);
+
+        class FakeAudio {
+          static instances: FakeAudio[] = [];
+          static latest: FakeAudio | null = null;
+          src: string;
+          onended: (() => void) | null = null;
+          constructor(src: string) {
+            this.src = src;
+            FakeAudio.latest = this;
+            FakeAudio.instances.push(this);
+          }
+          play = vi.fn(async () => {
+            const err = new Error("blocked");
+            (err as unknown as { name: string }).name = "NotAllowedError";
+            throw err;
+          });
+          pause = vi.fn(() => undefined);
+        }
+        vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? "GET";
+            if (url === "/api/v1/kiosk/tts" && method === "POST") {
+              return wavResponse(200, [1, 2, 3]);
+            }
+            return jsonResponse(404, {
+              error: { code: "not_found", message: url },
+            });
+          }),
+        );
+
+        try {
+          window.history.pushState({}, "", "/kiosk");
+          document.body.innerHTML = '<div id="root"></div>';
+
+          let appRoot: Root;
+          await act(async () => {
+            const mainModule = await import("./main");
+            appRoot = mainModule.appRoot;
+          });
+
+          const handlers = connectSseMock.mock.calls[0]![1];
+          await act(async () => {
+            handlers.onSnapshot({
+              state: {
+                mode: "ROOM",
+                personal_name: null,
+                phase: "idle",
+                consent_ui_visible: false,
+              },
+            });
+          });
+
+          await unlockKioskAudio();
+
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.start",
+              seq: 1,
+              data: {
+                utterance_id: "u-dev",
+                chat_request_id: "cr-dev",
+              },
+            });
+          });
+
+          // Enqueue a segment — the floating TTS fetch chain eventually calls
+          // setTtsWav, React renders AudioPlayer, its useEffect fires audio.play(),
+          // which rejects with NotAllowedError, triggering re-lock.
+          await act(async () => {
+            handlers.onMessage?.({
+              type: "kiosk.command.speech.segment",
+              seq: 2,
+              data: {
+                utterance_id: "u-dev",
+                chat_request_id: "cr-dev",
+                segment_index: 0,
+                text: "hello",
+                is_last: false,
+              },
+            });
+            // Drain fetch promise chain: fetch(async) → arrayBuffer(async) →
+            // .then → .finally → setTtsWav, then AudioPlayer useEffect →
+            // play() → .then → .catch(NotAllowedError) → re-lock setState
+            for (let i = 0; i < 10; i++) await Promise.resolve();
+          });
+
+          expect(document.body.textContent ?? "").toContain("おとをだすには 1かい タップしてね");
+
+          await act(async () => {
+            appRoot.unmount();
+          });
+        } finally {
+          import.meta.env.DEV = isDevOriginal;
+          if (originalCreateObjectURL === undefined) {
+            delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+          } else {
+            (URL as unknown as { createObjectURL?: unknown }).createObjectURL =
+              originalCreateObjectURL;
+          }
+          if (originalRevokeObjectURL === undefined) {
+            delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+          } else {
+            (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL =
+              originalRevokeObjectURL;
+          }
+        }
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
   });
 });
