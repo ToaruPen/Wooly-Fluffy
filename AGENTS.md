@@ -133,6 +133,7 @@ A workflow template to help non-engineers run AI-driven development while preven
 - `docs/epics/_template.md`: Epic template (Japanese output)
 - `docs/glossary.md`: glossary
 - `templates/project-config/`: templates for `/generate-project-config`
+- `.opencode/commands/cocoindex-code.md`: quick reference for CocoIndex code-search usage and scope policy
 
 ---
 
@@ -157,6 +158,7 @@ A workflow template to help non-engineers run AI-driven development while preven
 - `/sync-docs`: consistency check between PRD/Epic/code
 - `/worktree`: manage git worktrees for parallel Issues
 - `/cleanup`: clean up worktree and local branch after merge
+- `/cocoindex-code`: concise guidance for code-first semantic search and when to switch to docs search
 
 ---
 
