@@ -13,8 +13,8 @@ export default defineConfig({
         lines: 100,
       },
       all: true,
-      include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts", "src/main.ts", "src/test-helpers/**"],
+      include: ["src/**/!(*.test).ts"],
+      exclude: ["src/main.ts"],
     },
   },
 });
