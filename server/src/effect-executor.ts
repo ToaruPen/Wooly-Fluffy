@@ -47,7 +47,7 @@ const splitSpeechSegments = (text: string): string[] => {
   }
 
   const raw = trimmed
-    .split(/(?<=[。！？])/u)
+    .split(/(?<=[。！？.!?])/u)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
@@ -72,6 +72,22 @@ const splitSpeechSegments = (text: string): string[] => {
   return merged;
 };
 
+const extractCompleteSentencePrefix = (text: string): { complete: string; rest: string } => {
+  const punctuations = ["。", "！", "？", ".", "!", "?"];
+  let lastIndex = -1;
+  for (const punctuation of punctuations) {
+    lastIndex = Math.max(lastIndex, text.lastIndexOf(punctuation));
+  }
+  if (lastIndex < 0) {
+    return { complete: "", rest: text };
+  }
+  const end = lastIndex + 1;
+  return {
+    complete: text.slice(0, end),
+    rest: text.slice(end),
+  };
+};
+
 export const createEffectExecutor = (deps: {
   providers: Providers;
   sendKioskCommand: KioskCommandSender;
@@ -84,10 +100,23 @@ export const createEffectExecutor = (deps: {
 }) => {
   let saySeq = 0;
   let currentExpression: string | null = null;
+  const streamedChatRequestIds = new Map<string, number>();
   const nowMs = deps.now_ms ?? (() => Date.now());
+  const streamedChatRequestTtlMs = 5 * 60 * 1000;
+
+  const pruneStreamedChatRequestIds = () => {
+    const now = nowMs();
+    for (const [requestId, recordedAt] of streamedChatRequestIds.entries()) {
+      if (now - recordedAt >= streamedChatRequestTtlMs) {
+        streamedChatRequestIds.delete(requestId);
+      }
+    }
+  };
 
   const executeEffects = (effects: OrchestratorEffect[]): OrchestratorEvent[] => {
     const events: OrchestratorEvent[] = [];
+
+    pruneStreamedChatRequestIds();
     for (const effect of effects) {
       switch (effect.type) {
         case "KIOSK_RECORD_START":
@@ -103,20 +132,176 @@ export const createEffectExecutor = (deps: {
           try {
             const maybe = deps.providers.llm.chat.call(effect.input);
             if (isThenable<LlmChatResult>(maybe)) {
-              void maybe
-                .then((result) => {
-                  deps.enqueueEvent({
-                    type: "CHAT_RESULT",
-                    request_id: effect.request_id,
-                    assistant_text: result.assistant_text,
-                    expression: result.expression,
-                    motion_id: result.motion_id,
-                    tool_calls: result.tool_calls,
+              const callPromise = maybe;
+              const streamFn = deps.providers.llm.chat.stream;
+              if (streamFn) {
+                void (async () => {
+                  const streamAbortController = new AbortController();
+                  let emittedSegmentCount = 0;
+                  let firstSegmentLength = 0;
+                  let firstSegmentEmittedAtMs: number | null = null;
+                  let streamBuffer = "";
+                  let streamStarted = false;
+                  let streamEnded = false;
+                  let chatFinalized = false;
+                  let firstSegmentGateResolved = false;
+                  let firstSegmentGateResolve: () => void = () => {};
+                  const firstSegmentGate = new Promise<void>((resolve) => {
+                    firstSegmentGateResolve = resolve;
                   });
-                })
-                .catch(() => {
-                  deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });
-                });
+                  const resolveFirstSegmentGate = () => {
+                    if (firstSegmentGateResolved) {
+                      return;
+                    }
+                    firstSegmentGateResolved = true;
+                    firstSegmentGateResolve();
+                  };
+                  const utteranceId = effect.request_id;
+
+                  const sendStreamStart = () => {
+                    if (streamStarted) {
+                      return;
+                    }
+                    deps.sendKioskCommand("kiosk.command.speech.start", {
+                      utterance_id: utteranceId,
+                      chat_request_id: effect.request_id,
+                    });
+                    streamStarted = true;
+                  };
+
+                  const sendStreamEnd = () => {
+                    if (!streamStarted || streamEnded) {
+                      return;
+                    }
+                    deps.sendKioskCommand("kiosk.command.speech.end", {
+                      utterance_id: utteranceId,
+                      chat_request_id: effect.request_id,
+                    });
+                    streamEnded = true;
+                  };
+
+                  const streamPromise = (async () => {
+                    try {
+                      for await (const chunk of streamFn(effect.input, {
+                        signal: streamAbortController.signal,
+                      })) {
+                        if (chatFinalized && emittedSegmentCount === 0) {
+                          break;
+                        }
+                        if (chunk.delta_text.length === 0) {
+                          continue;
+                        }
+                        streamBuffer += chunk.delta_text;
+                        const { complete, rest } = extractCompleteSentencePrefix(streamBuffer);
+                        streamBuffer = rest;
+                        const segments = splitSpeechSegments(complete);
+                        for (const segmentText of segments) {
+                          sendStreamStart();
+                          deps.sendKioskCommand("kiosk.command.speech.segment", {
+                            utterance_id: utteranceId,
+                            chat_request_id: effect.request_id,
+                            segment_index: emittedSegmentCount,
+                            text: segmentText,
+                            is_last: false,
+                          });
+                          if (firstSegmentEmittedAtMs === null) {
+                            firstSegmentEmittedAtMs = nowMs();
+                            firstSegmentLength = segmentText.length;
+                            resolveFirstSegmentGate();
+                          }
+                          emittedSegmentCount += 1;
+                        }
+                      }
+
+                      if (!chatFinalized || emittedSegmentCount > 0) {
+                        const tailSegments = splitSpeechSegments(streamBuffer);
+                        if (tailSegments.length > 0) {
+                          for (const [index, segmentText] of tailSegments.entries()) {
+                            sendStreamStart();
+                            deps.sendKioskCommand("kiosk.command.speech.segment", {
+                              utterance_id: utteranceId,
+                              chat_request_id: effect.request_id,
+                              segment_index: emittedSegmentCount,
+                              text: segmentText,
+                              is_last: index === tailSegments.length - 1,
+                            });
+                            if (firstSegmentEmittedAtMs === null) {
+                              firstSegmentEmittedAtMs = nowMs();
+                              firstSegmentLength = segmentText.length;
+                              resolveFirstSegmentGate();
+                            }
+                            emittedSegmentCount += 1;
+                          }
+                        }
+                      }
+                    } catch {
+                    } finally {
+                      resolveFirstSegmentGate();
+                      sendStreamEnd();
+                      if (firstSegmentEmittedAtMs !== null && emittedSegmentCount > 0) {
+                        deps.observeSpeechMetric?.({
+                          type: "speech.ttfa.observation",
+                          emitted_at_ms: firstSegmentEmittedAtMs,
+                          utterance_id: utteranceId,
+                          chat_request_id: effect.request_id,
+                          segment_count: emittedSegmentCount,
+                          first_segment_length: firstSegmentLength,
+                        });
+                      }
+                    }
+                  })();
+
+                  void streamPromise;
+
+                  try {
+                    const result = await callPromise;
+                    await Promise.race([
+                      firstSegmentGate,
+                      new Promise<void>((resolve) => {
+                        setTimeout(resolve, 0);
+                      }),
+                    ]);
+                    chatFinalized = true;
+                    if (emittedSegmentCount > 0) {
+                      streamedChatRequestIds.set(effect.request_id, nowMs());
+                    }
+                    streamAbortController.abort();
+                    deps.enqueueEvent({
+                      type: "CHAT_RESULT",
+                      request_id: effect.request_id,
+                      assistant_text: result.assistant_text,
+                      expression: result.expression,
+                      motion_id: result.motion_id,
+                      tool_calls: result.tool_calls,
+                    });
+                  } catch {
+                    await Promise.race([
+                      firstSegmentGate,
+                      new Promise<void>((resolve) => {
+                        setTimeout(resolve, 0);
+                      }),
+                    ]);
+                    chatFinalized = true;
+                    streamAbortController.abort();
+                    deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });
+                  }
+                })();
+              } else {
+                void callPromise
+                  .then((result) => {
+                    deps.enqueueEvent({
+                      type: "CHAT_RESULT",
+                      request_id: effect.request_id,
+                      assistant_text: result.assistant_text,
+                      expression: result.expression,
+                      motion_id: result.motion_id,
+                      tool_calls: result.tool_calls,
+                    });
+                  })
+                  .catch(() => {
+                    deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });
+                  });
+              }
             } else {
               const result = maybe;
               events.push({
@@ -172,42 +357,47 @@ export const createEffectExecutor = (deps: {
           break;
         }
         case "SAY": {
+          const alreadyStreamedForChat =
+            typeof effect.chat_request_id === "string" &&
+            streamedChatRequestIds.delete(effect.chat_request_id);
           saySeq += 1;
           const utteranceId = `say-${saySeq}`;
           const chatRequestId = effect.chat_request_id ?? utteranceId;
-          const segments = splitSpeechSegments(effect.text);
-          let firstSegmentEmittedAtMs: number | null = null;
+          if (!alreadyStreamedForChat) {
+            const segments = splitSpeechSegments(effect.text);
+            let firstSegmentEmittedAtMs: number | null = null;
 
-          deps.sendKioskCommand("kiosk.command.speech.start", {
-            utterance_id: utteranceId,
-            chat_request_id: chatRequestId,
-          });
-          for (const [segmentIndex, segmentText] of segments.entries()) {
-            deps.sendKioskCommand("kiosk.command.speech.segment", {
+            deps.sendKioskCommand("kiosk.command.speech.start", {
               utterance_id: utteranceId,
               chat_request_id: chatRequestId,
-              segment_index: segmentIndex,
-              text: segmentText,
-              is_last: segmentIndex === segments.length - 1,
             });
-            if (segmentIndex === 0) {
-              firstSegmentEmittedAtMs = nowMs();
+            for (const [segmentIndex, segmentText] of segments.entries()) {
+              deps.sendKioskCommand("kiosk.command.speech.segment", {
+                utterance_id: utteranceId,
+                chat_request_id: chatRequestId,
+                segment_index: segmentIndex,
+                text: segmentText,
+                is_last: segmentIndex === segments.length - 1,
+              });
+              if (segmentIndex === 0) {
+                firstSegmentEmittedAtMs = nowMs();
+              }
             }
-          }
-          deps.sendKioskCommand("kiosk.command.speech.end", {
-            utterance_id: utteranceId,
-            chat_request_id: chatRequestId,
-          });
-
-          if (segments.length > 0 && firstSegmentEmittedAtMs !== null) {
-            deps.observeSpeechMetric?.({
-              type: "speech.ttfa.observation",
-              emitted_at_ms: firstSegmentEmittedAtMs,
+            deps.sendKioskCommand("kiosk.command.speech.end", {
               utterance_id: utteranceId,
               chat_request_id: chatRequestId,
-              segment_count: segments.length,
-              first_segment_length: segments[0].length,
             });
+
+            if (segments.length > 0 && firstSegmentEmittedAtMs !== null) {
+              deps.observeSpeechMetric?.({
+                type: "speech.ttfa.observation",
+                emitted_at_ms: firstSegmentEmittedAtMs,
+                utterance_id: utteranceId,
+                chat_request_id: chatRequestId,
+                segment_count: segments.length,
+                first_segment_length: segments[0].length,
+              });
+            }
           }
 
           const base = {

@@ -14,6 +14,10 @@ export type LlmToolCall = ToolCall;
 
 export type LlmMotionId = "idle" | "greeting" | "cheer" | "thinking";
 
+export type LlmChatStreamDelta = {
+  delta_text: string;
+};
+
 export type Providers = {
   stt: {
     transcribe: (input: { mode: Mode; wav: Buffer }) => MaybePromise<{ text: string }>;
@@ -33,6 +37,10 @@ export type Providers = {
         motion_id: LlmMotionId | null;
         tool_calls: LlmToolCall[];
       }>;
+      stream?: (
+        input: ChatInput,
+        options?: { signal?: AbortSignal },
+      ) => AsyncIterable<LlmChatStreamDelta>;
     };
     inner_task: {
       call: (input: InnerTaskInput) => MaybePromise<{ json_text: string }>;
