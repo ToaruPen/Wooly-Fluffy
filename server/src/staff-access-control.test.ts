@@ -1,49 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { request } from "http";
-import type { IncomingHttpHeaders } from "http";
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
+import { createHttpTestHelpers } from "./test-helpers/http.js";
 
 let closeServer: (() => Promise<void>) | null = null;
 let port: number;
 let store: ReturnType<typeof createStore>;
 
-const sendRequest = (
-  method: string,
-  path: string,
-  options?: { headers?: Record<string, string>; body?: string | Buffer },
-) =>
-  new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port, method, path }, (res) => {
-      let body = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => {
-        body += chunk;
-      });
-      res.on("end", () => {
-        resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
-      });
-    });
-
-    req.on("error", reject);
-    if (options?.headers) {
-      for (const [key, value] of Object.entries(options.headers)) {
-        req.setHeader(key, value);
-      }
-    }
-    if (options?.body) {
-      req.write(options.body);
-    }
-    req.end();
-  });
-
-const cookieFromSetCookie = (setCookie: string): string => {
-  const [first] = setCookie.split(";", 1);
-  if (!first) {
-    throw new Error("missing_set_cookie");
-  }
-  return first;
-};
+const { sendRequest, cookieFromSetCookie } = createHttpTestHelpers(() => port);
 
 const openSse = (path: string, options: { cookie: string; timeoutMs: number }) =>
   new Promise<{ close: Promise<void> }>((resolve, reject) => {

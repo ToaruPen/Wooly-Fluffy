@@ -1,71 +1,19 @@
 import { request } from "http";
-import type { IncomingHttpHeaders, Server } from "http";
+import type { Server } from "http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
+import { createHttpTestHelpers } from "./test-helpers/http.js";
 
 let server: Server;
 let port: number;
 let store: ReturnType<typeof createStore>;
-let staffCookie = "";
 
 let chatMode: "content" | "tool_calls" = "content";
 
-const sendRequest = (
-  method: string,
-  path: string,
-  options?: { headers?: Record<string, string>; body?: string | Buffer },
-) =>
-  new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port, method, path }, (res) => {
-      let body = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => {
-        body += chunk;
-      });
-      res.on("end", () => {
-        resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
-      });
-    });
-
-    req.on("error", reject);
-    if (options?.headers) {
-      for (const [key, value] of Object.entries(options.headers)) {
-        req.setHeader(key, value);
-      }
-    }
-    if (options?.body) {
-      req.write(options.body);
-    }
-    req.end();
-  });
-
-const cookieFromSetCookie = (setCookie: string): string => {
-  const [first] = setCookie.split(";", 1);
-  if (!first) {
-    throw new Error("missing_set_cookie");
-  }
-  return first;
-};
-
-const loginStaff = async (): Promise<string> => {
-  const response = await sendRequest("POST", "/api/v1/staff/auth/login", {
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ passcode: "test-pass" }),
-  });
-  if (response.status !== 200) {
-    throw new Error(`staff_login_failed:${response.status}`);
-  }
-  const setCookie = response.headers["set-cookie"];
-  const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-  return cookieFromSetCookie(String(first ?? ""));
-};
-
-const withStaffCookie = (headers?: Record<string, string>): Record<string, string> => ({
-  ...(headers ?? {}),
-  cookie: staffCookie,
-});
+const helpers = createHttpTestHelpers(() => port);
+const { sendRequest, loginStaff, withStaffCookie } = helpers;
 
 const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) => {
   const boundary = "testboundary";
@@ -248,7 +196,7 @@ describe("http-server (async llm provider)", () => {
       throw new Error("server address unavailable");
     }
     port = address.port;
-    staffCookie = await loginStaff();
+    await loginStaff();
   });
 
   afterEach(async () => {
@@ -268,7 +216,7 @@ describe("http-server (async llm provider)", () => {
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_MODEL;
     delete process.env.LLM_API_KEY;
-    staffCookie = "";
+    helpers.resetStaffCookie();
 
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
