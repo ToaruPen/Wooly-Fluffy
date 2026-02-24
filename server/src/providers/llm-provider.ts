@@ -442,13 +442,10 @@ const createAbortError = (): Error => {
 };
 
 const readWithAbort = async <T>(input: {
-  signal?: AbortSignal;
+  signal: AbortSignal;
   run: () => Promise<T>;
 }): Promise<T> => {
   const signal = input.signal;
-  if (!signal) {
-    return input.run();
-  }
   if (signal.aborted) {
     throw createAbortError();
   }
@@ -472,7 +469,7 @@ const readWithAbort = async <T>(input: {
 
 const readSseDataEvents = async function* (
   body: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
+  signal: AbortSignal,
 ): AsyncGenerator<string> {
   const parseDataLines = (eventText: string): string | null => {
     const lines = eventText.split(/\r?\n/);
@@ -989,6 +986,9 @@ export const createOpenAiCompatibleLlmProvider = (
     const onLinkedAbort = () => {
       timeoutController.abort();
     };
+    if (linkedSignal?.aborted) {
+      timeoutController.abort();
+    }
     linkedSignal?.addEventListener("abort", onLinkedAbort, { once: true });
 
     try {
@@ -1015,9 +1015,15 @@ export const createOpenAiCompatibleLlmProvider = (
         if (data === "[DONE]") {
           break;
         }
-        const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: unknown } }>;
-        };
+        let parsed: { choices?: Array<{ delta?: { content?: unknown } }> } | null = null;
+        try {
+          parsed = JSON.parse(data) as {
+            choices?: Array<{ delta?: { content?: unknown } }>;
+          };
+        } catch (err) {
+          console.warn("llm stream json parse error", { data_length: data.length }, err);
+          continue;
+        }
         const delta = parsed.choices?.[0]?.delta?.content;
         if (typeof delta === "string" && delta.length > 0) {
           yield { delta_text: delta };

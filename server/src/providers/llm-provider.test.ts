@@ -182,6 +182,334 @@ describe("llm-provider (OpenAI-compatible)", () => {
     STREAM_TEST_TIMEOUT_MS,
   );
 
+  it(
+    "fails chat.stream when provider responds with non-ok status",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: false,
+          status: 503,
+          json: async () => ({}),
+          body: createSseBody(["[DONE]"]),
+        }),
+      });
+
+      await expect(
+        (async () => {
+          for await (const _chunk of llm.chat.stream?.({
+            mode: "ROOM",
+            personal_name: null,
+            text: "hi",
+          }) ?? []) {
+          }
+        })(),
+      ).rejects.toThrow(/HTTP 503/);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "aborts chat.stream when linked signal is aborted",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async (_input, init) =>
+          new Promise<{
+            ok: boolean;
+            status: number;
+            json: () => Promise<unknown>;
+            body: ReadableStream<Uint8Array> | null;
+          }>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                const err = new Error("aborted");
+                err.name = "AbortError";
+                reject(err);
+              },
+              { once: true },
+            );
+          }),
+      });
+
+      const linkedAbort = new AbortController();
+      const streamPromise = (async () => {
+        for await (const _chunk of llm.chat.stream?.(
+          {
+            mode: "ROOM",
+            personal_name: null,
+            text: "hi",
+          },
+          { signal: linkedAbort.signal },
+        ) ?? []) {
+        }
+      })();
+
+      linkedAbort.abort();
+      await expect(streamPromise).rejects.toThrow(/aborted/);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "aborts chat.stream immediately when linked signal is already aborted",
+    async () => {
+      let fetchReceivedAbortedSignal = false;
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async (_input, init) => {
+          fetchReceivedAbortedSignal = init?.signal?.aborted === true;
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          throw err;
+        },
+      });
+
+      const linkedAbort = new AbortController();
+      linkedAbort.abort();
+      await expect(
+        (async () => {
+          for await (const _chunk of llm.chat.stream?.(
+            {
+              mode: "ROOM",
+              personal_name: null,
+              text: "hi",
+            },
+            { signal: linkedAbort.signal },
+          ) ?? []) {
+          }
+        })(),
+      ).rejects.toThrow(/aborted/);
+      expect(fetchReceivedAbortedSignal).toBe(true);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "handles pre-aborted linked signal even when fetch still returns a stream",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body: new ReadableStream<Uint8Array>({
+            start() {},
+          }),
+        }),
+      });
+
+      const linkedAbort = new AbortController();
+      linkedAbort.abort();
+      await expect(
+        (async () => {
+          for await (const _chunk of llm.chat.stream?.(
+            {
+              mode: "ROOM",
+              personal_name: null,
+              text: "hi",
+            },
+            { signal: linkedAbort.signal },
+          ) ?? []) {
+          }
+        })(),
+      ).rejects.toThrow(/aborted/);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "skips malformed SSE JSON event and continues streaming",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body: createSseBody([
+            "{ malformed",
+            JSON.stringify({ choices: [{ delta: { content: "A" } }] }),
+            "[DONE]",
+          ]),
+        }),
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of llm.chat.stream?.({
+        mode: "ROOM",
+        personal_name: null,
+        text: "hi",
+      }) ?? []) {
+        chunks.push(chunk.delta_text);
+      }
+      expect(chunks).toEqual(["A"]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "ignores empty SSE data lines and continues to next events",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body: createSseBody([
+            "",
+            JSON.stringify({ choices: [{ delta: { content: "B" } }] }),
+            "[DONE]",
+          ]),
+        }),
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of llm.chat.stream?.({
+        mode: "ROOM",
+        personal_name: null,
+        text: "hi",
+      }) ?? []) {
+        chunks.push(chunk.delta_text);
+      }
+      expect(chunks).toEqual(["B"]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "propagates stream reader read errors",
+    async () => {
+      const body = {
+        getReader: () => ({
+          read: async () => {
+            throw new Error("read_failed");
+          },
+          cancel: async () => {},
+          releaseLock: () => {},
+        }),
+      } as unknown as ReadableStream<Uint8Array>;
+
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body,
+        }),
+      });
+
+      await expect(
+        (async () => {
+          for await (const _chunk of llm.chat.stream?.({
+            mode: "ROOM",
+            personal_name: null,
+            text: "hi",
+          }) ?? []) {
+          }
+        })(),
+      ).rejects.toThrow(/read_failed/);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "throws cancel error when reader.cancel fails with non-abort error",
+    async () => {
+      const body = {
+        getReader: () => ({
+          read: async () => ({ done: true, value: undefined }),
+          cancel: async () => {
+            throw new Error("cancel_failed");
+          },
+          releaseLock: () => {},
+        }),
+      } as unknown as ReadableStream<Uint8Array>;
+
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          body,
+        }),
+      });
+
+      await expect(
+        (async () => {
+          for await (const _chunk of llm.chat.stream?.({
+            mode: "ROOM",
+            personal_name: null,
+            text: "hi",
+          }) ?? []) {
+          }
+        })(),
+      ).rejects.toThrow(/cancel_failed/);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "includes persona text in stream system instruction when configured",
+    async () => {
+      const llm = createOpenAiCompatibleLlmProvider({
+        kind: "local",
+        base_url: "http://lmstudio.local/v1",
+        model: "dummy-model",
+        read_chat_runtime_config: () => ({
+          persona_text: "Be cheerful.",
+          max_output_chars: 320,
+          max_output_tokens: null,
+        }),
+        fetch: async (_input: string, init?: { body?: string }) => {
+          const payload = JSON.parse(String(init?.body ?? "{}")) as {
+            messages?: Array<{ role?: string; content?: string }>;
+          };
+          expect(payload.messages?.[0]?.role).toBe("system");
+          expect(payload.messages?.[0]?.content).toContain("Persona:\nBe cheerful.");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            body: createSseBody(["[DONE]"], { delimiter: "\n\n" }),
+          };
+        },
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of llm.chat.stream?.({
+        mode: "ROOM",
+        personal_name: null,
+        text: "hi",
+      }) ?? []) {
+        chunks.push(chunk.delta_text);
+      }
+      expect(chunks).toEqual([]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
   it("normalizes trailing slash in base_url", async () => {
     const llm = createOpenAiCompatibleLlmProvider({
       kind: "local",

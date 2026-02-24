@@ -39,6 +39,52 @@ type SpeechMetric = {
 };
 
 const MIN_SPEECH_SEGMENT_LENGTH = 5;
+const DEFAULT_STREAMED_CHAT_REQUEST_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_STREAMED_CHAT_REQUEST_MAX_ENTRIES = 512;
+
+const COMMON_ENGLISH_ABBREVIATIONS = new Set([
+  "mr",
+  "mrs",
+  "ms",
+  "dr",
+  "prof",
+  "sr",
+  "jr",
+  "st",
+  "vs",
+  "etc",
+  "e.g",
+  "i.e",
+]);
+
+const isAsciiSentenceBoundary = (text: string, index: number): boolean => {
+  const mark = text[index];
+  if (mark !== "." && mark !== "!" && mark !== "?") {
+    return false;
+  }
+  const next = text[index + 1];
+  if (next && !/\s/u.test(next)) {
+    return false;
+  }
+  if (mark !== ".") {
+    return true;
+  }
+
+  const tokenMatch = text.slice(0, index).match(/[A-Za-z.]+$/u);
+  const token = tokenMatch?.[0] ?? "";
+  if (token.length === 0) {
+    return true;
+  }
+  const lowered = token.toLowerCase();
+  if (COMMON_ENGLISH_ABBREVIATIONS.has(lowered)) {
+    return false;
+  }
+  if (/^(?:[A-Za-z]\.)+[A-Za-z]$/u.test(token)) {
+    return false;
+  }
+
+  return true;
+};
 
 const splitSpeechSegments = (text: string): string[] => {
   const trimmed = text.trim();
@@ -46,10 +92,25 @@ const splitSpeechSegments = (text: string): string[] => {
     return [];
   }
 
-  const raw = trimmed
-    .split(/(?<=[。！？.!?])/u)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
+  const raw: string[] = [];
+  let segmentStart = 0;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const mark = trimmed[index];
+    const isBoundary =
+      mark === "。" || mark === "！" || mark === "？" || isAsciiSentenceBoundary(trimmed, index);
+    if (!isBoundary) {
+      continue;
+    }
+    const part = trimmed.slice(segmentStart, index + 1).trim();
+    if (part.length > 0) {
+      raw.push(part);
+    }
+    segmentStart = index + 1;
+  }
+  const tail = trimmed.slice(segmentStart).trim();
+  if (tail.length > 0) {
+    raw.push(tail);
+  }
 
   const merged: string[] = [];
   for (const unit of raw) {
@@ -73,6 +134,8 @@ const splitSpeechSegments = (text: string): string[] => {
 };
 
 const extractCompleteSentencePrefix = (text: string): { complete: string; rest: string } => {
+  // We intentionally flush up to the last punctuation in the current buffer so
+  // multiple completed sentences can be emitted in one pass when available.
   const punctuations = ["。", "！", "？", ".", "!", "?"];
   let lastIndex = -1;
   for (const punctuation of punctuations) {
@@ -94,7 +157,15 @@ export const createEffectExecutor = (deps: {
   enqueueEvent: (event: OrchestratorEvent) => void;
   onSttRequested: (request_id: string) => void;
   now_ms?: () => number;
+  streamedChatRequestTtlMs?: number;
+  streamedChatRequestMaxEntries?: number;
   observeSpeechMetric?: (metric: SpeechMetric) => void;
+  onStreamError?: (input: {
+    request_id: string;
+    emitted_segment_count: number;
+    is_chat_finalized: boolean;
+    error: unknown;
+  }) => void;
   storeWritePending?: StoreWritePendingLegacy;
   storeWriteSessionSummaryPending: StoreWriteSessionSummaryPending;
 }) => {
@@ -102,7 +173,26 @@ export const createEffectExecutor = (deps: {
   let currentExpression: string | null = null;
   const streamedChatRequestIds = new Map<string, number>();
   const nowMs = deps.now_ms ?? (() => Date.now());
-  const streamedChatRequestTtlMs = 5 * 60 * 1000;
+  const streamedChatRequestTtlMs = Math.max(
+    0,
+    deps.streamedChatRequestTtlMs ?? DEFAULT_STREAMED_CHAT_REQUEST_TTL_MS,
+  );
+  const streamedChatRequestMaxEntries = Math.max(
+    1,
+    deps.streamedChatRequestMaxEntries ?? DEFAULT_STREAMED_CHAT_REQUEST_MAX_ENTRIES,
+  );
+
+  const trimStreamedChatRequestIdsBySize = () => {
+    while (streamedChatRequestIds.size > streamedChatRequestMaxEntries) {
+      const oldestKey = streamedChatRequestIds.keys().next().value as string;
+      streamedChatRequestIds.delete(oldestKey);
+    }
+  };
+
+  const markStreamedChatRequest = (requestId: string) => {
+    streamedChatRequestIds.set(requestId, nowMs());
+    trimStreamedChatRequestIdsBySize();
+  };
 
   const pruneStreamedChatRequestIds = () => {
     const now = nowMs();
@@ -145,7 +235,7 @@ export const createEffectExecutor = (deps: {
                   let isStreamEnded = false;
                   let isChatFinalized = false;
                   let isFirstSegmentGateResolved = false;
-                  let firstSegmentGateResolve: () => void = () => {};
+                  let firstSegmentGateResolve!: () => void;
                   const firstSegmentGate = new Promise<void>((resolve) => {
                     firstSegmentGateResolve = resolve;
                   });
@@ -234,7 +324,22 @@ export const createEffectExecutor = (deps: {
                           }
                         }
                       }
-                    } catch {
+                    } catch (err) {
+                      deps.onStreamError?.({
+                        request_id: effect.request_id,
+                        emitted_segment_count: emittedSegmentCount,
+                        is_chat_finalized: isChatFinalized,
+                        error: err,
+                      });
+                      console.warn(
+                        "stream error",
+                        {
+                          request_id: effect.request_id,
+                          emitted_segment_count: emittedSegmentCount,
+                          is_chat_finalized: isChatFinalized,
+                        },
+                        err,
+                      );
                     } finally {
                       resolveFirstSegmentGate();
                       sendStreamEnd();
@@ -255,6 +360,11 @@ export const createEffectExecutor = (deps: {
 
                   try {
                     const result = await callPromise;
+                    // If callPromise resolves before the first stream segment, we
+                    // intentionally stop waiting after one macrotask and let SAY
+                    // fallback proceed. This avoids indefinite waiting under
+                    // network/backpressure at the cost of potentially dropping
+                    // very-late first chunks when emittedSegmentCount is still 0.
                     await Promise.race([
                       firstSegmentGate,
                       new Promise<void>((resolve) => {
@@ -263,7 +373,7 @@ export const createEffectExecutor = (deps: {
                     ]);
                     isChatFinalized = true;
                     if (emittedSegmentCount > 0) {
-                      streamedChatRequestIds.set(effect.request_id, nowMs());
+                      markStreamedChatRequest(effect.request_id);
                     }
                     streamAbortController.abort();
                     deps.enqueueEvent({
