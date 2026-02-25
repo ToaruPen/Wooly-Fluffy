@@ -169,7 +169,7 @@ const readSseDataMessages = (
     timeout = setTimeout(() => {
       req?.destroy();
       finish(new Error("sse_timeout"));
-    }, 2000);
+    }, SSE_TEST_TIMEOUT_MS);
 
     req.on("error", (err) => {
       finish(err instanceof Error ? err : new Error("request_error"));
@@ -245,7 +245,7 @@ const readFirstSseMessage = (path: string, options?: { headers?: Record<string, 
     timeout = setTimeout(() => {
       req.destroy();
       finish(new Error("sse_timeout"));
-    }, 2000);
+    }, SSE_TEST_TIMEOUT_MS);
 
     req.on("error", (err) => {
       finish(err instanceof Error ? err : new Error("request_error"));
