@@ -259,13 +259,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
   it(
     "aborts chat.stream immediately when linked signal is already aborted",
     async () => {
-      let fetchReceivedAbortedSignal = false;
+      let hasFetchReceivedAbortedSignal = false;
       const llm = createOpenAiCompatibleLlmProvider({
         kind: "local",
         base_url: "http://lmstudio.local/v1",
         model: "dummy-model",
         fetch: async (_input, init) => {
-          fetchReceivedAbortedSignal = init?.signal?.aborted === true;
+          hasFetchReceivedAbortedSignal = init?.signal?.aborted === true;
           const err = new Error("aborted");
           err.name = "AbortError";
           throw err;
@@ -287,7 +287,7 @@ describe("llm-provider (OpenAI-compatible)", () => {
           }
         })(),
       ).rejects.toThrow(/aborted/);
-      expect(fetchReceivedAbortedSignal).toBe(true);
+      expect(hasFetchReceivedAbortedSignal).toBe(true);
     },
     STREAM_TEST_TIMEOUT_MS,
   );

@@ -2103,7 +2103,7 @@ describe("effect-executor", () => {
   it(
     "drops late stream chunks when chat already finalized without emitted segments",
     async () => {
-      let deltaAccessed = false;
+      let hasDeltaBeenAccessed = false;
       const providers = createStubProviders({
         chatCall: async () => ({
           assistant_text: "ok",
@@ -2117,7 +2117,7 @@ describe("effect-executor", () => {
           });
           yield {
             get delta_text() {
-              deltaAccessed = true;
+              hasDeltaBeenAccessed = true;
               return "late";
             },
           };
@@ -2155,7 +2155,7 @@ describe("effect-executor", () => {
           tool_calls: [],
         },
       ]);
-      expect(deltaAccessed).toBe(false);
+      expect(hasDeltaBeenAccessed).toBe(false);
       expect(sent).toEqual([]);
     },
     STREAM_TEST_TIMEOUT_MS,
@@ -2164,7 +2164,7 @@ describe("effect-executor", () => {
   it(
     "stops processing stream after call finalization when no segment was emitted",
     async () => {
-      let secondChunkAccessed = false;
+      let hasSecondChunkBeenAccessed = false;
       const providers = createStubProviders({
         chatCall: async () => ({
           assistant_text: "ok",
@@ -2179,7 +2179,7 @@ describe("effect-executor", () => {
           });
           yield {
             get delta_text() {
-              secondChunkAccessed = true;
+              hasSecondChunkBeenAccessed = true;
               return "late text";
             },
           };
@@ -2217,7 +2217,7 @@ describe("effect-executor", () => {
           tool_calls: [],
         },
       ]);
-      expect(secondChunkAccessed).toBe(false);
+      expect(hasSecondChunkBeenAccessed).toBe(false);
       expect(sent).toEqual([]);
     },
     STREAM_TEST_TIMEOUT_MS,
@@ -2226,8 +2226,8 @@ describe("effect-executor", () => {
   it(
     "closes stream iterator when first chunk arrives after chat finalized",
     async () => {
-      let firstChunkConsumed = false;
-      let iteratorClosed = false;
+      let hasFirstChunkBeenConsumed = false;
+      let isIteratorClosed = false;
       const providers = createStubProviders({
         chatCall: async () => ({
           assistant_text: "ok",
@@ -2242,12 +2242,12 @@ describe("effect-executor", () => {
             });
             yield {
               get delta_text() {
-                firstChunkConsumed = true;
+                hasFirstChunkBeenConsumed = true;
                 return "late";
               },
             };
           } finally {
-            iteratorClosed = true;
+            isIteratorClosed = true;
           }
         },
       });
@@ -2286,8 +2286,8 @@ describe("effect-executor", () => {
           tool_calls: [],
         },
       ]);
-      expect(firstChunkConsumed).toBe(false);
-      expect(iteratorClosed).toBe(true);
+      expect(hasFirstChunkBeenConsumed).toBe(false);
+      expect(isIteratorClosed).toBe(true);
       expect(sent).toEqual([]);
     },
     STREAM_TEST_TIMEOUT_MS,
