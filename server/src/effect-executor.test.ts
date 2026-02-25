@@ -23,6 +23,22 @@ const flushMicrotasks = async (): Promise<void> => {
 };
 
 const STREAM_TEST_TIMEOUT_MS = 5_000;
+const STREAM_WAIT_TIMEOUT_MS = 30;
+
+const waitForCondition = async (
+  predicate: () => boolean,
+  timeoutMs = STREAM_WAIT_TIMEOUT_MS,
+): Promise<void> => {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(`condition wait timed out after ${timeoutMs}ms`);
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
+};
 
 const createStubProviders = (overrides?: {
   chatCall?: Providers["llm"]["chat"]["call"];
@@ -904,9 +920,7 @@ describe("effect-executor", () => {
       ]);
       expect(events).toEqual([]);
       await flushMicrotasks();
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 30);
-      });
+      await waitForCondition(() => queued.length > 0);
 
       const segments = sent.filter((item) => item.type === "kiosk.command.speech.segment");
       expect(segments).toEqual([
@@ -977,9 +991,7 @@ describe("effect-executor", () => {
       ]);
       expect(events).toEqual([]);
       await flushMicrotasks();
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 30);
-      });
+      await waitForCondition(() => queued.length > 0);
 
       const segments = sent.filter((item) => item.type === "kiosk.command.speech.segment");
       expect(segments).toEqual([
@@ -1058,6 +1070,53 @@ describe("effect-executor", () => {
     },
     STREAM_TEST_TIMEOUT_MS,
   );
+
+  it("preserves whitespace when merging short ASCII segments", () => {
+    const providers = createStubProviders();
+
+    const sent: Array<{ type: string; data: object }> = [];
+    const executor = createEffectExecutor({
+      providers,
+      sendKioskCommand: (type, data) => {
+        sent.push({ type, data });
+      },
+      enqueueEvent: () => {},
+      onSttRequested: () => {},
+      storeWritePending: () => {},
+    });
+
+    executor.executeEffects([
+      {
+        type: "SAY",
+        text: "Hi. How are you?",
+      },
+    ]);
+
+    expect(sent).toEqual([
+      {
+        type: "kiosk.command.speech.start",
+        data: { utterance_id: "say-1", chat_request_id: "say-1" },
+      },
+      {
+        type: "kiosk.command.speech.segment",
+        data: {
+          utterance_id: "say-1",
+          chat_request_id: "say-1",
+          segment_index: 0,
+          text: "Hi. How are you?",
+          is_last: true,
+        },
+      },
+      {
+        type: "kiosk.command.speech.end",
+        data: { utterance_id: "say-1", chat_request_id: "say-1" },
+      },
+      {
+        type: "kiosk.command.speak",
+        data: { say_id: "say-1", text: "Hi. How are you?" },
+      },
+    ]);
+  });
 
   it(
     "does not split dotted multi-part abbreviations like U.S.A.",
@@ -1246,7 +1305,7 @@ describe("effect-executor", () => {
             utterance_id: "say-1",
             chat_request_id: "say-1",
             segment_index: 0,
-            text: "123.next.",
+            text: "123. next.",
             is_last: true,
           },
         },
@@ -1316,10 +1375,30 @@ describe("effect-executor", () => {
       executor.executeEffects([
         { type: "SAY", text: "fallback-text", chat_request_id: "chat-stream-empty" },
       ]);
-      expect(sent[0]).toEqual({
-        type: "kiosk.command.speech.start",
-        data: { utterance_id: "say-1", chat_request_id: "chat-stream-empty" },
-      });
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-empty" },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-empty",
+            segment_index: 0,
+            text: "fallback-text",
+            is_last: true,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-empty" },
+        },
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "say-1", text: "fallback-text" },
+        },
+      ]);
     },
     STREAM_TEST_TIMEOUT_MS,
   );
@@ -1388,10 +1467,30 @@ describe("effect-executor", () => {
       executor.executeEffects([
         { type: "SAY", text: "fallback", chat_request_id: "chat-stream-failed" },
       ]);
-      expect(sent[0]).toEqual({
-        type: "kiosk.command.speech.start",
-        data: { utterance_id: "say-1", chat_request_id: "chat-stream-failed" },
-      });
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-failed" },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-failed",
+            segment_index: 0,
+            text: "fallback",
+            is_last: true,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-failed" },
+        },
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "say-1", text: "fallback" },
+        },
+      ]);
     },
     STREAM_TEST_TIMEOUT_MS,
   );

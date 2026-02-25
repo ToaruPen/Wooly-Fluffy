@@ -86,6 +86,14 @@ const isAsciiSentenceBoundary = (text: string, index: number): boolean => {
   return true;
 };
 
+const mergeSpeechUnits = (left: string, right: string): string => {
+  const needsAsciiBoundarySpace = /[.!?]$/u.test(left) && /^[A-Za-z0-9]/u.test(right);
+  if (needsAsciiBoundarySpace) {
+    return `${left} ${right}`;
+  }
+  return `${left}${right}`;
+};
+
 const splitSpeechSegments = (text: string): string[] => {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
@@ -120,11 +128,11 @@ const splitSpeechSegments = (text: string): string[] => {
     }
     const lastIndex = merged.length - 1;
     if (unit.length < MIN_SPEECH_SEGMENT_LENGTH) {
-      merged[merged.length - 1] = `${merged[merged.length - 1]}${unit}`;
+      merged[merged.length - 1] = mergeSpeechUnits(merged[merged.length - 1], unit);
       continue;
     }
     if (merged[lastIndex].length < MIN_SPEECH_SEGMENT_LENGTH) {
-      merged[lastIndex] = `${merged[lastIndex]}${unit}`;
+      merged[lastIndex] = mergeSpeechUnits(merged[lastIndex], unit);
       continue;
     }
     merged.push(unit);

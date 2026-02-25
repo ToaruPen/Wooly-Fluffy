@@ -27,6 +27,16 @@ const createSseBody = (
   });
 };
 
+const collectDeltaTexts = async (
+  source: AsyncIterable<{ delta_text: string }> | Iterable<{ delta_text: string }>,
+): Promise<string[]> => {
+  const chunks: string[] = [];
+  for await (const chunk of source) {
+    chunks.push(chunk.delta_text);
+  }
+  return chunks;
+};
+
 describe("llm-provider (OpenAI-compatible)", () => {
   it(
     "provides chat.stream and yields delta text",
@@ -60,14 +70,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
         },
       });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
-      }
+      const chunks = await collectDeltaTexts(
+        llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? [],
+      );
 
       expect(chunks).toEqual(["こんにちは。", "よろしくね。"]);
     },
@@ -96,14 +105,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
         }),
       });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
-      }
+      const chunks = await collectDeltaTexts(
+        llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? [],
+      );
 
       expect(chunks).toEqual(["A", "B"]);
     },
@@ -136,14 +144,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
         }),
       });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
-      }
+      const chunks = await collectDeltaTexts(
+        llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? [],
+      );
 
       expect(chunks).toEqual(["A", "B"]);
     },
@@ -347,14 +354,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
         }),
       });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
-      }
+      const chunks = await collectDeltaTexts(
+        llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? [],
+      );
       expect(chunks).toEqual(["A"]);
     },
     STREAM_TEST_TIMEOUT_MS,
@@ -379,14 +385,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
         }),
       });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
-      }
+      const chunks = await collectDeltaTexts(
+        llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? [],
+      );
       expect(chunks).toEqual(["B"]);
     },
     STREAM_TEST_TIMEOUT_MS,
@@ -497,14 +502,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
         },
       });
 
-      const chunks: string[] = [];
-      for await (const chunk of llm.chat.stream?.({
-        mode: "ROOM",
-        personal_name: null,
-        text: "hi",
-      }) ?? []) {
-        chunks.push(chunk.delta_text);
-      }
+      const chunks = await collectDeltaTexts(
+        llm.chat.stream?.({
+          mode: "ROOM",
+          personal_name: null,
+          text: "hi",
+        }) ?? [],
+      );
       expect(chunks).toEqual([]);
     },
     STREAM_TEST_TIMEOUT_MS,
@@ -1999,14 +2003,13 @@ describe("llm-provider (OpenAI-compatible)", () => {
           model: "dummy-model",
         });
 
-        const chunks: string[] = [];
-        for await (const chunk of llm.chat.stream?.({
-          mode: "ROOM",
-          personal_name: null,
-          text: "hi",
-        }) ?? []) {
-          chunks.push(chunk.delta_text);
-        }
+        const chunks = await collectDeltaTexts(
+          llm.chat.stream?.({
+            mode: "ROOM",
+            personal_name: null,
+            text: "hi",
+          }) ?? [],
+        );
         expect(chunks).toEqual(["A", "B"]);
       } finally {
         (globalThis as unknown as { fetch: unknown }).fetch = originalFetch as unknown;
