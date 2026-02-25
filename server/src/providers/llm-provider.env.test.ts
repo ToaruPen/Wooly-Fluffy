@@ -11,6 +11,8 @@ const restoreEnv = (key: keyof NodeJS.ProcessEnv, value: string | undefined): vo
   process.env[key] = value;
 };
 
+const ENV_PROVIDER_TEST_TIMEOUT_MS = 10_000;
+
 describe("llm-provider (env)", () => {
   it("does not create persona config loader for stub env provider", () => {
     const saved = {
@@ -98,129 +100,141 @@ describe("llm-provider (env)", () => {
     }
   }, 10_000);
 
-  it("defaults to stub when LLM_PROVIDER_KIND is unset", async () => {
-    const saved = {
-      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
-      LLM_BASE_URL: process.env.LLM_BASE_URL,
-      LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY,
-    };
-    try {
-      delete process.env.LLM_PROVIDER_KIND;
-      delete process.env.LLM_BASE_URL;
-      delete process.env.LLM_MODEL;
-      delete process.env.LLM_API_KEY;
+  it(
+    "defaults to stub when LLM_PROVIDER_KIND is unset",
+    async () => {
+      const saved = {
+        LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+        LLM_BASE_URL: process.env.LLM_BASE_URL,
+        LLM_MODEL: process.env.LLM_MODEL,
+        LLM_API_KEY: process.env.LLM_API_KEY,
+      };
+      try {
+        delete process.env.LLM_PROVIDER_KIND;
+        delete process.env.LLM_BASE_URL;
+        delete process.env.LLM_MODEL;
+        delete process.env.LLM_API_KEY;
 
-      const llm = createLlmProviderFromEnv();
-      expect(llm.kind).toBe("stub");
-      expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).toEqual({
-        assistant_text: "うんうん",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      });
+        const llm = createLlmProviderFromEnv();
+        expect(llm.kind).toBe("stub");
+        expect(llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" })).toEqual({
+          assistant_text: "うんうん",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        });
 
-      const sessionSummary = await llm.inner_task.call({
-        task: "session_summary",
-        input: { messages: [] },
-      });
-      expect(JSON.parse(sessionSummary.json_text)).toMatchObject({
-        task: "session_summary",
-        title: "要約",
-        summary_json: {
-          summary: expect.any(String),
-          topics: [],
-          staff_notes: [],
-        },
-      });
+        const sessionSummary = await llm.inner_task.call({
+          task: "session_summary",
+          input: { messages: [] },
+        });
+        expect(JSON.parse(sessionSummary.json_text)).toMatchObject({
+          task: "session_summary",
+          title: "要約",
+          summary_json: {
+            summary: expect.any(String),
+            topics: [],
+            staff_notes: [],
+          },
+        });
 
-      const consentDecision = await llm.inner_task.call({
-        task: "consent_decision",
-        input: { text: "hi" },
-      });
-      expect(JSON.parse(consentDecision.json_text)).toEqual({
-        task: "consent_decision",
-        answer: "unknown",
-      });
+        const consentDecision = await llm.inner_task.call({
+          task: "consent_decision",
+          input: { text: "hi" },
+        });
+        expect(JSON.parse(consentDecision.json_text)).toEqual({
+          task: "consent_decision",
+          answer: "unknown",
+        });
 
-      const memoryExtract = await llm.inner_task.call({
-        task: "memory_extract",
-        input: { assistant_text: "hi" },
-      });
-      expect(JSON.parse(memoryExtract.json_text)).toEqual({
-        task: "memory_extract",
-        candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" },
-      });
-    } finally {
-      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
-      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
-      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
-      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
-    }
-  });
+        const memoryExtract = await llm.inner_task.call({
+          task: "memory_extract",
+          input: { assistant_text: "hi" },
+        });
+        expect(JSON.parse(memoryExtract.json_text)).toEqual({
+          task: "memory_extract",
+          candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" },
+        });
+      } finally {
+        restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+        restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+        restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+        restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      }
+    },
+    ENV_PROVIDER_TEST_TIMEOUT_MS,
+  );
 
-  it("returns unavailable provider when configured kind is missing base_url/model", async () => {
-    const saved = {
-      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
-      LLM_BASE_URL: process.env.LLM_BASE_URL,
-      LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY,
-    };
-    try {
-      process.env.LLM_PROVIDER_KIND = "local";
-      delete process.env.LLM_BASE_URL;
-      delete process.env.LLM_MODEL;
-      delete process.env.LLM_API_KEY;
+  it(
+    "returns unavailable provider when configured kind is missing base_url/model",
+    async () => {
+      const saved = {
+        LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+        LLM_BASE_URL: process.env.LLM_BASE_URL,
+        LLM_MODEL: process.env.LLM_MODEL,
+        LLM_API_KEY: process.env.LLM_API_KEY,
+      };
+      try {
+        process.env.LLM_PROVIDER_KIND = "local";
+        delete process.env.LLM_BASE_URL;
+        delete process.env.LLM_MODEL;
+        delete process.env.LLM_API_KEY;
 
-      const llm = createLlmProviderFromEnv();
-      expect(llm.kind).toBe("local");
-      await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
-      await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
-      ).rejects.toThrow(/not configured/);
-      await expect(
-        llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
-      ).rejects.toThrow(/not configured/);
-    } finally {
-      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
-      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
-      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
-      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
-    }
-  });
+        const llm = createLlmProviderFromEnv();
+        expect(llm.kind).toBe("local");
+        await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+        ).rejects.toThrow(/not configured/);
+        await expect(
+          llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
+        ).rejects.toThrow(/not configured/);
+      } finally {
+        restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+        restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+        restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+        restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      }
+    },
+    ENV_PROVIDER_TEST_TIMEOUT_MS,
+  );
 
-  it("returns unavailable provider when gemini_native is missing model/api key", async () => {
-    const saved = {
-      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
-      LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY,
-      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
-    };
-    try {
-      process.env.LLM_PROVIDER_KIND = "gemini_native";
-      delete process.env.LLM_MODEL;
-      delete process.env.LLM_API_KEY;
-      delete process.env.GEMINI_API_KEY;
-      delete process.env.GOOGLE_API_KEY;
+  it(
+    "returns unavailable provider when gemini_native is missing model/api key",
+    async () => {
+      const saved = {
+        LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+        LLM_MODEL: process.env.LLM_MODEL,
+        LLM_API_KEY: process.env.LLM_API_KEY,
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+        GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+      };
+      try {
+        process.env.LLM_PROVIDER_KIND = "gemini_native";
+        delete process.env.LLM_MODEL;
+        delete process.env.LLM_API_KEY;
+        delete process.env.GEMINI_API_KEY;
+        delete process.env.GOOGLE_API_KEY;
 
-      const llm = createLlmProviderFromEnv();
-      expect(llm.kind).toBe("gemini_native");
-      await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
-      await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
-      ).rejects.toThrow(/not configured/);
-      await expect(
-        llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
-      ).rejects.toThrow(/not configured/);
-    } finally {
-      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
-      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
-      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
-      restoreEnv("GEMINI_API_KEY", saved.GEMINI_API_KEY);
-      restoreEnv("GOOGLE_API_KEY", saved.GOOGLE_API_KEY);
-    }
-  });
+        const llm = createLlmProviderFromEnv();
+        expect(llm.kind).toBe("gemini_native");
+        await expect(llm.health()).resolves.toEqual({ status: "unavailable" });
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+        ).rejects.toThrow(/not configured/);
+        await expect(
+          llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
+        ).rejects.toThrow(/not configured/);
+      } finally {
+        restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+        restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+        restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+        restoreEnv("GEMINI_API_KEY", saved.GEMINI_API_KEY);
+        restoreEnv("GOOGLE_API_KEY", saved.GOOGLE_API_KEY);
+      }
+    },
+    ENV_PROVIDER_TEST_TIMEOUT_MS,
+  );
 
   it("throws when external env provider is missing api key", () => {
     const saved = {
@@ -244,45 +258,49 @@ describe("llm-provider (env)", () => {
     }
   });
 
-  it("passes fetch option through env provider", async () => {
-    const saved = {
-      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
-      LLM_BASE_URL: process.env.LLM_BASE_URL,
-      LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY,
-    };
-    try {
-      process.env.LLM_PROVIDER_KIND = "local";
-      process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
-      process.env.LLM_MODEL = "dummy-model";
-      delete process.env.LLM_API_KEY;
+  it(
+    "passes fetch option through env provider",
+    async () => {
+      const saved = {
+        LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+        LLM_BASE_URL: process.env.LLM_BASE_URL,
+        LLM_MODEL: process.env.LLM_MODEL,
+        LLM_API_KEY: process.env.LLM_API_KEY,
+      };
+      try {
+        process.env.LLM_PROVIDER_KIND = "local";
+        process.env.LLM_BASE_URL = "http://lmstudio.local/v1";
+        process.env.LLM_MODEL = "dummy-model";
+        delete process.env.LLM_API_KEY;
 
-      let calls = 0;
-      const llm = createLlmProviderFromEnv({
-        fetch: async (input: string) => {
-          calls += 1;
-          expect(input).toBe("http://lmstudio.local/v1/chat/completions");
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              choices: [{ message: { content: '{"assistant_text":"hi"}' } }],
-            }),
-          };
-        },
-      });
+        let calls = 0;
+        const llm = createLlmProviderFromEnv({
+          fetch: async (input: string) => {
+            calls += 1;
+            expect(input).toBe("http://lmstudio.local/v1/chat/completions");
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                choices: [{ message: { content: '{"assistant_text":"hi"}' } }],
+              }),
+            };
+          },
+        });
 
-      await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
-      ).resolves.toMatchObject({ assistant_text: "hi" });
-      expect(calls).toBe(1);
-    } finally {
-      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
-      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
-      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
-      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
-    }
-  });
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+        ).resolves.toMatchObject({ assistant_text: "hi" });
+        expect(calls).toBe(1);
+      } finally {
+        restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+        restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+        restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+        restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      }
+    },
+    ENV_PROVIDER_TEST_TIMEOUT_MS,
+  );
 
   it("clamps assistant_text by LLM_CHAT_MAX_OUTPUT_CHARS", async () => {
     const saved = {
@@ -542,47 +560,51 @@ describe("llm-provider (env)", () => {
     }
   }, 10_000);
 
-  it("uses GEMINI_API_KEY/GOOGLE_API_KEY when LLM_API_KEY is unset", async () => {
-    const saved = {
-      LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
-      LLM_MODEL: process.env.LLM_MODEL,
-      LLM_API_KEY: process.env.LLM_API_KEY,
-      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
-    };
-    try {
-      process.env.LLM_PROVIDER_KIND = "gemini_native";
-      process.env.LLM_MODEL = "gemini-2.5-flash-lite";
-      delete process.env.LLM_API_KEY;
-      process.env.GEMINI_API_KEY = "test-key";
-      delete process.env.GOOGLE_API_KEY;
+  it(
+    "uses GEMINI_API_KEY/GOOGLE_API_KEY when LLM_API_KEY is unset",
+    async () => {
+      const saved = {
+        LLM_PROVIDER_KIND: process.env.LLM_PROVIDER_KIND,
+        LLM_MODEL: process.env.LLM_MODEL,
+        LLM_API_KEY: process.env.LLM_API_KEY,
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+        GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+      };
+      try {
+        process.env.LLM_PROVIDER_KIND = "gemini_native";
+        process.env.LLM_MODEL = "gemini-2.5-flash-lite";
+        delete process.env.LLM_API_KEY;
+        process.env.GEMINI_API_KEY = "test-key";
+        delete process.env.GOOGLE_API_KEY;
 
-      const llm = createLlmProviderFromEnv({
-        gemini_models: {
-          generateContent: async () => ({
-            text: JSON.stringify({ assistant_text: "Hello", expression: "neutral" }),
-            functionCalls: [],
-            candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
-          }),
-          get: async () => ({}),
-        },
-      });
+        const llm = createLlmProviderFromEnv({
+          gemini_models: {
+            generateContent: async () => ({
+              text: JSON.stringify({ assistant_text: "Hello", expression: "neutral" }),
+              functionCalls: [],
+              candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+            }),
+            get: async () => ({}),
+          },
+        });
 
-      expect(llm.kind).toBe("gemini_native");
-      await expect(
-        llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
-      ).resolves.toEqual({
-        assistant_text: "Hello",
-        expression: "neutral",
-        motion_id: null,
-        tool_calls: [],
-      });
-    } finally {
-      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
-      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
-      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
-      restoreEnv("GEMINI_API_KEY", saved.GEMINI_API_KEY);
-      restoreEnv("GOOGLE_API_KEY", saved.GOOGLE_API_KEY);
-    }
-  });
+        expect(llm.kind).toBe("gemini_native");
+        await expect(
+          llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
+        ).resolves.toEqual({
+          assistant_text: "Hello",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        });
+      } finally {
+        restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+        restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+        restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+        restoreEnv("GEMINI_API_KEY", saved.GEMINI_API_KEY);
+        restoreEnv("GOOGLE_API_KEY", saved.GOOGLE_API_KEY);
+      }
+    },
+    ENV_PROVIDER_TEST_TIMEOUT_MS,
+  );
 });
