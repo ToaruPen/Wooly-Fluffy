@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createLlmProviderFromEnv } from "./llm-provider.js";
 import * as personaConfigModule from "./persona-config.js";
 
+const restoreEnv = (key: keyof NodeJS.ProcessEnv, value: string | undefined): void => {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
+};
+
 describe("llm-provider (env)", () => {
   it("does not create persona config loader for stub env provider", () => {
     const saved = {
@@ -26,10 +34,10 @@ describe("llm-provider (env)", () => {
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
     }
   }, 10_000);
 
@@ -81,12 +89,12 @@ describe("llm-provider (env)", () => {
       expect(closeSpy).toHaveBeenCalledTimes(1);
     } finally {
       spy.mockRestore();
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
-      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("WOOLY_FLUFFY_PERSONA_PATH", saved.WOOLY_FLUFFY_PERSONA_PATH);
+      restoreEnv("WOOLY_FLUFFY_POLICY_PATH", saved.WOOLY_FLUFFY_POLICY_PATH);
     }
   }, 10_000);
 
@@ -144,10 +152,10 @@ describe("llm-provider (env)", () => {
         candidate: { kind: "likes", value: "りんご", source_quote: "りんごがすき" },
       });
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
     }
   });
 
@@ -174,10 +182,10 @@ describe("llm-provider (env)", () => {
         llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
       ).rejects.toThrow(/not configured/);
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
     }
   });
 
@@ -206,11 +214,11 @@ describe("llm-provider (env)", () => {
         llm.inner_task.call({ task: "consent_decision", input: { text: "hi" } }),
       ).rejects.toThrow(/not configured/);
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.GEMINI_API_KEY = saved.GEMINI_API_KEY;
-      process.env.GOOGLE_API_KEY = saved.GOOGLE_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("GEMINI_API_KEY", saved.GEMINI_API_KEY);
+      restoreEnv("GOOGLE_API_KEY", saved.GOOGLE_API_KEY);
     }
   });
 
@@ -229,10 +237,10 @@ describe("llm-provider (env)", () => {
 
       expect(() => createLlmProviderFromEnv()).toThrow(/missing_llm_api_key/);
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
     }
   });
 
@@ -269,10 +277,10 @@ describe("llm-provider (env)", () => {
       ).resolves.toMatchObject({ assistant_text: "hi" });
       expect(calls).toBe(1);
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
     }
   });
 
@@ -315,13 +323,13 @@ describe("llm-provider (env)", () => {
         llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" }),
       ).resolves.toMatchObject({ assistant_text: "12345" });
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = saved.LLM_CHAT_MAX_OUTPUT_CHARS;
-      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
-      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("LLM_CHAT_MAX_OUTPUT_CHARS", saved.LLM_CHAT_MAX_OUTPUT_CHARS);
+      restoreEnv("WOOLY_FLUFFY_PERSONA_PATH", saved.WOOLY_FLUFFY_PERSONA_PATH);
+      restoreEnv("WOOLY_FLUFFY_POLICY_PATH", saved.WOOLY_FLUFFY_POLICY_PATH);
     }
   }, 10_000);
 
@@ -373,12 +381,12 @@ describe("llm-provider (env)", () => {
 
       await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" });
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_BASE_URL = saved.LLM_BASE_URL;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
-      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_BASE_URL", saved.LLM_BASE_URL);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("WOOLY_FLUFFY_PERSONA_PATH", saved.WOOLY_FLUFFY_PERSONA_PATH);
+      restoreEnv("WOOLY_FLUFFY_POLICY_PATH", saved.WOOLY_FLUFFY_POLICY_PATH);
     }
   }, 10_000);
 
@@ -430,12 +438,12 @@ describe("llm-provider (env)", () => {
         llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
       ).resolves.toMatchObject({ assistant_text: "1234567" });
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.LLM_CHAT_MAX_OUTPUT_CHARS = saved.LLM_CHAT_MAX_OUTPUT_CHARS;
-      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
-      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("LLM_CHAT_MAX_OUTPUT_CHARS", saved.LLM_CHAT_MAX_OUTPUT_CHARS);
+      restoreEnv("WOOLY_FLUFFY_PERSONA_PATH", saved.WOOLY_FLUFFY_PERSONA_PATH);
+      restoreEnv("WOOLY_FLUFFY_POLICY_PATH", saved.WOOLY_FLUFFY_POLICY_PATH);
     }
   }, 10_000);
 
@@ -479,12 +487,12 @@ describe("llm-provider (env)", () => {
         ).resolves.toMatchObject({ assistant_text: "ok" });
       }
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = saved.LLM_CHAT_MAX_OUTPUT_TOKENS;
-      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
-      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("LLM_CHAT_MAX_OUTPUT_TOKENS", saved.LLM_CHAT_MAX_OUTPUT_TOKENS);
+      restoreEnv("WOOLY_FLUFFY_PERSONA_PATH", saved.WOOLY_FLUFFY_PERSONA_PATH);
+      restoreEnv("WOOLY_FLUFFY_POLICY_PATH", saved.WOOLY_FLUFFY_POLICY_PATH);
     }
   }, 10_000);
 
@@ -525,12 +533,12 @@ describe("llm-provider (env)", () => {
         llm.chat.call({ mode: "ROOM", personal_name: null, text: "hello" }),
       ).resolves.toMatchObject({ assistant_text: "ok" });
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.LLM_CHAT_MAX_OUTPUT_TOKENS = saved.LLM_CHAT_MAX_OUTPUT_TOKENS;
-      process.env.WOOLY_FLUFFY_PERSONA_PATH = saved.WOOLY_FLUFFY_PERSONA_PATH;
-      process.env.WOOLY_FLUFFY_POLICY_PATH = saved.WOOLY_FLUFFY_POLICY_PATH;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("LLM_CHAT_MAX_OUTPUT_TOKENS", saved.LLM_CHAT_MAX_OUTPUT_TOKENS);
+      restoreEnv("WOOLY_FLUFFY_PERSONA_PATH", saved.WOOLY_FLUFFY_PERSONA_PATH);
+      restoreEnv("WOOLY_FLUFFY_POLICY_PATH", saved.WOOLY_FLUFFY_POLICY_PATH);
     }
   }, 10_000);
 
@@ -570,11 +578,11 @@ describe("llm-provider (env)", () => {
         tool_calls: [],
       });
     } finally {
-      process.env.LLM_PROVIDER_KIND = saved.LLM_PROVIDER_KIND;
-      process.env.LLM_MODEL = saved.LLM_MODEL;
-      process.env.LLM_API_KEY = saved.LLM_API_KEY;
-      process.env.GEMINI_API_KEY = saved.GEMINI_API_KEY;
-      process.env.GOOGLE_API_KEY = saved.GOOGLE_API_KEY;
+      restoreEnv("LLM_PROVIDER_KIND", saved.LLM_PROVIDER_KIND);
+      restoreEnv("LLM_MODEL", saved.LLM_MODEL);
+      restoreEnv("LLM_API_KEY", saved.LLM_API_KEY);
+      restoreEnv("GEMINI_API_KEY", saved.GEMINI_API_KEY);
+      restoreEnv("GOOGLE_API_KEY", saved.GOOGLE_API_KEY);
     }
   });
 });
