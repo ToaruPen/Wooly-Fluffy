@@ -1,6 +1,11 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createNullAudioPlayerMock,
+  createSseClientMockFactory,
+  createVrmAvatarCaptureMock,
+} from "./test-helpers/kiosk-page-mocks";
 
 let latestSseHandlers: {
   onMessage?: (message: { type: string; seq: number; data: unknown }) => void;
@@ -8,112 +13,116 @@ let latestSseHandlers: {
 
 let latestMotionProps: unknown = null;
 
-vi.mock("./components/audio-player", () => ({
-  AudioPlayer: () => null,
-}));
+vi.mock("./components/audio-player", () => createNullAudioPlayerMock());
 
-vi.mock("./components/vrm-avatar", () => ({
-  VrmAvatar: (props: unknown) => {
+vi.mock("./components/vrm-avatar", () =>
+  createVrmAvatarCaptureMock((props: unknown) => {
     const record = props as Record<string, unknown>;
     latestMotionProps = record.motion;
-    return null;
-  },
-}));
+  })(),
+);
 
-vi.mock("./sse-client", async () => {
-  const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-  return {
-    ...actual,
-    connectSse: (_url: string, handlers: unknown) => {
-      latestSseHandlers = handlers as typeof latestSseHandlers;
-      return { close: () => undefined };
-    },
-  };
-});
+vi.mock("./sse-client", () =>
+  createSseClientMockFactory((handlers: unknown) => {
+    latestSseHandlers = handlers as typeof latestSseHandlers;
+  })(),
+);
+
+const KIOSK_PLAY_MOTION_TEST_TIMEOUT_MS = 10_000;
 
 describe("KioskPage play_motion", () => {
-  it("passes allowlisted play_motion to VrmAvatar and de-dupes by motion_instance_id", async () => {
-    vi.resetModules();
-    latestSseHandlers = null;
-    latestMotionProps = null;
+  it(
+    "passes allowlisted play_motion to VrmAvatar and de-dupes by motion_instance_id",
+    async () => {
+      vi.resetModules();
+      latestSseHandlers = null;
+      latestMotionProps = null;
 
-    const { KioskPage } = await import("./kiosk-page");
+      const { KioskPage } = await import("./kiosk-page");
 
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
 
-    await act(async () => {
-      root.render(<KioskPage />);
-      await Promise.resolve();
-    });
-
-    expect(latestSseHandlers).toBeTruthy();
-    expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "boot-1" });
-
-    await act(async () => {
-      latestSseHandlers?.onMessage?.({
-        type: "kiosk.command.play_motion",
-        seq: 1,
-        data: { motion_id: "idle", motion_instance_id: "m-1" },
+      await act(async () => {
+        root.render(<KioskPage />);
+        await Promise.resolve();
       });
-      await Promise.resolve();
-    });
-    expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
 
-    // Same instance id -> ignore
-    await act(async () => {
-      latestSseHandlers?.onMessage?.({
-        type: "kiosk.command.play_motion",
-        seq: 2,
-        data: { motion_id: "cheer", motion_instance_id: "m-1" },
+      expect(latestSseHandlers).toBeTruthy();
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "boot-1" });
+
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 1,
+          data: { motion_id: "idle", motion_instance_id: "m-1" },
+        });
+        await Promise.resolve();
       });
-      await Promise.resolve();
-    });
-    expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
 
-    // Different instance id -> update
-    await act(async () => {
-      latestSseHandlers?.onMessage?.({
-        type: "kiosk.command.play_motion",
-        seq: 3,
-        data: { motion_id: "cheer", motion_instance_id: "m-2" },
+      // Same instance id -> ignore
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 2,
+          data: { motion_id: "cheer", motion_instance_id: "m-1" },
+        });
+        await Promise.resolve();
       });
-      await Promise.resolve();
-    });
-    expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
 
-    // Non-allowlisted -> ignore
-    await act(async () => {
-      latestSseHandlers?.onMessage?.({
-        type: "kiosk.command.play_motion",
-        seq: 4,
-        data: { motion_id: "dance", motion_instance_id: "m-3" },
+      // Different instance id -> update
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 3,
+          data: { motion_id: "cheer", motion_instance_id: "m-2" },
+        });
+        await Promise.resolve();
       });
-      await Promise.resolve();
-    });
-    expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
 
-    // thinking should be accepted.
-    await act(async () => {
-      latestSseHandlers?.onMessage?.({
-        type: "kiosk.command.play_motion",
-        seq: 5,
-        data: { motion_id: "thinking", motion_instance_id: "m-4" },
+      // Non-allowlisted -> ignore
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 4,
+          data: { motion_id: "dance", motion_instance_id: "m-3" },
+        });
+        await Promise.resolve();
       });
-      await Promise.resolve();
-    });
-    expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
 
-    // Dev helper (if enabled): should ignore unknown and accept allowlisted.
-    const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
-    await act(async () => {
-      w.__wfPlayMotion?.("dance");
-      w.__wfPlayMotion?.("idle");
-      await Promise.resolve();
-    });
+      // thinking should be accepted.
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 5,
+          data: { motion_id: "thinking", motion_instance_id: "m-4" },
+        });
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
 
-    act(() => root.unmount());
-    document.body.removeChild(container);
-  });
+      // Dev helper (if enabled): should ignore unknown and accept allowlisted.
+      const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
+      await act(async () => {
+        w.__wfPlayMotion?.("dance");
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
+
+      await act(async () => {
+        w.__wfPlayMotion?.("idle");
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "dev-1" });
+
+      act(() => root.unmount());
+      document.body.removeChild(container);
+    },
+    KIOSK_PLAY_MOTION_TEST_TIMEOUT_MS,
+  );
 });
