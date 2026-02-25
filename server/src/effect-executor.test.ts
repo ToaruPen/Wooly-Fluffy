@@ -863,6 +863,152 @@ describe("effect-executor", () => {
   );
 
   it(
+    "does not flush stream segment at abbreviation boundary",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 10);
+          });
+          return {
+            assistant_text: "Dr. Smith arrived.",
+            expression: "neutral",
+            motion_id: null,
+            tool_calls: [],
+          };
+        },
+        chatStream: async function* () {
+          yield { delta_text: "Dr." };
+          yield { delta_text: " Smith arrived." };
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-abbrev",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 30);
+      });
+
+      const segments = sent.filter((item) => item.type === "kiosk.command.speech.segment");
+      expect(segments).toEqual([
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-abbrev",
+            chat_request_id: "chat-stream-abbrev",
+            segment_index: 0,
+            text: "Dr. Smith arrived.",
+            is_last: false,
+          },
+        },
+      ]);
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-abbrev",
+          assistant_text: "Dr. Smith arrived.",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not flush stream segment at decimal point",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 10);
+          });
+          return {
+            assistant_text: "3.14 is pi.",
+            expression: "neutral",
+            motion_id: null,
+            tool_calls: [],
+          };
+        },
+        chatStream: async function* () {
+          yield { delta_text: "3.14 is" };
+          yield { delta_text: " pi." };
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-decimal",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 30);
+      });
+
+      const segments = sent.filter((item) => item.type === "kiosk.command.speech.segment");
+      expect(segments).toEqual([
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-decimal",
+            chat_request_id: "chat-stream-decimal",
+            segment_index: 0,
+            text: "3.14 is pi.",
+            is_last: false,
+          },
+        },
+      ]);
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-decimal",
+          assistant_text: "3.14 is pi.",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "does not split common dotted abbreviations like U.S.",
     async () => {
       const providers = createStubProviders();
@@ -1337,6 +1483,94 @@ describe("effect-executor", () => {
         {
           type: "kiosk.command.speak",
           data: { say_id: "chat-stream-partial-fail", text: "partial then fallback" },
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "does not suppress SAY when chat result includes tool calls",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "tool final answer",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [
+            { id: "tool-1", type: "function", function: { name: "lookup", arguments: "{}" } },
+          ],
+        }),
+        chatStream: async function* () {
+          yield { delta_text: "streamed draft." };
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-with-tools",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-with-tools",
+          assistant_text: "tool final answer",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [
+            { id: "tool-1", type: "function", function: { name: "lookup", arguments: "{}" } },
+          ],
+        },
+      ]);
+
+      sent.length = 0;
+      executor.executeEffects([
+        {
+          type: "SAY",
+          text: "tool final answer",
+          chat_request_id: "chat-stream-with-tools",
+        },
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-with-tools" },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-with-tools",
+            segment_index: 0,
+            text: "tool final answer",
+            is_last: true,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: { utterance_id: "say-1", chat_request_id: "chat-stream-with-tools" },
+        },
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "say-1", text: "tool final answer" },
         },
       ]);
     },

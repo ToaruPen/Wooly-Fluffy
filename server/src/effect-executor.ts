@@ -134,12 +134,14 @@ const splitSpeechSegments = (text: string): string[] => {
 };
 
 const extractCompleteSentencePrefix = (text: string): { complete: string; rest: string } => {
-  // We intentionally flush up to the last punctuation in the current buffer so
-  // multiple completed sentences can be emitted in one pass when available.
-  const punctuations = ["。", "！", "？", ".", "!", "?"];
   let lastIndex = -1;
-  for (const punctuation of punctuations) {
-    lastIndex = Math.max(lastIndex, text.lastIndexOf(punctuation));
+  for (let index = 0; index < text.length; index += 1) {
+    const mark = text[index];
+    const isBoundary =
+      mark === "。" || mark === "！" || mark === "？" || isAsciiSentenceBoundary(text, index);
+    if (isBoundary) {
+      lastIndex = index;
+    }
   }
   if (lastIndex < 0) {
     return { complete: "", rest: text };
@@ -372,7 +374,7 @@ export const createEffectExecutor = (deps: {
                       }),
                     ]);
                     isChatFinalized = true;
-                    if (emittedSegmentCount > 0) {
+                    if (emittedSegmentCount > 0 && result.tool_calls.length === 0) {
                       markStreamedChatRequest(effect.request_id);
                     }
                     streamAbortController.abort();
