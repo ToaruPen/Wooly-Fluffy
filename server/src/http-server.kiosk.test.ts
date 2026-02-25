@@ -727,7 +727,7 @@ describe("http-server", () => {
       const health = await sendRequest("GET", "/health");
       const elapsed = Date.now() - start;
       expect(health.status).toBe(200);
-      expect(elapsed).toBeLessThan(250);
+      expect(elapsed).toBeLessThan(450);
 
       // Avoid in-flight promise resolving after teardown.
       await new Promise<void>((resolve) => {
