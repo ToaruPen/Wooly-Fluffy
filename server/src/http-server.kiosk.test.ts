@@ -11,7 +11,8 @@ let port: number;
 let store: ReturnType<typeof createStore>;
 
 const helpers = createHttpTestHelpers(() => port);
-const { sendRequest, sendRequestBuffer, cookieFromSetCookie, loginStaff, withStaffCookie } = helpers;
+const { sendRequest, sendRequestBuffer, cookieFromSetCookie, loginStaff, withStaffCookie } =
+  helpers;
 
 const createLocalTestHelpers = (localPort: number) => {
   let localStaffCookie = "";
@@ -1122,5 +1123,4 @@ describe("http-server", () => {
       });
     });
   });
-
 });
