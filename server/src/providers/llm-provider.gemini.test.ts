@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createGeminiNativeLlmProvider } from "./llm-provider.js";
 
 const PROVIDER_TEST_TIMEOUT_MS = 10_000;
+const PROVIDER_SHORT_TIMEOUT_MS = 5_000;
 
 describe("llm-provider (Gemini native)", () => {
   it(
@@ -366,27 +367,31 @@ describe("llm-provider (Gemini native)", () => {
     PROVIDER_TEST_TIMEOUT_MS,
   );
 
-  it("throws when gemini inner_task(session_summary) returns invalid schema (fail-fast)", async () => {
-    const llm = createGeminiNativeLlmProvider({
-      model: "gemini-2.5-flash-lite",
-      api_key: "test-key",
-      gemini_models: {
-        generateContent: async () => ({
-          text: JSON.stringify({ task: "session_summary", title: "t" }),
-          functionCalls: [],
-          candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
-        }),
-        get: async () => ({}),
-      },
-    });
+  it(
+    "throws when gemini inner_task(session_summary) returns invalid schema (fail-fast)",
+    async () => {
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+        gemini_models: {
+          generateContent: async () => ({
+            text: JSON.stringify({ task: "session_summary", title: "t" }),
+            functionCalls: [],
+            candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+          }),
+          get: async () => ({}),
+        },
+      });
 
-    await expect(
-      llm.inner_task.call({
-        task: "session_summary",
-        input: { messages: [{ role: "user", text: "hi" }] },
-      }),
-    ).rejects.toThrow();
-  }, 5_000);
+      await expect(
+        llm.inner_task.call({
+          task: "session_summary",
+          input: { messages: [{ role: "user", text: "hi" }] },
+        }),
+      ).rejects.toThrow();
+    },
+    PROVIDER_SHORT_TIMEOUT_MS,
+  );
 
   it(
     "retries once on 429 and succeeds",
@@ -424,98 +429,102 @@ describe("llm-provider (Gemini native)", () => {
     PROVIDER_TEST_TIMEOUT_MS,
   );
 
-  it("includes blocked tool calls and still completes", async () => {
-    let calls = 0;
-    const llm = createGeminiNativeLlmProvider({
-      model: "gemini-2.5-flash-lite",
-      api_key: "test-key",
-      read_chat_runtime_config: () => ({
-        persona_text: "",
-        max_output_chars: 320,
-        max_output_tokens: 66,
-      }),
-      fetch: async (input: string) => {
-        if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
-            }),
-          };
-        }
-        if (input.startsWith("https://api.open-meteo.com/")) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
-          };
-        }
-        throw new Error(`unexpected url: ${input}`);
-      },
-      gemini_models: {
-        generateContent: async (params) => {
-          const config = params.config as { maxOutputTokens?: number };
-          expect(config.maxOutputTokens).toBe(66);
-          calls += 1;
-          if (calls === 1) {
+  it(
+    "includes blocked tool calls and still completes",
+    async () => {
+      let calls = 0;
+      const llm = createGeminiNativeLlmProvider({
+        model: "gemini-2.5-flash-lite",
+        api_key: "test-key",
+        read_chat_runtime_config: () => ({
+          persona_text: "",
+          max_output_chars: 320,
+          max_output_tokens: 66,
+        }),
+        fetch: async (input: string) => {
+          if (input.startsWith("https://geocoding-api.open-meteo.com/")) {
             return {
-              text: "",
-              functionCalls: [
-                { name: "get_weather", args: { location: "Tokyo" } },
-                { name: "do_bad", args: {} },
-              ],
-              candidates: [
-                {
-                  content: {
-                    role: "model",
-                    parts: [
-                      { text: "keep" },
-                      "raw",
-                      { functionCall: "oops" },
-                      { functionCall: { name: 123, args: {} } },
-                      { functionCall: { name: "get_weather", args: { location: "Tokyo" } } },
-                      { functionCall: { name: "do_bad", args: {} } },
-                    ],
-                  },
-                },
-              ],
+              ok: true,
+              status: 200,
+              json: async () => ({
+                results: [{ name: "Tokyo", country: "Japan", latitude: 35, longitude: 139 }],
+              }),
             };
           }
-
-          const contents = (params as { contents?: unknown })?.contents as unknown[];
-          const modelParts = (contents?.[1] as { parts?: unknown[] } | undefined)?.parts ?? [];
-          expect(
-            modelParts.some((p) => {
-              const fc = (p as { functionCall?: { name?: unknown } }).functionCall;
-              return typeof fc?.name === "string" && fc.name === "do_bad";
-            }),
-          ).toBe(false);
-          expect(modelParts.length).toBe(5);
-
-          const responseParts = (contents?.[2] as { parts?: unknown[] } | undefined)?.parts ?? [];
-          expect(
-            responseParts.map((p) => {
-              const fr = (p as { functionResponse?: { name?: unknown } }).functionResponse;
-              return typeof fr?.name === "string" ? fr.name : null;
-            }),
-          ).toEqual(["get_weather"]);
-
-          return {
-            text: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
-            functionCalls: [],
-            candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
-          };
+          if (input.startsWith("https://api.open-meteo.com/")) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ current: { temperature_2m: 12.5, weather_code: 3 } }),
+            };
+          }
+          throw new Error(`unexpected url: ${input}`);
         },
-        get: async () => ({}),
-      },
-    });
+        gemini_models: {
+          generateContent: async (params) => {
+            const config = params.config as { maxOutputTokens?: number };
+            expect(config.maxOutputTokens).toBe(66);
+            calls += 1;
+            if (calls === 1) {
+              return {
+                text: "",
+                functionCalls: [
+                  { name: "get_weather", args: { location: "Tokyo" } },
+                  { name: "do_bad", args: {} },
+                ],
+                candidates: [
+                  {
+                    content: {
+                      role: "model",
+                      parts: [
+                        { text: "keep" },
+                        "raw",
+                        { functionCall: "oops" },
+                        { functionCall: { name: 123, args: {} } },
+                        { functionCall: { name: "get_weather", args: { location: "Tokyo" } } },
+                        { functionCall: { name: "do_bad", args: {} } },
+                      ],
+                    },
+                  },
+                ],
+              };
+            }
 
-    const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
-    expect(calls).toBe(2);
-    expect(result.assistant_text).toBe("OK");
-    expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
-  }, 10_000);
+            const contents = (params as { contents?: unknown })?.contents as unknown[];
+            const modelParts = (contents?.[1] as { parts?: unknown[] } | undefined)?.parts ?? [];
+            expect(
+              modelParts.some((p) => {
+                const fc = (p as { functionCall?: { name?: unknown } }).functionCall;
+                return typeof fc?.name === "string" && fc.name === "do_bad";
+              }),
+            ).toBe(false);
+            expect(modelParts.length).toBe(5);
+
+            const responseParts = (contents?.[2] as { parts?: unknown[] } | undefined)?.parts ?? [];
+            expect(
+              responseParts.map((p) => {
+                const fr = (p as { functionResponse?: { name?: unknown } }).functionResponse;
+                return typeof fr?.name === "string" ? fr.name : null;
+              }),
+            ).toEqual(["get_weather"]);
+
+            return {
+              text: JSON.stringify({ assistant_text: "OK", expression: "neutral" }),
+              functionCalls: [],
+              candidates: [{ content: { role: "model", parts: [{ text: "ok" }] } }],
+            };
+          },
+          get: async () => ({}),
+        },
+      });
+
+      const result = await llm.chat.call({ mode: "ROOM", personal_name: null, text: "hi" });
+      expect(calls).toBe(2);
+      expect(result.assistant_text).toBe("OK");
+      expect(result.tool_calls.map((t) => t.function.name)).toEqual(["get_weather", "do_bad"]);
+    },
+    PROVIDER_TEST_TIMEOUT_MS,
+  );
 
   it(
     "falls back when all tool calls are blocked",
@@ -885,7 +894,7 @@ describe("llm-provider (Gemini native)", () => {
     async () => {
       const originalFetch = globalThis.fetch;
       try {
-        (globalThis as unknown as { fetch: unknown }).fetch = (async (input: unknown) => {
+        vi.stubGlobal("fetch", async (input: unknown) => {
           const url = String(input);
           if (url.startsWith("https://geocoding-api.open-meteo.com/")) {
             return {
@@ -904,7 +913,7 @@ describe("llm-provider (Gemini native)", () => {
             };
           }
           throw new Error(`unexpected url: ${url}`);
-        }) as unknown;
+        });
 
         let calls = 0;
         const llm = createGeminiNativeLlmProvider({
@@ -934,7 +943,7 @@ describe("llm-provider (Gemini native)", () => {
         expect(calls).toBe(2);
         expect(result.assistant_text).toBe("OK");
       } finally {
-        (globalThis as unknown as { fetch: unknown }).fetch = originalFetch as unknown;
+        vi.stubGlobal("fetch", originalFetch);
       }
     },
     PROVIDER_TEST_TIMEOUT_MS,

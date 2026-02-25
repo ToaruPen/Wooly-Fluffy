@@ -1,10 +1,10 @@
-import { request } from "http";
 import type { Server } from "http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
 import { createHttpTestHelpers } from "./test-helpers/http.js";
+import { createSseTestHelpers } from "./test-helpers/sse.js";
 
 let server: Server;
 let port: number;
@@ -14,6 +14,8 @@ let chatMode: "content" | "tool_calls" = "content";
 
 const helpers = createHttpTestHelpers(() => port);
 const { sendRequest, loginStaff, withStaffCookie } = helpers;
+const sseHelpers = createSseTestHelpers(() => port);
+const { readSseUntil } = sseHelpers;
 
 const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) => {
   const boundary = "testboundary";
@@ -36,78 +38,6 @@ const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) =>
     contentType: `multipart/form-data; boundary=${boundary}`,
   };
 };
-
-const readSseUntil = (
-  path: string,
-  predicate: (message: { type: string; seq: number; data: unknown }) => boolean,
-  onFirstMessage?: () => Promise<void>,
-  options?: { timeout_ms?: number },
-) =>
-  new Promise<Array<{ type: string; seq: number; data: unknown }>>((resolve, reject) => {
-    let isDone = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-
-    const finish = (err?: Error, result?: Array<{ type: string; seq: number; data: unknown }>) => {
-      if (isDone) {
-        return;
-      }
-      isDone = true;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(result ?? []);
-    };
-
-    const messages: Array<{ type: string; seq: number; data: unknown }> = [];
-    const req = request({ host: "127.0.0.1", port, method: "GET", path }, (res) => {
-      let buffer = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => {
-        buffer += chunk;
-        while (true) {
-          const endIndex = buffer.indexOf("\n\n");
-          if (endIndex === -1) {
-            return;
-          }
-          const eventChunk = buffer.slice(0, endIndex);
-          buffer = buffer.slice(endIndex + 2);
-          const lines = eventChunk.split("\n");
-          const dataLine = lines.find((line) => line.startsWith("data: "));
-          if (!dataLine) {
-            continue;
-          }
-          const raw = dataLine.slice("data: ".length);
-          const parsed = JSON.parse(raw) as { type: string; seq: number; data: unknown };
-          messages.push(parsed);
-          if (messages.length === 1 && onFirstMessage) {
-            void onFirstMessage().catch((err: unknown) => {
-              req.destroy();
-              finish(err instanceof Error ? err : new Error("onFirstMessage_failed"));
-            });
-          }
-          if (predicate(parsed)) {
-            res.destroy();
-            finish(undefined, messages);
-            return;
-          }
-        }
-      });
-    });
-
-    timeout = setTimeout(() => {
-      req.destroy();
-      finish(new Error("sse_timeout"));
-    }, options?.timeout_ms ?? 2500);
-
-    req.on("error", (err) => {
-      finish(err instanceof Error ? err : new Error("request_error"));
-    });
-    req.end();
-  });
 
 describe("http-server (async llm provider)", () => {
   beforeEach(async () => {

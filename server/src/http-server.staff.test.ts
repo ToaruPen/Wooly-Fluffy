@@ -1,72 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { request } from "http";
-import type { IncomingHttpHeaders } from "http";
 import type { Server } from "http";
 import { createHttpServer } from "./http-server.js";
 import { createStore } from "./store.js";
 import { createHttpTestHelpers } from "./test-helpers/http.js";
+import { createSseTestHelpers } from "./test-helpers/sse.js";
 
 let server: Server;
 let port: number;
 let store: ReturnType<typeof createStore>;
 
 const helpers = createHttpTestHelpers(() => port);
-const { sendRequest, cookieFromSetCookie, loginStaff, withStaffCookie } = helpers;
+const { sendRequest, loginStaff, withStaffCookie } = helpers;
+const sseHelpers = createSseTestHelpers(() => port);
+const { readSseDataMessages } = sseHelpers;
 
 const createLocalTestHelpers = (localPort: number) => {
-  let localStaffCookie = "";
-
-  const sendRequestLocal = (
-    method: string,
-    path: string,
-    options?: { headers?: Record<string, string>; body?: string | Buffer },
-  ) =>
-    new Promise<{ status: number; body: string; headers: IncomingHttpHeaders }>(
-      (resolve, reject) => {
-        const req = request({ host: "127.0.0.1", port: localPort, method, path }, (res) => {
-          let body = "";
-          res.setEncoding("utf8");
-          res.on("data", (chunk) => {
-            body += chunk;
-          });
-          res.on("end", () => {
-            resolve({ status: res.statusCode ?? 0, body, headers: res.headers });
-          });
-        });
-
-        req.on("error", reject);
-        if (options?.headers) {
-          for (const [key, value] of Object.entries(options.headers)) {
-            req.setHeader(key, value);
-          }
-        }
-        if (options?.body) {
-          req.write(options.body);
-        }
-        req.end();
-      },
-    );
-
-  const loginStaffLocal = async (): Promise<string> => {
-    const response = await sendRequestLocal("POST", "/api/v1/staff/auth/login", {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode: "test-pass" }),
-    });
-    if (response.status !== 200) {
-      throw new Error(`staff_login_failed:${response.status}`);
-    }
-    const setCookie = response.headers["set-cookie"];
-    const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-    localStaffCookie = cookieFromSetCookie(String(first ?? ""));
-    return localStaffCookie;
+  const localHelpers = createHttpTestHelpers(() => localPort);
+  return {
+    sendRequestLocal: localHelpers.sendRequest,
+    loginStaffLocal: localHelpers.loginStaff,
+    withLocalStaffCookie: localHelpers.withStaffCookie,
   };
-
-  const withLocalStaffCookie = (headers?: Record<string, string>): Record<string, string> => ({
-    ...(headers ?? {}),
-    cookie: localStaffCookie,
-  });
-
-  return { sendRequestLocal, loginStaffLocal, withLocalStaffCookie };
 };
 
 const extractPendingCounts = (
@@ -110,88 +64,6 @@ const buildMultipartBody = (input: { stt_request_id: string; audio: Buffer }) =>
     body,
   };
 };
-
-const readSseDataMessages = (
-  path: string,
-  expectedCount: number,
-  onFirstMessage?: () => Promise<void>,
-  options?: { headers?: Record<string, string> },
-) =>
-  new Promise<
-    Array<{
-      type: string;
-      seq: number;
-      data: unknown;
-    }>
-  >((resolve, reject) => {
-    let isDone = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let req: ReturnType<typeof request> | undefined;
-
-    const finish = (err?: Error, result?: Array<{ type: string; seq: number; data: unknown }>) => {
-      if (isDone) {
-        return;
-      }
-      isDone = true;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(result ?? []);
-    };
-
-    const messages: Array<{ type: string; seq: number; data: unknown }> = [];
-    req = request({ host: "127.0.0.1", port, method: "GET", path }, (res) => {
-      let buffer = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => {
-        buffer += chunk;
-        while (true) {
-          const endIndex = buffer.indexOf("\n\n");
-          if (endIndex === -1) {
-            return;
-          }
-          const eventChunk = buffer.slice(0, endIndex);
-          buffer = buffer.slice(endIndex + 2);
-          const lines = eventChunk.split("\n");
-          const dataLine = lines.find((line) => line.startsWith("data: "));
-          if (!dataLine) {
-            continue;
-          }
-          const raw = dataLine.slice("data: ".length);
-          const parsed = JSON.parse(raw) as { type: string; seq: number; data: unknown };
-          messages.push(parsed);
-          if (messages.length === 1 && onFirstMessage) {
-            void onFirstMessage();
-          }
-          if (messages.length >= expectedCount) {
-            res.destroy();
-            finish(undefined, messages);
-            return;
-          }
-        }
-      });
-    });
-
-    if (options?.headers) {
-      for (const [key, value] of Object.entries(options.headers)) {
-        req.setHeader(key, value);
-      }
-    }
-
-    timeout = setTimeout(() => {
-      req?.destroy();
-      finish(new Error("sse_timeout"));
-    }, 2000);
-
-    req.on("error", (err) => {
-      finish(err instanceof Error ? err : new Error("request_error"));
-    });
-    req.end();
-  });
 
 const closeServerWithTimeout = (
   serverToClose: Pick<Server, "close">,
@@ -639,6 +511,8 @@ describe("http-server", () => {
         const localPort = address.port;
         const { sendRequestLocal, loginStaffLocal, withLocalStaffCookie } =
           createLocalTestHelpers(localPort);
+        const localSseHelpers = createSseTestHelpers(() => localPort);
+        const { readSseUntil: readLocalSseUntil } = localSseHelpers;
         await loginStaffLocal();
 
         const waitForPendingSnapshot = (
@@ -646,109 +520,43 @@ describe("http-server", () => {
           targetSessionSummaryCount: number,
           targetListLength: number,
           onFirstMessage: () => Promise<void>,
-        ): Promise<Array<{ type: string; seq: number; data: unknown }>> =>
-          new Promise((resolve, reject) => {
-            const messages: Array<{ type: string; seq: number; data: unknown }> = [];
-            let isDone = false;
-            let timeout: ReturnType<typeof setTimeout> | undefined;
-            let hasSeenTargetSnapshot = false;
-            let hasSeenTargetList = false;
+        ): Promise<Array<{ type: string; seq: number; data: unknown }>> => {
+          let hasSeenTargetSnapshot = false;
+          let hasSeenTargetList = false;
 
-            const finish = (
-              err?: Error,
-              result?: Array<{ type: string; seq: number; data: unknown }>,
-            ) => {
-              if (isDone) {
-                return;
-              }
-              isDone = true;
-              if (timeout) {
-                clearTimeout(timeout);
-              }
-              if (err) {
-                reject(err);
-                return;
-              }
-              resolve(result ?? []);
-            };
-
-            const req = request(
-              { host: "127.0.0.1", port: localPort, method: "GET", path: "/api/v1/staff/stream" },
-              (res) => {
-                let buffer = "";
-                res.setEncoding("utf8");
-                res.on("data", (chunk) => {
-                  buffer += chunk;
-                  while (true) {
-                    const endIndex = buffer.indexOf("\n\n");
-                    if (endIndex === -1) {
-                      return;
-                    }
-                    const eventChunk = buffer.slice(0, endIndex);
-                    buffer = buffer.slice(endIndex + 2);
-                    const lines = eventChunk.split("\n");
-                    const dataLine = lines.find((line) => line.startsWith("data: "));
-                    if (!dataLine) {
-                      continue;
-                    }
-                    const parsed = JSON.parse(dataLine.slice("data: ".length)) as {
-                      type: string;
-                      seq: number;
-                      data: unknown;
-                    };
-                    messages.push(parsed);
-                    if (messages.length === 1) {
-                      void onFirstMessage();
-                    }
-
-                    if (parsed.type === "staff.session_summaries_pending_list") {
-                      const parsedData = parsed.data as { items?: unknown };
-                      const items = Array.isArray(parsedData?.items) ? parsedData.items : undefined;
-                      if (items && items.length === targetListLength) {
-                        hasSeenTargetList = true;
-                        if (hasSeenTargetSnapshot) {
-                          res.destroy();
-                          finish(undefined, messages);
-                          return;
-                        }
-                      }
-                    }
-
-                    if (parsed.type !== "staff.snapshot") {
-                      continue;
-                    }
-                    const pendingCounts = extractPendingCounts(parsed.data);
-                    const count = pendingCounts?.count;
-                    const sessionSummaryCount = pendingCounts?.sessionSummaryCount;
-
-                    if (
-                      count === targetCount &&
-                      sessionSummaryCount === targetSessionSummaryCount
-                    ) {
-                      hasSeenTargetSnapshot = true;
-                      if (hasSeenTargetList) {
-                        res.destroy();
-                        finish(undefined, messages);
-                        return;
-                      }
-                    }
+          return readLocalSseUntil(
+            "/api/v1/staff/stream",
+            (parsed) => {
+              if (parsed.type === "staff.session_summaries_pending_list") {
+                const parsedData = parsed.data as { items?: unknown };
+                const items = Array.isArray(parsedData?.items) ? parsedData.items : undefined;
+                if (items && items.length === targetListLength) {
+                  hasSeenTargetList = true;
+                  if (hasSeenTargetSnapshot) {
+                    return true;
                   }
-                });
-              },
-            );
+                }
+                return false;
+              }
 
-            req.setHeader("cookie", withLocalStaffCookie().cookie);
+              if (parsed.type !== "staff.snapshot") {
+                return false;
+              }
 
-            timeout = setTimeout(() => {
-              req.destroy();
-              finish(new Error("sse_timeout"));
-            }, 3000);
+              const pendingCounts = extractPendingCounts(parsed.data);
+              const count = pendingCounts?.count;
+              const sessionSummaryCount = pendingCounts?.sessionSummaryCount;
+              if (count === targetCount && sessionSummaryCount === targetSessionSummaryCount) {
+                hasSeenTargetSnapshot = true;
+                return hasSeenTargetList;
+              }
 
-            req.on("error", (err) => {
-              finish(err instanceof Error ? err : new Error("request_error"));
-            });
-            req.end();
-          });
+              return false;
+            },
+            onFirstMessage,
+            { headers: withLocalStaffCookie(), timeout_ms: 3000 },
+          );
+        };
 
         const messages = await waitForPendingSnapshot(0, 1, 1, async () => {
           const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
