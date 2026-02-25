@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const resetDom = () => {
-  document.body.innerHTML = "";
+  document.body.replaceChildren();
   window.history.pushState({}, "", "/");
 };
 

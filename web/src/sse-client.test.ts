@@ -356,6 +356,7 @@ describe("sse-client coverage", () => {
         expect(FakeEventSource.instances.length).toBe(1);
       } finally {
         vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
       }
     },
     SSE_TEST_TIMEOUT_MS,

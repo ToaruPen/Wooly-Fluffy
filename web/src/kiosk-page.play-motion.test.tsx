@@ -110,9 +110,15 @@ describe("KioskPage play_motion", () => {
       const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
       await act(async () => {
         w.__wfPlayMotion?.("dance");
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
+
+      await act(async () => {
         w.__wfPlayMotion?.("idle");
         await Promise.resolve();
       });
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "dev-1" });
 
       act(() => root.unmount());
       document.body.removeChild(container);
