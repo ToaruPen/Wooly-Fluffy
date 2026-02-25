@@ -48,13 +48,12 @@ describe("app dev gating", () => {
   it("evaluates app module with DEV=false without enabling /debug", async () => {
     vi.resetModules();
 
-    const isDevOriginal = import.meta.env.DEV;
-    import.meta.env.DEV = false;
+    vi.stubEnv("DEV", false);
     try {
       const { getPage } = await import("./app");
       expect(getPage("/debug", import.meta.env.DEV)).toBe("kiosk");
     } finally {
-      import.meta.env.DEV = isDevOriginal;
+      vi.unstubAllEnvs();
     }
   });
 });
