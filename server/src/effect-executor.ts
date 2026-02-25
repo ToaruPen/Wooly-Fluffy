@@ -87,8 +87,8 @@ const isAsciiSentenceBoundary = (text: string, index: number): boolean => {
 };
 
 const mergeSpeechUnits = (left: string, right: string): string => {
-  const needsAsciiBoundarySpace = /[.!?]$/u.test(left) && /^[A-Za-z0-9]/u.test(right);
-  if (needsAsciiBoundarySpace) {
+  const isAsciiBoundarySpaceNeeded = /[.!?]$/u.test(left) && /^[A-Za-z0-9]/u.test(right);
+  if (isAsciiBoundarySpaceNeeded) {
     return `${left} ${right}`;
   }
   return `${left}${right}`;
