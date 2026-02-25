@@ -276,6 +276,7 @@ const withHardTimeout = async <T>(
 };
 
 const SSE_TEST_TIMEOUT_MS = 10_000;
+const POST_CONFIRM_OBSERVE_MS = 500;
 
 const closeServerWithTimeout = (
   serverToClose: Pick<Server, "close">,
@@ -1072,7 +1073,7 @@ describe("http-server", () => {
                         timeout = setTimeout(() => {
                           req.destroy();
                           finish();
-                        }, 200);
+                        }, POST_CONFIRM_OBSERVE_MS);
                       })().catch((err) => {
                         finish(err instanceof Error ? err : new Error("confirm_failed"));
                       });
