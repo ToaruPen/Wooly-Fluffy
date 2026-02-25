@@ -146,7 +146,10 @@ const readSseDataMessages = (
           const parsed = JSON.parse(raw) as { type: string; seq: number; data: unknown };
           messages.push(parsed);
           if (messages.length === 1 && onFirstMessage) {
-            void onFirstMessage();
+            void onFirstMessage().catch((err: unknown) => {
+              req?.destroy();
+              finish(err instanceof Error ? err : new Error("onFirstMessage_failed"));
+            });
           }
           if (messages.length >= expectedCount) {
             res.destroy();
@@ -363,15 +366,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
+  await closeServerWithTimeout(server, 7000);
 
   store.close();
   delete process.env.STAFF_PASSCODE;
@@ -984,6 +979,7 @@ describe("http-server", () => {
         await new Promise<void>((resolve, reject) => {
           let timeout: ReturnType<typeof setTimeout> | undefined;
           let hardTimeout: ReturnType<typeof setTimeout> | undefined;
+          let confirmCompleted = false;
           const finish = (err?: Error) => {
             if (timeout) {
               clearTimeout(timeout);
@@ -1036,6 +1032,11 @@ describe("http-server", () => {
                         { headers: { cookie: activeCookie } },
                       );
                       expect(confirm.status).toBe(200);
+                      confirmCompleted = true;
+                      timeout = setTimeout(() => {
+                        req.destroy();
+                        finish();
+                      }, 200);
                     })().catch((err) => {
                       finish(err instanceof Error ? err : new Error("confirm_failed"));
                     });
@@ -1043,10 +1044,20 @@ describe("http-server", () => {
 
                   if (didTriggerPreviously && parsed.type === "staff.snapshot") {
                     hasLeakedSnapshot = true;
+                    if (confirmCompleted) {
+                      req.destroy();
+                      finish(new Error("expired_stream_snapshot_leak"));
+                      return;
+                    }
                   }
 
                   if (parsed.type === "staff.session_summaries_pending_list") {
                     hasLeakedPendingList = true;
+                    if (confirmCompleted) {
+                      req.destroy();
+                      finish(new Error("expired_stream_pending_list_leak"));
+                      return;
+                    }
                   }
                 }
               });
@@ -1058,11 +1069,6 @@ describe("http-server", () => {
             finish(err instanceof Error ? err : new Error("request_error"));
           });
           req.end();
-
-          timeout = setTimeout(() => {
-            req.destroy();
-            finish();
-          }, 300);
 
           hardTimeout = setTimeout(() => {
             req.destroy();
