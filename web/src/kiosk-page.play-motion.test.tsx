@@ -1,6 +1,11 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createNullAudioPlayerMock,
+  createSseClientMockFactory,
+  createVrmAvatarCaptureMock,
+} from "./test-helpers/kiosk-page-mocks";
 
 let latestSseHandlers: {
   onMessage?: (message: { type: string; seq: number; data: unknown }) => void;
@@ -8,28 +13,20 @@ let latestSseHandlers: {
 
 let latestMotionProps: unknown = null;
 
-vi.mock("./components/audio-player", () => ({
-  AudioPlayer: () => null,
-}));
+vi.mock("./components/audio-player", () => createNullAudioPlayerMock());
 
-vi.mock("./components/vrm-avatar", () => ({
-  VrmAvatar: (props: unknown) => {
+vi.mock("./components/vrm-avatar", () =>
+  createVrmAvatarCaptureMock((props: unknown) => {
     const record = props as Record<string, unknown>;
     latestMotionProps = record.motion;
-    return null;
-  },
-}));
+  })(),
+);
 
-vi.mock("./sse-client", async () => {
-  const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-  return {
-    ...actual,
-    connectSse: (_url: string, handlers: unknown) => {
-      latestSseHandlers = handlers as typeof latestSseHandlers;
-      return { close: () => undefined };
-    },
-  };
-});
+vi.mock("./sse-client", () =>
+  createSseClientMockFactory((handlers: unknown) => {
+    latestSseHandlers = handlers as typeof latestSseHandlers;
+  })(),
+);
 
 describe("KioskPage play_motion", () => {
   it("passes allowlisted play_motion to VrmAvatar and de-dupes by motion_instance_id", async () => {

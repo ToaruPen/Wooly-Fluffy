@@ -23,7 +23,12 @@ export default defineConfig({
       },
       all: true,
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/vite-env.d.ts"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/test-helpers/**",
+        "src/vite-env.d.ts",
+      ],
     },
   },
 });

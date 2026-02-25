@@ -1,6 +1,11 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createAudioPlayerCaptureMock,
+  createNullVrmAvatarMock,
+  createSseClientMockFactory,
+} from "./test-helpers/kiosk-page-mocks";
 
 let latestAudioPlayerProps: {
   onLevel?: (playId: number, level: number) => void;
@@ -8,24 +13,15 @@ let latestAudioPlayerProps: {
   onError?: (playId: number, message: string) => void;
 } | null = null;
 
-vi.mock("./components/audio-player", () => ({
-  AudioPlayer: (props: unknown) => {
+vi.mock("./components/audio-player", () =>
+  createAudioPlayerCaptureMock((props: unknown) => {
     latestAudioPlayerProps = props as typeof latestAudioPlayerProps;
-    return null;
-  },
-}));
+  })(),
+);
 
-vi.mock("./components/vrm-avatar", () => ({
-  VrmAvatar: () => null,
-}));
+vi.mock("./components/vrm-avatar", () => createNullVrmAvatarMock());
 
-vi.mock("./sse-client", async () => {
-  const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-  return {
-    ...actual,
-    connectSse: () => ({ close: () => undefined }),
-  };
-});
+vi.mock("./sse-client", () => createSseClientMockFactory()());
 
 describe("KioskPage audio callback guards", () => {
   it("ignores stale AudioPlayer callbacks", async () => {

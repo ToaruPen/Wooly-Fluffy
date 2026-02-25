@@ -1,29 +1,25 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createNullAudioPlayerMock,
+  createNullVrmAvatarMock,
+  createSseClientMockFactory,
+} from "./test-helpers/kiosk-page-mocks";
 
 let latestSseHandlers: {
   onMessage?: (message: { type: string; seq: number; data: unknown }) => void;
 } | null = null;
 
-vi.mock("./components/audio-player", () => ({
-  AudioPlayer: () => null,
-}));
+vi.mock("./components/audio-player", () => createNullAudioPlayerMock());
 
-vi.mock("./components/vrm-avatar", () => ({
-  VrmAvatar: () => null,
-}));
+vi.mock("./components/vrm-avatar", () => createNullVrmAvatarMock());
 
-vi.mock("./sse-client", async () => {
-  const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-  return {
-    ...actual,
-    connectSse: (_url: string, handlers: unknown) => {
-      latestSseHandlers = handlers as typeof latestSseHandlers;
-      return { close: () => undefined };
-    },
-  };
-});
+vi.mock("./sse-client", () =>
+  createSseClientMockFactory((handlers: unknown) => {
+    latestSseHandlers = handlers as typeof latestSseHandlers;
+  })(),
+);
 
 describe("KioskPage tool_calls", () => {
   it("tracks kiosk.command.tool_calls count without rendering details", async () => {

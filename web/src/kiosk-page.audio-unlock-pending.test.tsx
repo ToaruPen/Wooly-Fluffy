@@ -2,6 +2,11 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerMessage } from "./sse-client";
+import {
+  createNullAudioPlayerMock,
+  createNullVrmAvatarMock,
+  createSseClientMockFactory,
+} from "./test-helpers/kiosk-page-mocks";
 
 let connectHandlers: {
   onSnapshot?: (data: unknown) => void;
@@ -23,24 +28,15 @@ vi.mock("./api", () => ({
   postFormData: vi.fn(async () => ({ ok: true, status: 202 })),
 }));
 
-vi.mock("./components/audio-player", () => ({
-  AudioPlayer: () => null,
-}));
+vi.mock("./components/audio-player", () => createNullAudioPlayerMock());
 
-vi.mock("./components/vrm-avatar", () => ({
-  VrmAvatar: () => null,
-}));
+vi.mock("./components/vrm-avatar", () => createNullVrmAvatarMock());
 
-vi.mock("./sse-client", async () => {
-  const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-  return {
-    ...actual,
-    connectSse: (_url: string, handlers: unknown) => {
-      connectHandlers = handlers as typeof connectHandlers;
-      return { close: () => undefined };
-    },
-  };
-});
+vi.mock("./sse-client", () =>
+  createSseClientMockFactory((handlers: unknown) => {
+    connectHandlers = handlers as typeof connectHandlers;
+  })(),
+);
 
 describe("KioskPage pending TTS after audio unlock", () => {
   it("queues speak while locked and plays after user gesture unlock", async () => {

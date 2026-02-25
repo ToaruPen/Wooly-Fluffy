@@ -1,22 +1,17 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createNullAudioPlayerMock,
+  createNullVrmAvatarMock,
+  createSseClientMockFactory,
+} from "./test-helpers/kiosk-page-mocks";
 
-vi.mock("./components/audio-player", () => ({
-  AudioPlayer: () => null,
-}));
+vi.mock("./components/audio-player", () => createNullAudioPlayerMock());
 
-vi.mock("./components/vrm-avatar", () => ({
-  VrmAvatar: () => null,
-}));
+vi.mock("./components/vrm-avatar", () => createNullVrmAvatarMock());
 
-vi.mock("./sse-client", async () => {
-  const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-  return {
-    ...actual,
-    connectSse: () => ({ close: () => undefined }),
-  };
-});
+vi.mock("./sse-client", () => createSseClientMockFactory()());
 
 const getStage = (container: HTMLElement) => {
   const stage = container.querySelector('section[aria-label="Mascot stage"]');
