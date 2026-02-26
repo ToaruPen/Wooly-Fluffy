@@ -67,7 +67,7 @@ export const createSseTestHelpers = (getPort: () => number) => {
           reject(err);
           return;
         }
-        resolve(result ?? []);
+        resolve(result as JsonSseMessage[]);
       };
 
       const messages: JsonSseMessage[] = [];
@@ -91,8 +91,9 @@ export const createSseTestHelpers = (getPort: () => number) => {
             let parsed: JsonSseMessage;
             try {
               parsed = JSON.parse(parsedLines.data) as JsonSseMessage;
-            } catch (err) {
-              finish(err instanceof Error ? err : new Error("invalid_sse_json"));
+            } catch {
+              req?.destroy();
+              finish(new Error("invalid_sse_json"));
               return;
             }
 
@@ -110,8 +111,9 @@ export const createSseTestHelpers = (getPort: () => number) => {
                 finish(undefined, messages);
                 return;
               }
-            } catch (err) {
-              finish(err instanceof Error ? err : new Error("sse_predicate_failed"));
+            } catch {
+              req?.destroy();
+              finish(new Error("sse_predicate_failed"));
               return;
             }
           }
@@ -129,8 +131,8 @@ export const createSseTestHelpers = (getPort: () => number) => {
         finish(new Error("sse_timeout"));
       }, options?.timeout_ms ?? 2000);
 
-      req.on("error", (err) => {
-        finish(err instanceof Error ? err : new Error("request_error"));
+      req.on("error", () => {
+        finish(new Error("request_error"));
       });
       req.end();
     });
@@ -150,52 +152,49 @@ export const createSseTestHelpers = (getPort: () => number) => {
 
   const readFirstSseMessage = (path: string, options?: ReadOptions) =>
     new Promise<FirstMessage>((resolve, reject) => {
-      let isDone = false;
       let timeout: ReturnType<typeof setTimeout> | undefined;
 
       const finish = (err?: Error, result?: FirstMessage) => {
-        if (isDone) {
-          return;
-        }
-        isDone = true;
         if (timeout) {
           clearTimeout(timeout);
+          timeout = undefined;
         }
         if (err) {
           reject(err);
           return;
         }
-        if (!result) {
-          reject(new Error("missing_result"));
-          return;
-        }
-        resolve(result);
+        resolve(result as FirstMessage);
       };
 
       const req = request({ host: "127.0.0.1", port: getPort(), method: "GET", path }, (res) => {
-        const contentTypeHeader = res.headers["content-type"];
-        const contentType = Array.isArray(contentTypeHeader)
-          ? (contentTypeHeader[0] ?? "")
-          : (contentTypeHeader ?? "");
+        const contentType = String(res.headers["content-type"] ?? "");
 
         let buffer = "";
         res.setEncoding("utf8");
         res.on("data", (chunk) => {
           buffer += chunk;
-          const delimiter = findSseDelimiter(buffer);
-          if (!delimiter) {
+          while (true) {
+            const delimiter = findSseDelimiter(buffer);
+            if (!delimiter) {
+              return;
+            }
+
+            const eventChunk = buffer.slice(0, delimiter.index);
+            buffer = buffer.slice(delimiter.index + delimiter.length);
+            const parsedLines = parseSseLines(eventChunk);
+            if (!parsedLines.data) {
+              continue;
+            }
+
+            res.destroy();
+            finish(undefined, {
+              status: res.statusCode as number,
+              contentType,
+              data: parsedLines.data,
+              id: parsedLines.id ?? "",
+            });
             return;
           }
-
-          const eventChunk = buffer.slice(0, delimiter.index);
-          res.destroy();
-          const parsedLines = parseSseLines(eventChunk);
-          finish(undefined, {
-            status: res.statusCode ?? 0,
-            contentType,
-            data: parsedLines.data ?? "",
-            id: parsedLines.id ?? "",
-          });
         });
       });
 
@@ -210,8 +209,8 @@ export const createSseTestHelpers = (getPort: () => number) => {
         finish(new Error("sse_timeout"));
       }, options?.timeout_ms ?? 2000);
 
-      req.on("error", (err) => {
-        finish(err instanceof Error ? err : new Error("request_error"));
+      req.on("error", () => {
+        finish(new Error("request_error"));
       });
       req.end();
     });
