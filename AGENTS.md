@@ -129,11 +129,19 @@ A workflow template to help non-engineers run AI-driven development while preven
 
 - `.agent/commands/`: command definitions (create-prd, create-epic, generate-project-config, ...)
 - `.agent/rules/`: rule definitions (docs-sync, dod, epic, issue, security, performance, ...)
+- `.pen/`: Pencil design sources (`.pen` files) for frontend exploration/design-as-code workflows
 - `docs/prd/_template.md`: PRD template (Japanese output)
 - `docs/epics/_template.md`: Epic template (Japanese output)
 - `docs/glossary.md`: glossary
 - `templates/project-config/`: templates for `/generate-project-config`
 - `.opencode/commands/cocoindex-code.md`: quick reference for CocoIndex code-search usage and scope policy
+
+### Pencil placement (pencil.dev)
+
+- Keep Pencil files inside the repository workspace under `.pen/`.
+- Commit `.pen` files as source artifacts (do not put them under `var/`).
+- Use descriptive, screen-oriented names (e.g. `kiosk-main.pen`, `staff-main.pen`).
+- Keep screenshots in `var/screenshot/...` via `/ui-iterate`; do not mix screenshots into `.pen/`.
 
 ---
 
