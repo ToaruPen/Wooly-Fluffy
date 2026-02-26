@@ -4,7 +4,7 @@ import { createGeminiNativeLlmProvider } from "./llm-provider.js";
 
 const GEMINI_REST_TEST_TIMEOUT_MS = 30_000;
 
-describe("llm-provider (Gemini native)", () => {
+describe("llm-provider (Gemini default-rest)", () => {
   it(
     "constructs default models client when gemini_models is omitted",
     async () => {
