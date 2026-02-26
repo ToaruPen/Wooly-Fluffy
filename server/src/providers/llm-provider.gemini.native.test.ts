@@ -5,7 +5,6 @@ import { createGeminiNativeLlmProvider } from "./llm-provider.js";
 const PROVIDER_TEST_TIMEOUT_MS = 10_000;
 const PROVIDER_SHORT_TIMEOUT_MS = 5_000;
 
-
 describe("llm-provider (Gemini native)", () => {
   it(
     "parses assistant_text + expression from JSON text",

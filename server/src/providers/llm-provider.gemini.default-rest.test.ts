@@ -2,9 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createGeminiNativeLlmProvider } from "./llm-provider.js";
 
-const PROVIDER_TEST_TIMEOUT_MS = 10_000;
 const GEMINI_REST_TEST_TIMEOUT_MS = 30_000;
-
 
 describe("llm-provider (Gemini native)", () => {
   it(
@@ -743,5 +741,4 @@ describe("llm-provider (Gemini native)", () => {
     },
     GEMINI_REST_TEST_TIMEOUT_MS,
   );
-});
 });

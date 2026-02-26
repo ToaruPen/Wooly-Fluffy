@@ -5,7 +5,6 @@ import { createAbortableNeverFetch } from "../test-helpers/fetch.js";
 import { createOpenAiCompatibleLlmProvider } from "./llm-provider.js";
 
 const STREAM_TEST_TIMEOUT_MS = 5_000;
-const CALL_TEST_TIMEOUT_MS = 5_000;
 const LONG_CALL_TEST_TIMEOUT_MS = 10_000;
 
 describe("llm-provider (OpenAI-compatible)", () => {
@@ -723,5 +722,4 @@ describe("llm-provider (OpenAI-compatible)", () => {
     },
     STREAM_TEST_TIMEOUT_MS,
   );
-
 });
