@@ -1545,7 +1545,13 @@
   .denyButton,
   .kioskConsentYes,
   .kioskConsentNo,
-  .pendingCard {
+  .pendingCard,
+  .reconnectButton {
+    transition: none;
+  }
+
+  .reconnectingSpinner {
+    animation: none;
     transition: none;
   }
 
@@ -1568,6 +1574,10 @@
   }
 
   .pendingCard:hover {
+    transform: none;
+  }
+
+  .reconnectButton:active {
     transform: none;
   }
 }
