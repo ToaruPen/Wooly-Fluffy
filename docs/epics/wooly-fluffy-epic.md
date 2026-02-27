@@ -9,7 +9,9 @@
 - ステータス: 廃止（`docs/epics/wooly-fluffy-mvp-epic.md` に統合）
 - 参照PRD: `docs/prd/wooly-fluffy.md`
 
-NOTE: このEpicは過去の設計（`PERSONAL(name)` や同意フロー等）を含みます。最新の実装計画は `docs/epics/wooly-fluffy-mvp-epic.md` と Issue #114-#119 を参照してください。
+**⚠ このファイルは廃止済みです。参照しないでください。**
+
+NOTE: このEpicは過去の設計（`PERSONAL(name)` や同意フロー等）を含みます。最新の実装計画は `docs/epics/wooly-fluffy-mvp-epic.md` と Issue #114-#119 を参照してください。`memory_items` データモデルは `session_summary_items` に置換されています。
 
 ---
 

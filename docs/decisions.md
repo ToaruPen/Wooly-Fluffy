@@ -24,3 +24,7 @@
 - D-2026-02-20-AI_VOICE_LOW_LATENCY_PHASED_ROLLOUT: [`docs/decisions/d-2026-02-20-ai-voice-low-latency-phased-rollout.md`](./decisions/d-2026-02-20-ai-voice-low-latency-phased-rollout.md)
 - D-2026-02-21-PR_BOTS_REVIEW_AND_FAIL_FAST: [`docs/decisions/d-2026-02-21-pr-bots-review-and-fail-fast.md`](./decisions/d-2026-02-21-pr-bots-review-and-fail-fast.md)
 - D-2026-02-21-REVIEW_CYCLE_DEFAULT_BALANCED: [`docs/decisions/d-2026-02-21-review-cycle-default-balanced.md`](./decisions/d-2026-02-21-review-cycle-default-balanced.md)
+- D-2026-02-27-VRM_MODEL_SELECTION: [`docs/decisions/d-2026-02-27-vrm-model-selection.md`](./decisions/d-2026-02-27-vrm-model-selection.md)
+- D-2026-02-27-PERSONA_EXTERNAL_INJECTION: [`docs/decisions/d-2026-02-27-persona-external-injection.md`](./decisions/d-2026-02-27-persona-external-injection.md)
+- D-2026-02-27-FONT_SELF_HOSTING: [`docs/decisions/d-2026-02-27-font-self-hosting.md`](./decisions/d-2026-02-27-font-self-hosting.md)
+- D-2026-02-27-CHARACTER_BEHAVIOR_GUIDELINES: [`docs/decisions/d-2026-02-27-character-behavior-guidelines.md`](./decisions/d-2026-02-27-character-behavior-guidelines.md)

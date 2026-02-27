@@ -6,7 +6,7 @@
 
 - 作成日: 2026-02-01
 - 作成者: -
-- ステータス: Draft
+- ステータス: Completed
 - 参照PRD: `docs/prd/wooly-fluffy.md`
 - 参照Epic: `docs/epics/wooly-fluffy-mvp-epic.md`
 
@@ -272,6 +272,7 @@ Issue名: Effect Executor（Effect→Provider→Event）基盤
 概要: OrchestratorのEffectを実行し、結果をEventとしてOrchestratorへ返す橋渡しを実装する
 推定行数: 150-250行
 依存: #1（Orchestrator）
+完了: 実装済み（M1時点で完了）
 
 Issue-7
 番号: 7
@@ -279,6 +280,7 @@ Issue名: KIOSK録音（PTT）+ WAV変換
 概要: 録音、16kHz mono WAV変換、送信を実装する（保存しない）
 推定行数: 200-300行
 依存: #5（Web最小UI）
+完了: GitHub #83 (PR #97)
 
 Issue-8
 番号: 8
@@ -286,6 +288,7 @@ Issue名: STT Provider（whisper.cpp）
 概要: whisper.cpp呼び出し（subprocess）と、音声一時ファイルの確実な削除を実装する
 推定行数: 200-300行
 依存: #6
+完了: GitHub #90
 
 Issue-9
 番号: 9
@@ -293,6 +296,7 @@ Issue名: TTS Provider（VOICEVOX互換）
 概要: VOICEVOX互換 HTTP API クライアントとヘルスチェックを実装する（既定: AivisSpeech Engine）。帰属表記は「エンジン/モデルの一次情報URL」を参照し、UI表示は運用方針に合わせて別Issueで扱う。
 推定行数: 150-250行
 依存: #6
+完了: GitHub #104 (PR #105, #112, #113)
 
 Issue-10
 番号: 10
@@ -300,6 +304,7 @@ Issue名: LLM Provider（local/external + expression）
 概要: LLM Providerの切り替え（ローカル/外部）と、表情ラベル（4種）を返す構造化出力/ツール呼び出しを実装する。外部LLMとして Gemini（OpenAI互換 / ネイティブSDK）も選択肢に含める。
 推定行数: 200-300行
 依存: #6
+完了: GitHub #124 (PR #134)
 
 Issue-11
 番号: 11
@@ -307,6 +312,7 @@ Issue名: VRM表示 + 表情/口パク
 概要: 既製VRMを読み込み表示し、感情→表情、音量→口パクを反映する
 推定行数: 250-350行
 依存: #7, #9, #10
+完了: GitHub #88 (PR #96)
 
 Issue-12
 番号: 12
@@ -314,6 +320,7 @@ Issue名: Tool Executor（get_weather など）
 概要: `tools/tool_calls` を解釈し、許可リストのツールを実行して結果をモデルへ返す（タイムアウト/フォールバックを含む）
 推定行数: 200-350行
 依存: #6
+完了: 実装済み（M3時点で完了）
 
 Issue-13
 番号: 13
@@ -322,6 +329,7 @@ Issue名: 芸事（モーション）再生コマンド
 推定行数: 200-400行
 依存: #11
 実装Issue（PoC）: #38（Mixamo motion playback PoC）
+完了: GitHub #82 (PR #98)
 
 Issue-14
 番号: 14
@@ -329,6 +337,7 @@ Issue名: 主要ループ（外部依存）: STTを実行経路に接続（ス�
 概要: サーバのSTTスタブをwhisper.cpp Providerへ差し替え、未設定/失敗時も会話が止まらないことをテストで固定する（/healthのsttステータスも実態と一致させる）
 推定行数: 80-180行
 依存: #6, #8
+完了: GitHub #90
 
 Issue-15
 番号: 15
@@ -336,6 +345,7 @@ Issue名: Runbook: 外部依存/環境変数セットアップ + 主要ループ
 概要: whisper.cpp / TTS Engine（VOICEVOX互換）/ LLM（LM Studioまたは外部）/ VRMのセットアップと環境変数一覧、主要ループの手動スモーク手順をREADMEへ追記する
 推定行数: 50-120行
 依存: #14
+完了: GitHub #94 (PR #93, #95)
 
 ### 4.2 依存関係図
 
@@ -469,3 +479,4 @@ PRDの値: -
 ## 変更履歴
 
 - 2026-02-01: v1.0 初版作成
+- 2026-02-27: v1.1 全Issue完了確認、GitHub Issue/PRクロスリファレンスを追記、ステータスを Completed に変更

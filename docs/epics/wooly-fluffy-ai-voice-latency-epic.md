@@ -6,7 +6,7 @@
 
 - 作成日: 2026-02-20
 - 作成者: OpenCode
-- ステータス: Draft
+- ステータス: Completed
 - 参照PRD: `docs/prd/wooly-fluffy.md`
 
 ---
@@ -192,6 +192,15 @@ Issue名: feat(server): 低遅延音声パイプライン Phase3（LLM stream + 
 - Issue 128 depends_on Issue 119
 - Issue 129 depends_on Issue 128
 - Issue 130 depends_on Issue 129
+
+---
+
+---
+
+## 変更履歴
+
+- 2026-02-20: v1.0 初版作成
+- 2026-02-27: v1.1 全Issue完了確認（#128-#130, PR #137, #139, #146）、ステータスを Completed に変更
 
 ---
 

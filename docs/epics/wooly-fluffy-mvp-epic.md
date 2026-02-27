@@ -6,7 +6,7 @@
 
 - 作成日: 2026-01-31
 - 作成者: -
-- ステータス: Draft
+- ステータス: Completed
 - 参照PRD: `docs/prd/wooly-fluffy.md`
 
 ---
@@ -623,3 +623,4 @@ PRDの値: Unknown
 ## 変更履歴
 
 - 2026-01-31: v1.0 初版作成（migration）
+- 2026-02-27: v1.1 全Issue完了確認（#114-#119）、ステータスを Completed に変更
