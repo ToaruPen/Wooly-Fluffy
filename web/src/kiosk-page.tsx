@@ -1007,9 +1007,7 @@ export const KioskPage = () => {
   const isStreamError = streamConnection === "error";
   const isLocalPttActive = isPttAvailable && (isKioskPttDown || isKioskPttButtonHeld);
   const hasKioskErrors = Boolean(streamError || pttError || audioError);
-  const pttButtonLabel = isLocalPttActive
-    ? "はなして とめる"
-    : "おして はなす";
+  const pttButtonLabel = isLocalPttActive ? "はなして とめる" : "おして はなす";
 
   const handleReconnect = () => {
     const client = sseClientRef.current;
@@ -1141,11 +1139,7 @@ export const KioskPage = () => {
               <div className={styles.errorText} role="alert">
                 {toKidFriendlyError("stream", streamError ?? "connection error")}
               </div>
-              <button
-                type="button"
-                className={styles.reconnectButton}
-                onClick={handleReconnect}
-              >
+              <button type="button" className={styles.reconnectButton} onClick={handleReconnect}>
                 もういちどつなぐ
               </button>
             </div>

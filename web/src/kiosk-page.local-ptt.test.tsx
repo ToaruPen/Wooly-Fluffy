@@ -45,7 +45,9 @@ vi.mock("./sse-client", () =>
     connectHandlers = handlers as typeof connectHandlers;
     // Auto-send snapshot to establish connected state (initial state is now "reconnecting")
     const h = handlers as { onSnapshot?: (data: unknown) => void };
-    h.onSnapshot?.({ state: { mode: "ROOM", personal_name: null, phase: "idle", consent_ui_visible: false } });
+    h.onSnapshot?.({
+      state: { mode: "ROOM", personal_name: null, phase: "idle", consent_ui_visible: false },
+    });
   })(),
 );
 

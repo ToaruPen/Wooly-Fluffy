@@ -57,7 +57,10 @@ describe("app", () => {
       vi.resetModules();
 
       const closeSpy = vi.fn();
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void; reconnect: () => void }>(() => ({
+      const connectSseMock = vi.fn<
+        [string, ConnectHandlers],
+        { close: () => void; reconnect: () => void }
+      >(() => ({
         close: closeSpy,
         reconnect: vi.fn(),
       }));
