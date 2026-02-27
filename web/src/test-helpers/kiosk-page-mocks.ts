@@ -22,13 +22,19 @@ export const createVrmAvatarCaptureMock = (onRender: (props: unknown) => void) =
   },
 });
 
-export const createSseClientMockFactory = (onConnect?: (handlers: unknown) => void) => async () => {
-  const actual = await vi.importActual<typeof import("../sse-client")>("../sse-client");
-  return {
-    ...actual,
-    connectSse: (_url: string, handlers: unknown) => {
-      onConnect?.(handlers);
-      return { close: () => undefined, reconnect: () => undefined };
-    },
+export const createSseClientMockFactory =
+  (
+    onConnect?: (handlers: unknown) => void,
+    clientOverride?: { close: () => void; reconnect: () => void },
+  ) =>
+  async () => {
+    const actual = await vi.importActual<typeof import("../sse-client")>("../sse-client");
+    const defaultClient = { close: () => undefined, reconnect: () => undefined };
+    return {
+      ...actual,
+      connectSse: (_url: string, handlers: unknown) => {
+        onConnect?.(handlers);
+        return clientOverride ?? defaultClient;
+      },
+    };
   };
-};

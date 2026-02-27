@@ -1011,9 +1011,8 @@ export const KioskPage = () => {
 
   const handleReconnect = () => {
     const client = sseClientRef.current;
-    if (!client) {
-      return;
-    }
+    /* c8 ignore next -- defensive: button only renders after SSE error, so client is always set */
+    if (!client) return;
     setStreamConnection("reconnecting");
     setStreamError(null);
     client.reconnect();
@@ -1137,6 +1136,7 @@ export const KioskPage = () => {
           {isStreamError ? (
             <div className={styles.kioskErrorStack}>
               <div className={styles.errorText} role="alert">
+                {/* c8 ignore next -- streamError is always set when isStreamError is true */}
                 {toKidFriendlyError("stream", streamError ?? "connection error")}
               </div>
               <button type="button" className={styles.reconnectButton} onClick={handleReconnect}>

@@ -40,6 +40,8 @@ vi.mock("./components/audio-player", () => createNullAudioPlayerMock());
 
 vi.mock("./components/vrm-avatar", () => createNullVrmAvatarMock());
 
+const reconnectSpy = vi.fn();
+const sseClientSpy = { close: vi.fn(), reconnect: reconnectSpy };
 vi.mock("./sse-client", () =>
   createSseClientMockFactory((handlers: unknown) => {
     connectHandlers = handlers as typeof connectHandlers;
@@ -48,7 +50,7 @@ vi.mock("./sse-client", () =>
     h.onSnapshot?.({
       state: { mode: "ROOM", personal_name: null, phase: "idle", consent_ui_visible: false },
     });
-  })(),
+  }, sseClientSpy)(),
 );
 
 const KIOSK_LOCAL_PTT_TEST_TIMEOUT_MS = 10_000;
@@ -56,6 +58,8 @@ const KIOSK_LOCAL_PTT_TEST_TIMEOUT_MS = 10_000;
 describe("KioskPage local PTT", () => {
   beforeEach(() => {
     connectHandlers = null;
+    reconnectSpy.mockClear();
+    sseClientSpy.close.mockClear();
   });
 
   it("sends KIOSK_PTT_DOWN on Space keydown and KIOSK_PTT_UP on keyup", async () => {
@@ -1222,6 +1226,59 @@ describe("KioskPage local PTT", () => {
         clearTimeoutSpy.mockRestore();
         vi.useRealTimers();
       }
+    },
+    KIOSK_LOCAL_PTT_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "clicking reconnect button calls client.reconnect() and transitions to reconnecting",
+    async () => {
+      vi.resetModules();
+      reconnectSpy.mockClear();
+
+      const { KioskPage } = await import("./kiosk-page");
+
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+
+      await act(async () => {
+        root.render(<KioskPage />);
+        await Promise.resolve();
+      });
+
+      // Trigger SSE transport error to enter error state
+      await act(async () => {
+        connectHandlers?.onError?.(new Error("SSE connection error"));
+        await Promise.resolve();
+      });
+
+      // Verify error state shows reconnect button
+      const reconnectBtn = Array.from(container.querySelectorAll("button")).find((el) =>
+        (el.textContent ?? "").includes("もういちどつなぐ"),
+      ) as HTMLButtonElement | undefined;
+      expect(reconnectBtn).toBeTruthy();
+
+      // Click reconnect button
+      await act(async () => {
+        reconnectBtn?.click();
+        await Promise.resolve();
+      });
+
+      // Verify reconnect was called
+      expect(reconnectSpy).toHaveBeenCalledTimes(1);
+
+      // Verify UI transitioned to reconnecting state (error area should be gone, spinner should show)
+      const reconnectBtnAfter = Array.from(container.querySelectorAll("button")).find((el) =>
+        (el.textContent ?? "").includes("もういちどつなぐ"),
+      );
+      expect(reconnectBtnAfter).toBeUndefined();
+      expect(container.textContent ?? "").toContain("つなぎなおしているよ");
+
+      await act(async () => {
+        root.unmount();
+      });
+      document.body.removeChild(container);
     },
     KIOSK_LOCAL_PTT_TEST_TIMEOUT_MS,
   );
