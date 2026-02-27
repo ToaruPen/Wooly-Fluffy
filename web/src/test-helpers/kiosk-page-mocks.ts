@@ -28,7 +28,7 @@ export const createSseClientMockFactory = (onConnect?: (handlers: unknown) => vo
     ...actual,
     connectSse: (_url: string, handlers: unknown) => {
       onConnect?.(handlers);
-      return { close: () => undefined };
+      return { close: () => undefined, reconnect: () => undefined };
     },
   };
 };

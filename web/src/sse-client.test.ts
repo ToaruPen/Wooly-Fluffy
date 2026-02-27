@@ -361,4 +361,118 @@ describe("sse-client coverage", () => {
     },
     SSE_TEST_TIMEOUT_MS,
   );
+
+  it(
+    "reconnect() creates a new EventSource immediately",
+    async () => {
+      vi.resetModules();
+
+      const FakeEventSource = createFakeEventSourceClass();
+
+      vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+
+      const { connectSse } = await import("./sse-client");
+
+      const onSnapshot = vi.fn();
+      const onError = vi.fn();
+      const client = connectSse("/api/v1/kiosk/stream", { onSnapshot, onError });
+      const first = FakeEventSource.instances[0];
+
+      client.reconnect();
+
+      expect(first.closed).toBe(true);
+      expect(FakeEventSource.instances.length).toBe(2);
+
+      const second = FakeEventSource.instances[1];
+      second.onopen?.(new Event("open"));
+      second.onmessage?.({
+        data: JSON.stringify({
+          type: "kiosk.snapshot",
+          seq: 1,
+          data: { state: { mode: "ROOM" } },
+        }),
+      } as MessageEvent);
+
+      expect(onSnapshot).toHaveBeenCalledWith({ state: { mode: "ROOM" } });
+    },
+    SSE_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "reconnect() cancels pending auto-reconnect timer",
+    async () => {
+      vi.resetModules();
+      vi.useFakeTimers();
+
+      vi.stubEnv("VITE_SSE_RECONNECT_ENABLED", "true");
+      vi.stubEnv("VITE_SSE_RECONNECT_BASE_DELAY_MS", "5000");
+      vi.stubEnv("VITE_SSE_RECONNECT_MAX_DELAY_MS", "5000");
+
+      try {
+        const FakeEventSource = createFakeEventSourceClass();
+
+        vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+
+        const { connectSse } = await import("./sse-client");
+
+        const onSnapshot = vi.fn();
+        const onError = vi.fn();
+        const client = connectSse("/api/v1/kiosk/stream", { onSnapshot, onError });
+        const first = FakeEventSource.instances[0];
+
+        // Trigger auto-reconnect (schedules a 5s timer)
+        first.onerror?.(new Event("error"));
+        expect(first.closed).toBe(true);
+        expect(FakeEventSource.instances.length).toBe(1);
+
+        // Manual reconnect should cancel the timer and connect immediately
+        client.reconnect();
+        expect(FakeEventSource.instances.length).toBe(2);
+
+        // Advance past the auto-reconnect delay — no extra EventSource should be created
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(FakeEventSource.instances.length).toBe(2);
+      } finally {
+        vi.unstubAllEnvs();
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+      }
+    },
+    SSE_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "reconnect() works after close()",
+    async () => {
+      vi.resetModules();
+
+      const FakeEventSource = createFakeEventSourceClass();
+
+      vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+
+      const { connectSse } = await import("./sse-client");
+
+      const onSnapshot = vi.fn();
+      const client = connectSse("/api/v1/kiosk/stream", { onSnapshot });
+      const first = FakeEventSource.instances[0];
+
+      client.close();
+      expect(first.closed).toBe(true);
+
+      client.reconnect();
+      expect(FakeEventSource.instances.length).toBe(2);
+
+      const second = FakeEventSource.instances[1];
+      second.onmessage?.({
+        data: JSON.stringify({
+          type: "kiosk.snapshot",
+          seq: 1,
+          data: { state: { mode: "ROOM" } },
+        }),
+      } as MessageEvent);
+
+      expect(onSnapshot).toHaveBeenCalledWith({ state: { mode: "ROOM" } });
+    },
+    SSE_TEST_TIMEOUT_MS,
+  );
 });

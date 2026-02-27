@@ -43,6 +43,9 @@ vi.mock("./components/vrm-avatar", () => createNullVrmAvatarMock());
 vi.mock("./sse-client", () =>
   createSseClientMockFactory((handlers: unknown) => {
     connectHandlers = handlers as typeof connectHandlers;
+    // Auto-send snapshot to establish connected state (initial state is now "reconnecting")
+    const h = handlers as { onSnapshot?: (data: unknown) => void };
+    h.onSnapshot?.({ state: { mode: "ROOM", personal_name: null, phase: "idle", consent_ui_visible: false } });
   })(),
 );
 
@@ -137,7 +140,7 @@ describe("KioskPage local PTT", () => {
     });
 
     expect(button?.disabled).toBe(true);
-    expect(container.textContent ?? "").toContain("つながるまで ちょっとまってね");
+    expect(container.textContent ?? "").toContain("つながらないよ");
 
     const upCalls = postJsonWithTimeout.mock.calls.filter(
       ([path, body]) =>

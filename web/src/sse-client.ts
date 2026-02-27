@@ -117,5 +117,16 @@ export const connectSse = (url: string, handlers: SseHandlers) => {
       }
       source.close();
     },
+    reconnect: () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      source.close();
+      isClosed = false;
+      reconnectAttempt = 0;
+      source = new EventSource(url);
+      attach();
+    },
   };
 };

@@ -57,8 +57,9 @@ describe("app", () => {
       vi.resetModules();
 
       const closeSpy = vi.fn();
-      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void }>(() => ({
+      const connectSseMock = vi.fn<[string, ConnectHandlers], { close: () => void; reconnect: () => void }>(() => ({
         close: closeSpy,
+        reconnect: vi.fn(),
       }));
       vi.doMock("./sse-client", async () => {
         const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
@@ -253,7 +254,7 @@ describe("app", () => {
 
       expect(document.body.textContent ?? "").toContain("つながらないよ");
       const kioskPtt = Array.from(document.querySelectorAll("button")).find((b) =>
-        /おして はなす|はなして とめる|つながるまで まってね/.test(b.textContent ?? ""),
+        /おして はなす|はなして とめる/.test(b.textContent ?? ""),
       ) as HTMLButtonElement | undefined;
       expect(kioskPtt?.disabled).toBe(true);
 
