@@ -165,8 +165,8 @@ export const KioskPage = () => {
   const [toolCallsCount, setToolCallsCount] = useState(0);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [streamConnection, setStreamConnection] = useState<"connected" | "reconnecting">(
-    "connected",
+  const [streamConnection, setStreamConnection] = useState<"connected" | "reconnecting" | "error">(
+    "reconnecting",
   );
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
@@ -181,7 +181,7 @@ export const KioskPage = () => {
   const isKioskPttButtonHeldRef = useRef(false);
   const isKioskPttDownRef = useRef(false);
   const isKioskPttStateUncertainRef = useRef(false);
-  const isStreamConnectedRef = useRef(true);
+  const isStreamConnectedRef = useRef(false);
   const isKioskPttSendingRef = useRef(false);
   const kioskPttInFlightPromiseRef = useRef<Promise<boolean> | null>(null);
   const kioskPttRetryTimeoutIdRef = useRef<number | null>(null);
@@ -209,6 +209,7 @@ export const KioskPage = () => {
   const segmentQueueRef = useRef<SegmentQueueState>(createSegmentQueueState());
   const segmentUtteranceIdsRef = useRef<Set<string>>(new Set());
   const pendingSegmentEndUtteranceIdRef = useRef<string | null>(null);
+  const sseClientRef = useRef<{ close: () => void; reconnect: () => void } | null>(null);
 
   const rememberSegmentUtteranceId = useCallback((utteranceId: string) => {
     const known = segmentUtteranceIdsRef.current;
@@ -725,10 +726,8 @@ export const KioskPage = () => {
     const client = connectSse("/api/v1/kiosk/stream", {
       onSnapshot: (data) => {
         setSnapshot(data as KioskSnapshot);
-        if (!isStreamConnectedRef.current) {
-          isStreamConnectedRef.current = true;
-          setStreamConnection("connected");
-        }
+        isStreamConnectedRef.current = true;
+        setStreamConnection("connected");
         setStreamError(null);
         flushKioskPtt();
       },
@@ -943,12 +942,12 @@ export const KioskPage = () => {
         }
       },
       onError: (error) => {
-        setStreamError(error.message);
         if (!isSseTransportError(error)) {
           return;
         }
+        setStreamError(error.message);
         isStreamConnectedRef.current = false;
-        setStreamConnection("reconnecting");
+        setStreamConnection("error");
 
         const isPossiblyDown =
           isKioskPttSpaceHeldRef.current ||
@@ -967,6 +966,7 @@ export const KioskPage = () => {
         flushKioskPtt();
       },
     });
+    sseClientRef.current = client;
 
     const utteranceIds = segmentUtteranceIdsRef.current;
     return () => {
@@ -987,6 +987,7 @@ export const KioskPage = () => {
       resetSegmentQueue(null);
       utteranceIds.clear();
       client.close();
+      sseClientRef.current = null;
     };
   }, [
     enqueueSpeechSegment,
@@ -1002,13 +1003,20 @@ export const KioskPage = () => {
   const shouldShowRecording = isRecording || phase === "listening";
   const isStreamConnected = streamConnection === "connected";
   const isPttAvailable = isStreamConnected;
+  const isReconnecting = streamConnection === "reconnecting";
+  const isStreamError = streamConnection === "error";
   const isLocalPttActive = isPttAvailable && (isKioskPttDown || isKioskPttButtonHeld);
   const hasKioskErrors = Boolean(streamError || pttError || audioError);
-  const pttButtonLabel = !isPttAvailable
-    ? "つながるまで まってね"
-    : isLocalPttActive
-      ? "はなして とめる"
-      : "おして はなす";
+  const pttButtonLabel = isLocalPttActive ? "はなして とめる" : "おして はなす";
+
+  const handleReconnect = () => {
+    const client = sseClientRef.current;
+    /* c8 ignore next -- defensive: button only renders after SSE error, so client is always set */
+    if (!client) return;
+    setStreamConnection("reconnecting");
+    setStreamError(null);
+    client.reconnect();
+  };
 
   const sendConsent = async (answer: "yes" | "no") => {
     setConsentError(null);
@@ -1110,19 +1118,30 @@ export const KioskPage = () => {
         </div>
 
         <section className={styles.kioskControls} aria-label="Kiosk controls">
-          {!isAudioUnlocked || isAudioUnlockNeeded || !isPttAvailable ? (
+          {!isAudioUnlocked || isAudioUnlockNeeded ? (
             <div className={styles.kioskNoticeStack}>
-              {!isAudioUnlocked || isAudioUnlockNeeded ? (
-                <div className={styles.audioUnlockPill} aria-live="polite">
-                  おとをだすには 1かい タップしてね
-                </div>
-              ) : null}
+              <div className={styles.audioUnlockPill} aria-live="polite">
+                おとをだすには 1かい タップしてね
+              </div>
+            </div>
+          ) : null}
 
-              {!isPttAvailable ? (
-                <div className={styles.connectionPill} role="status" aria-live="polite">
-                  つながるまで ちょっとまってね
-                </div>
-              ) : null}
+          {isReconnecting ? (
+            <div className={styles.connectionPill} role="status" aria-live="polite">
+              <span className={styles.reconnectingSpinner} aria-hidden="true" />
+              つなぎなおしているよ…
+            </div>
+          ) : null}
+
+          {isStreamError ? (
+            <div className={styles.kioskErrorStack}>
+              <div className={styles.errorText} role="alert">
+                {/* c8 ignore next -- streamError is always set when isStreamError is true */}
+                {toKidFriendlyError("stream", streamError ?? "connection error")}
+              </div>
+              <button type="button" className={styles.reconnectButton} onClick={handleReconnect}>
+                もういちどつなぐ
+              </button>
             </div>
           ) : null}
 
@@ -1170,13 +1189,8 @@ export const KioskPage = () => {
             </div>
           ) : null}
 
-          {hasKioskErrors ? (
+          {hasKioskErrors && !isStreamError ? (
             <div className={styles.kioskErrorStack}>
-              {streamError ? (
-                <div className={styles.errorText} role="alert">
-                  {toKidFriendlyError("stream", streamError)}
-                </div>
-              ) : null}
               {pttError ? (
                 <div className={styles.errorText} role="alert">
                   {toKidFriendlyError("stream", pttError)}

@@ -1,0 +1,8 @@
+{
+  "approved_at": "2026-02-27T11:27:38Z",
+  "approver": "user",
+  "estimate_hash": "sha256:575d3a12fc023bbfc735cc1ebb697e6a774a9f7be0bf257dbfe56eb4c99f7314",
+  "issue_number": 154,
+  "mode": "impl",
+  "schema_version": 1
+}
