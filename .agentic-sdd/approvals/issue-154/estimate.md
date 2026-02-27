@@ -5,6 +5,7 @@
 - #153: エラー表示に再接続ボタン追加 + 再接続中の進行表示 + コントラスト改善
 
 ## 2. 変更対象ファイル
+
 | ファイル | 変更内容 |
 |---|---|
 | `web/src/sse-client.ts` | `reconnect()` メソッドを公開APIに追加 |
@@ -13,6 +14,7 @@
 | `web/src/sse-client.test.ts` | `reconnect()` メソッドのテスト追加 |
 | テストファイル群 | 状態別UI表示テスト修正 |
 
+## 3. 設計方針
 ## 3. 設計方針
 
 ### sse-client.ts
@@ -56,6 +58,7 @@
 なし
 
 ## 11. AC マッピング
+
 | AC | 実装箇所 |
 |---|---|
 | #152-AC1 | PTTボタン disabled + kioskPttButtonDisabled クラス |
@@ -66,6 +69,7 @@
 | #153-AC3 | reconnecting 状態のスピナー + テキスト表示 |
 | #153-AC4 | errorText のコントラスト改善 |
 
+## 承認
 ## 承認
 - モード: impl
 - 承認: Yes（ユーザー承認済み）

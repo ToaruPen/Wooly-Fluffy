@@ -942,10 +942,10 @@ export const KioskPage = () => {
         }
       },
       onError: (error) => {
-        setStreamError(error.message);
         if (!isSseTransportError(error)) {
           return;
         }
+        setStreamError(error.message);
         isStreamConnectedRef.current = false;
         setStreamConnection("error");
 

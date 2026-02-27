@@ -53,220 +53,224 @@ const unlockKioskAudio = async () => {
 
 describe("app", () => {
   describe("kiosk baseline and TTS", () => {
-    it("renders kiosk UI and handles commands/consent", async () => {
-      vi.resetModules();
+    it(
+      "renders kiosk UI and handles commands/consent",
+      async () => {
+        vi.resetModules();
 
-      const closeSpy = vi.fn();
-      const connectSseMock = vi.fn<
-        [string, ConnectHandlers],
-        { close: () => void; reconnect: () => void }
-      >(() => ({
-        close: closeSpy,
-        reconnect: vi.fn(),
-      }));
-      vi.doMock("./sse-client", async () => {
-        const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
-        return { ...actual, connectSse: connectSseMock };
-      });
+        const closeSpy = vi.fn();
+        const connectSseMock = vi.fn<
+          [string, ConnectHandlers],
+          { close: () => void; reconnect: () => void }
+        >(() => ({
+          close: closeSpy,
+          reconnect: vi.fn(),
+        }));
+        vi.doMock("./sse-client", async () => {
+          const actual = await vi.importActual<typeof import("./sse-client")>("./sse-client");
+          return { ...actual, connectSse: connectSseMock };
+        });
 
-      const stopSpy = vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/webm" }));
-      const startSpy = vi.fn(async () => ({ stop: stopSpy }));
-      vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
+        const stopSpy = vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/webm" }));
+        const startSpy = vi.fn(async () => ({ stop: stopSpy }));
+        vi.doMock("./kiosk-ptt", () => ({ startPttSession: startSpy }));
 
-      const convertSpy = vi.fn(
-        async () => new File([new Uint8Array([0])], "stt-1.wav", { type: "audio/wav" }),
-      );
-      vi.doMock("./kiosk-audio", () => ({ convertRecordingBlobToWavFile: convertSpy }));
+        const convertSpy = vi.fn(
+          async () => new File([new Uint8Array([0])], "stt-1.wav", { type: "audio/wav" }),
+        );
+        vi.doMock("./kiosk-audio", () => ({ convertRecordingBlobToWavFile: convertSpy }));
 
-      let kioskEventCalls = 0;
-      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
+        let kioskEventCalls = 0;
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
 
-        if (url === "/api/v1/kiosk/stt-audio" && method === "POST") {
-          return jsonResponse(202, { ok: true });
-        }
-
-        if (url === "/api/v1/kiosk/tts" && method === "POST") {
-          return wavResponse(200, [1, 2, 3]);
-        }
-
-        if (url === "/api/v1/kiosk/event" && method === "POST") {
-          kioskEventCalls += 1;
-          if (kioskEventCalls === 1) {
-            return jsonResponse(200, { ok: true });
+          if (url === "/api/v1/kiosk/stt-audio" && method === "POST") {
+            return jsonResponse(202, { ok: true });
           }
-          if (kioskEventCalls === 2) {
-            return jsonResponse(500, { error: { code: "boom", message: "boom" } });
+
+          if (url === "/api/v1/kiosk/tts" && method === "POST") {
+            return wavResponse(200, [1, 2, 3]);
           }
-          throw new Error("offline");
-        }
 
-        return jsonResponse(404, { error: { code: "not_found", message: "Not Found" } });
-      });
-      vi.stubGlobal("fetch", fetchMock);
+          if (url === "/api/v1/kiosk/event" && method === "POST") {
+            kioskEventCalls += 1;
+            if (kioskEventCalls === 1) {
+              return jsonResponse(200, { ok: true });
+            }
+            if (kioskEventCalls === 2) {
+              return jsonResponse(500, { error: { code: "boom", message: "boom" } });
+            }
+            throw new Error("offline");
+          }
 
-      window.history.pushState({}, "", "/kiosk");
-      document.body.innerHTML = '<div id="root"></div>';
-
-      let appRoot: Root;
-      await act(async () => {
-        const mainModule = await import("./main");
-        appRoot = mainModule.appRoot;
-      });
-
-      expect(connectSseMock).toHaveBeenCalledWith("/api/v1/kiosk/stream", expect.any(Object));
-
-      const handlers = connectSseMock.mock.calls[0]![1];
-
-      await act(async () => {
-        handlers.onSnapshot({
-          state: {
-            mode: "ROOM",
-            personal_name: null,
-            phase: "idle",
-            consent_ui_visible: false,
-          },
+          return jsonResponse(404, { error: { code: "not_found", message: "Not Found" } });
         });
-      });
+        vi.stubGlobal("fetch", fetchMock);
 
-      expect(document.body.textContent ?? "").toContain("KIOSK");
-      expect(document.body.textContent ?? "").toContain("Mascot Stage");
-      expect(document.body.textContent ?? "").not.toContain("Open Debug");
-      expect(document.body.textContent ?? "").not.toContain("TTS:");
-      expect(document.body.textContent ?? "").not.toContain("Stream:");
-      expect(document.body.textContent ?? "").not.toContain("Mode:");
-      expect(document.body.textContent ?? "").not.toContain("Phase:");
+        window.history.pushState({}, "", "/kiosk");
+        document.body.innerHTML = '<div id="root"></div>';
 
-      await unlockKioskAudio();
-
-      await act(async () => {
-        handlers.onMessage?.({ type: "kiosk.command.speak", seq: 1, data: null });
-        handlers.onMessage?.({
-          type: "kiosk.command.speak",
-          seq: 2,
-          data: { say_id: 1, text: "nope" },
+        let appRoot: Root;
+        await act(async () => {
+          const mainModule = await import("./main");
+          appRoot = mainModule.appRoot;
         });
-        handlers.onMessage?.({
-          type: "kiosk.command.speak",
-          seq: 3,
-          data: { say_id: "say-1", text: "Hello" },
+
+        expect(connectSseMock).toHaveBeenCalledWith("/api/v1/kiosk/stream", expect.any(Object));
+
+        const handlers = connectSseMock.mock.calls[0]![1];
+
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "ROOM",
+              personal_name: null,
+              phase: "idle",
+              consent_ui_visible: false,
+            },
+          });
         });
-        handlers.onMessage?.({
-          type: "kiosk.command.speak",
-          seq: 4,
-          data: { say_id: "say-1", text: "Hello" },
+
+        expect(document.body.textContent ?? "").toContain("KIOSK");
+        expect(document.body.textContent ?? "").toContain("Mascot Stage");
+        expect(document.body.textContent ?? "").not.toContain("Open Debug");
+        expect(document.body.textContent ?? "").not.toContain("TTS:");
+        expect(document.body.textContent ?? "").not.toContain("Stream:");
+        expect(document.body.textContent ?? "").not.toContain("Mode:");
+        expect(document.body.textContent ?? "").not.toContain("Phase:");
+
+        await unlockKioskAudio();
+
+        await act(async () => {
+          handlers.onMessage?.({ type: "kiosk.command.speak", seq: 1, data: null });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 2,
+            data: { say_id: 1, text: "nope" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 3,
+            data: { say_id: "say-1", text: "Hello" },
+          });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 4,
+            data: { say_id: "say-1", text: "Hello" },
+          });
+          await Promise.resolve();
         });
-        await Promise.resolve();
-      });
 
-      expect(document.body.textContent ?? "").toContain("Hello");
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/kiosk/tts",
-        expect.objectContaining({ method: "POST" }),
-      );
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(document.body.textContent ?? "").toContain("Hello");
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/v1/kiosk/tts",
+          expect.objectContaining({ method: "POST" }),
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(1);
 
-      await act(async () => {
-        handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 5, data: {} });
-        handlers.onMessage?.({
-          type: "kiosk.command.speak",
-          seq: 6,
-          data: { say_id: "say-1", text: "Hello" },
+        await act(async () => {
+          handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 5, data: {} });
+          handlers.onMessage?.({
+            type: "kiosk.command.speak",
+            seq: 6,
+            data: { say_id: "say-1", text: "Hello" },
+          });
+          await Promise.resolve();
         });
-        await Promise.resolve();
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
 
-      await act(async () => {
-        handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 5, data: {} });
-        await Promise.resolve();
-      });
-      expect(document.body.textContent ?? "").toContain("きいてるよ");
-
-      await act(async () => {
-        handlers.onMessage?.({
-          type: "kiosk.command.record_stop",
-          seq: 6,
-          data: { stt_request_id: "stt-1" },
+        await act(async () => {
+          handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 5, data: {} });
+          await Promise.resolve();
         });
-        await Promise.resolve();
-      });
-      expect(document.body.textContent ?? "").not.toContain("きいてるよ");
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/kiosk/stt-audio",
-        expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
-      );
+        expect(document.body.textContent ?? "").toContain("きいてるよ");
 
-      await act(async () => {
-        handlers.onSnapshot({
-          state: {
-            mode: "PERSONAL",
-            personal_name: null,
-            phase: "listening",
-            consent_ui_visible: true,
-          },
+        await act(async () => {
+          handlers.onMessage?.({
+            type: "kiosk.command.record_stop",
+            seq: 6,
+            data: { stt_request_id: "stt-1" },
+          });
+          await Promise.resolve();
         });
-      });
+        expect(document.body.textContent ?? "").not.toContain("きいてるよ");
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/v1/kiosk/stt-audio",
+          expect.objectContaining({ method: "POST", body: expect.any(FormData) }),
+        );
 
-      expect(document.body.textContent ?? "").toContain("きいてるよ");
-      expect(document.body.textContent ?? "").toContain("覚えていい？");
-
-      await act(async () => {
-        handlers.onSnapshot({
-          state: {
-            mode: "PERSONAL",
-            personal_name: "taro",
-            phase: "listening",
-            consent_ui_visible: true,
-          },
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "PERSONAL",
+              personal_name: null,
+              phase: "listening",
+              consent_ui_visible: true,
+            },
+          });
         });
-      });
-      expect(document.body.textContent ?? "").not.toContain("Mode:");
 
-      const yesButton = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("おぼえて！"),
-      );
-      expect(yesButton).toBeTruthy();
-      await act(async () => {
-        yesButton?.click();
-      });
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/v1/kiosk/event",
-        expect.objectContaining({ method: "POST" }),
-      );
+        expect(document.body.textContent ?? "").toContain("きいてるよ");
+        expect(document.body.textContent ?? "").toContain("覚えていい？");
 
-      const noButton = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("やめておく"),
-      );
-      expect(noButton).toBeTruthy();
-      await act(async () => {
-        noButton?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("Failed to send");
+        await act(async () => {
+          handlers.onSnapshot({
+            state: {
+              mode: "PERSONAL",
+              personal_name: "taro",
+              phase: "listening",
+              consent_ui_visible: true,
+            },
+          });
+        });
+        expect(document.body.textContent ?? "").not.toContain("Mode:");
 
-      await act(async () => {
-        yesButton?.click();
-      });
-      expect(document.body.textContent ?? "").toContain("Network error");
+        const yesButton = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("おぼえて！"),
+        );
+        expect(yesButton).toBeTruthy();
+        await act(async () => {
+          yesButton?.click();
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/v1/kiosk/event",
+          expect.objectContaining({ method: "POST" }),
+        );
 
-      await act(async () => {
-        handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 7, data: {} });
-        handlers.onError?.(new Error("SSE connection error"));
-      });
+        const noButton = Array.from(document.querySelectorAll("button")).find((b) =>
+          (b.textContent ?? "").includes("やめておく"),
+        );
+        expect(noButton).toBeTruthy();
+        await act(async () => {
+          noButton?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("Failed to send");
 
-      expect(document.body.textContent ?? "").toContain("つながらないよ");
-      const kioskPtt = Array.from(document.querySelectorAll("button")).find((b) =>
-        /おして はなす|はなして とめる/.test(b.textContent ?? ""),
-      ) as HTMLButtonElement | undefined;
-      expect(kioskPtt?.disabled).toBe(true);
+        await act(async () => {
+          yesButton?.click();
+        });
+        expect(document.body.textContent ?? "").toContain("Network error");
 
-      await act(async () => {
-        appRoot.unmount();
-      });
+        await act(async () => {
+          handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 7, data: {} });
+          handlers.onError?.(new Error("SSE connection error"));
+        });
 
-      expect(closeSpy).toHaveBeenCalledTimes(1);
-    });
+        expect(document.body.textContent ?? "").toContain("つながらないよ");
+        const kioskPtt = Array.from(document.querySelectorAll("button")).find((b) =>
+          /おして はなす|はなして とめる/.test(b.textContent ?? ""),
+        ) as HTMLButtonElement | undefined;
+        expect(kioskPtt?.disabled).toBe(true);
+
+        await act(async () => {
+          appRoot.unmount();
+        });
+
+        expect(closeSpy).toHaveBeenCalledTimes(1);
+      },
+      SSE_TEST_TIMEOUT_MS,
+    );
 
     it("plays TTS audio on kiosk.command.speak when Audio/URL are available", async () => {
       vi.resetModules();
