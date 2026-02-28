@@ -60,17 +60,11 @@ Notes:
 - `AGENTIC_SDD_PR_REVIEW_MENTION` is required.
 - If the PR is a draft, request review after marking it ready.
 
-### Project-specific migration note
-
-- This repository previously used `/codex-pr-review` with `@codex review`.
-- Keep using `@codex review` as `AGENTIC_SDD_PR_REVIEW_MENTION` when Codex is the target bot.
-- The legacy command is treated as compatibility-only and should not be used for new workflows.
-
 ### Phase 2: Fetch review-bot feedback
 
 If your repository has `.github/workflows/codex-review-events.yml`, prefer that event-driven
-workflow for notification/observability. The local polling script
-`scripts/watch-codex-review.sh` remains available as fallback.
+workflow for notification/observability. For CI-based autofix loops, use
+`templates/ci/github-actions/.github/workflows/agentic-sdd-pr-autofix.yml`.
 
 Review bot may post:
 
@@ -120,7 +114,7 @@ If `gh pr view <PR> --comments` is available and sufficient, you can use it for 
 ### Phase 4: Push and re-request review
 
 When using the CI template `agentic-sdd-pr-autofix.yml`, this step can be automated by
-the installed target-repo script `scripts/agentic-sdd-pr-autofix.sh`
+the installed target-repo script `scripts/agentic-sdd/agentic-sdd-pr-autofix.sh`
 (source template: `templates/ci/github-actions/scripts/agentic-sdd-pr-autofix.sh`) after successful autofix push.
 
 After pushing fixes, re-request review (again include the current head SHA):
