@@ -32,6 +32,7 @@ export function tryServeStaticWeb(
 
   if (isSpaPath(path)) {
     const indexPath = resolve(resolvedWebDistPath, "index.html");
+    /* v8 ignore next 4 — resolve(base, "index.html") never escapes base */
     if (!isSafePath(indexPath, resolvedWebDistPath)) {
       sendNotFound(res);
       return { handled: true };
@@ -52,6 +53,7 @@ export function tryServeStaticWeb(
   }
 
   const targetPath = resolve(resolvedWebDistPath, decodedRelativeAssetPath);
+  /* v8 ignore next 4 — hasTraversalSegment already catches ".." before here */
   if (!isSafePath(targetPath, resolvedWebDistPath)) {
     sendNotFound(res);
     return { handled: true };
