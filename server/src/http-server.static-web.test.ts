@@ -28,6 +28,7 @@ beforeAll(() => {
   writeFileSync(join(webDistPath, "assets", "app.js"), "console.log('app')");
   writeFileSync(join(webDistPath, "assets", "%2e%2e", "package.json"), '{"name":"encoded"}\n');
   writeFileSync(join(webDistPath, "assets", "style.css"), "body{}\n");
+  writeFileSync(join(webDistPath, "assets", "data.bin"), Buffer.from([0x00, 0x01]));
 });
 
 afterAll(() => {
@@ -149,5 +150,18 @@ describe("http-server static web", () => {
     const response = await sendRequest("GET", "/assets/nonexistent.js");
 
     expect(response.status).toBe(404);
+  });
+
+  it("returns 404 for malformed percent-encoding in asset path", async () => {
+    const response = await sendRequest("GET", "/assets/%ZZ/file.js");
+
+    expect(response.status).toBe(404);
+  });
+
+  it("serves unknown extension with application/octet-stream", async () => {
+    const response = await sendRequest("GET", "/assets/data.bin");
+
+    expect(response.status).toBe(200);
+    expect(String(response.headers["content-type"] ?? "")).toContain("application/octet-stream");
   });
 });

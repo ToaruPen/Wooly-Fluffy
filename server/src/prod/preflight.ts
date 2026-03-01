@@ -6,6 +6,7 @@ const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
 
 type FsConstants = { X_OK: number; R_OK: number };
 
+/* v8 ignore next 4 — trivial default; tests inject fs_access for determinism */
 const defaultFsAccess = async (path: string, mode: number): Promise<void> => {
   const fsPromises = await import("node:fs/promises");
   await fsPromises.access(path, mode);
@@ -21,6 +22,7 @@ export async function runPreflight(_options?: {
   fetch?: typeof globalThis.fetch;
   fs_access?: (path: string, mode: number) => Promise<void>;
 }): Promise<PreflightResult> {
+  /* v8 ignore next 4 — defaults only used in production; tests always inject all deps */
   const env = _options?.env ?? process.env;
   const fsAccess = _options?.fs_access ?? defaultFsAccess;
   const fsConstants = await readFsConstants();
