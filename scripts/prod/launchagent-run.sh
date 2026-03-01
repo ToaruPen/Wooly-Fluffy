@@ -10,19 +10,11 @@ cd "$REPO_ROOT"
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 # Load env file (KEY=VALUE only; no shell execution)
+# shellcheck source=_load-env.sh
+. "$SCRIPT_DIR/_load-env.sh"
+
 ENV_FILE="${WOOLY_FLUFFY_ENV_PATH:-$HOME/Library/Application Support/wooly-fluffy/server.env}"
-if [ -f "$ENV_FILE" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%%#*}"         # strip inline comments
-    line="${line#"${line%%[![:space:]]*}"}"  # trim leading whitespace
-    line="${line%"${line##*[![:space:]]}"}"  # trim trailing whitespace
-    [ -z "$line" ] && continue
-    case "$line" in
-      *=*) export "$line" ;;
-      *) echo "[WARN] ignoring non-KEY=VALUE line in $ENV_FILE" >&2 ;;
-    esac
-  done < "$ENV_FILE"
-fi
+load_env_file "$ENV_FILE"
 
 # Run preflight
 node server/dist/prod/preflight-cli.js || {
