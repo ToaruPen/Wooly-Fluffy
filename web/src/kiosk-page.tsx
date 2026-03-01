@@ -15,12 +15,21 @@ import {
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 import { performGestureAudioUnlock } from "./audio-unlock";
+import { readViteBool } from "./env";
 
 const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
 
 const KIOSK_PTT_EVENT_TIMEOUT_MS = 3_000;
 const SEGMENT_TTS_PREFETCH_LIMIT = 3;
 const SEGMENT_UTTERANCE_ID_HISTORY_LIMIT = 128;
+const shouldDedupeThinkingMotionById = readViteBool({
+  name: "VITE_KIOSK_MOTION_DEDUPE_THINKING",
+  defaultValue: true,
+});
+const shouldDedupeNonThinkingMotionById = readViteBool({
+  name: "VITE_KIOSK_MOTION_DEDUPE_NON_THINKING",
+  defaultValue: false,
+});
 
 const isInteractiveElement = (el: Element | null): boolean => {
   if (!el) return false;
@@ -40,6 +49,13 @@ const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string =>
 };
 
 const isSseTransportError = (error: Error): boolean => error.message === "SSE connection error";
+
+const shouldDedupeMotionId = (motionId: MotionId): boolean => {
+  if (motionId === "thinking") {
+    return shouldDedupeThinkingMotionById;
+  }
+  return shouldDedupeNonThinkingMotionById;
+};
 
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
@@ -194,6 +210,7 @@ export const KioskPage = () => {
     motionInstanceId: "boot-1",
   }));
   const lastPlayedMotionInstanceIdRef = useRef<string | null>(null);
+  const lastPlayedMotionIdRef = useRef<MotionId>("idle");
   const devMotionSeqRef = useRef(0);
   const pttSessionRef = useRef<PttSession | null>(null);
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
@@ -719,6 +736,7 @@ export const KioskPage = () => {
           return;
         }
         devMotionSeqRef.current += 1;
+        lastPlayedMotionIdRef.current = motionId;
         setMotion({ motionId, motionInstanceId: `dev-${devMotionSeqRef.current}` });
       };
     }
@@ -927,7 +945,14 @@ export const KioskPage = () => {
           if (lastPlayedMotionInstanceIdRef.current === parsed.motionInstanceId) {
             return;
           }
+          if (
+            shouldDedupeMotionId(parsed.motionId) &&
+            lastPlayedMotionIdRef.current === parsed.motionId
+          ) {
+            return;
+          }
           lastPlayedMotionInstanceIdRef.current = parsed.motionInstanceId;
+          lastPlayedMotionIdRef.current = parsed.motionId;
           setMotion(parsed);
           return;
         }
