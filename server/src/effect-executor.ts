@@ -162,6 +162,27 @@ const extractCompleteSentencePrefix = (text: string): { complete: string; rest: 
   };
 };
 
+const waitForFirstSegmentOrTimeout = (
+  firstSegmentGate: Promise<void>,
+  timeoutMs: number,
+): Promise<void> =>
+  new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+
+    const timer = setTimeout(finish, timeoutMs);
+    void firstSegmentGate.then(() => {
+      clearTimeout(timer);
+      finish();
+    });
+  });
+
 export const createEffectExecutor = (deps: {
   providers: Providers;
   sendKioskCommand: KioskCommandSender;
@@ -376,12 +397,12 @@ export const createEffectExecutor = (deps: {
 
                   try {
                     const result = await callPromise;
-                    await Promise.race([
-                      firstSegmentGate,
-                      new Promise<void>((resolve) => {
-                        setTimeout(resolve, firstStreamSegmentWaitMs);
-                      }),
-                    ]);
+                    if (result.tool_calls.length === 0) {
+                      await waitForFirstSegmentOrTimeout(
+                        firstSegmentGate,
+                        firstStreamSegmentWaitMs,
+                      );
+                    }
                     isChatFinalized = true;
                     if (emittedSegmentCount > 0 && result.tool_calls.length === 0) {
                       markStreamedChatRequest(effect.request_id);
@@ -396,12 +417,7 @@ export const createEffectExecutor = (deps: {
                       tool_calls: result.tool_calls,
                     });
                   } catch {
-                    await Promise.race([
-                      firstSegmentGate,
-                      new Promise<void>((resolve) => {
-                        setTimeout(resolve, firstStreamSegmentWaitMs);
-                      }),
-                    ]);
+                    await waitForFirstSegmentOrTimeout(firstSegmentGate, firstStreamSegmentWaitMs);
                     isChatFinalized = true;
                     streamAbortController.abort();
                     deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });
