@@ -215,7 +215,7 @@ describe("http-server static web (no web_dist_path)", () => {
 
   beforeEach(async () => {
     setupTestEnv();
-    ctx = await startTestServer(join(tmpdir(), `wf-nonexistent-${Date.now()}`));
+    ctx = await startTestServer(join(tmpdir(), `wf-nonexistent-${Date.now()}-${Math.random().toString(16).slice(2)}`));
   });
 
   afterEach(async () => {
