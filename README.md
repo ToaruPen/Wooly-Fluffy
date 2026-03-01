@@ -99,10 +99,10 @@ Notes:
 >
 > **Dev vs Prod URL summary**:
 >
-> | Environment | URL | Notes |
-> |---|---|---|
-> | Dev (Vite) | `http://127.0.0.1:5173/kiosk` &#124; `/staff` | HMR, proxies `/api` to `:3000` |
-> | Production | `http://<host>:3000/kiosk` &#124; `/staff` | Static build served by Node.js |
+> | Environment | URL                                           | Notes                          |
+> | ----------- | --------------------------------------------- | ------------------------------ |
+> | Dev (Vite)  | `http://127.0.0.1:5173/kiosk` &#124; `/staff` | HMR, proxies `/api` to `:3000` |
+> | Production  | `http://<host>:3000/kiosk` &#124; `/staff`    | Static build served by Node.js |
 >
 > Do **not** use the Vite dev URL (`5173`) on the production machine.
 
