@@ -20,12 +20,9 @@ if [ -f "$ENV_FILE" ]; then
   done < "$ENV_FILE"
 fi
 
-if node server/dist/prod/preflight-cli.js; then
-  :
-else
-  PREFLIGHT_EXIT=$?
-  echo "[PREFLIGHT FAILED] Exit code: $PREFLIGHT_EXIT" >&2
-  exit $PREFLIGHT_EXIT
-fi
+node server/dist/prod/preflight-cli.js || {
+  echo "[PREFLIGHT FAILED] Exit code: $?" >&2
+  exit 1
+}
 
 exec node server/dist/main.js
