@@ -72,14 +72,11 @@ export type OrchestratorState = {
   memory_candidate: MemoryCandidate | null;
   in_flight: InFlight;
   is_emergency_stopped: boolean;
-  is_staff_ptt_held: boolean;
   is_kiosk_ptt_held: boolean;
   request_seq: number;
 };
 
 export type OrchestratorEvent =
-  | { type: "STAFF_PTT_DOWN" }
-  | { type: "STAFF_PTT_UP" }
   | { type: "KIOSK_PTT_DOWN" }
   | { type: "KIOSK_PTT_UP" }
   | { type: "UI_CONSENT_BUTTON"; answer: "yes" | "no" }
@@ -234,7 +231,6 @@ export const createInitialState = (now: number): OrchestratorState => ({
   memory_candidate: null,
   in_flight: createEmptyInFlight(),
   is_emergency_stopped: false,
-  is_staff_ptt_held: false,
   is_kiosk_ptt_held: false,
   request_seq: 0,
 });
@@ -290,7 +286,6 @@ const resetForRoom = (state: OrchestratorState, now: number) => ({
   consent_deadline_at_ms: null,
   memory_candidate: null,
   in_flight: createEmptyInFlight(),
-  is_staff_ptt_held: false,
   is_kiosk_ptt_held: false,
 });
 
@@ -494,20 +489,6 @@ export const reduceOrchestrator = (
   switch (event.type) {
     case "STAFF_RESUME":
       return { next_state: state, effects: [] };
-    case "STAFF_PTT_DOWN":
-      if (state.phase === "idle" || state.phase === "asking_consent") {
-        return {
-          next_state: { ...state, phase: "listening", is_staff_ptt_held: true },
-          effects: [{ type: "KIOSK_RECORD_START" }],
-        };
-      }
-      if (state.phase === "listening") {
-        return {
-          next_state: { ...state, is_staff_ptt_held: true },
-          effects: [],
-        };
-      }
-      return { next_state: state, effects: [] };
     case "KIOSK_PTT_DOWN":
       if (state.phase === "idle" || state.phase === "asking_consent") {
         return {
@@ -522,32 +503,6 @@ export const reduceOrchestrator = (
         };
       }
       return { next_state: state, effects: [] };
-    case "STAFF_PTT_UP":
-      if (state.phase !== "listening") {
-        return { next_state: state, effects: [] };
-      }
-      {
-        const released: OrchestratorState = {
-          ...state,
-          is_staff_ptt_held: false,
-        };
-        if (released.is_kiosk_ptt_held) {
-          return { next_state: released, effects: [] };
-        }
-
-        const { id, state: withId } = nextRequestId(released, "stt");
-        return {
-          next_state: {
-            ...withId,
-            phase: "waiting_stt",
-            last_action_at_ms: now,
-            is_staff_ptt_held: false,
-            is_kiosk_ptt_held: false,
-            in_flight: { ...withId.in_flight, stt_request_id: id },
-          },
-          effects: [{ type: "KIOSK_RECORD_STOP" }, { type: "CALL_STT", request_id: id }],
-        };
-      }
     case "KIOSK_PTT_UP":
       if (state.phase !== "listening") {
         return { next_state: state, effects: [] };
@@ -557,17 +512,12 @@ export const reduceOrchestrator = (
           ...state,
           is_kiosk_ptt_held: false,
         };
-        if (released.is_staff_ptt_held) {
-          return { next_state: released, effects: [] };
-        }
-
         const { id, state: withId } = nextRequestId(released, "stt");
         return {
           next_state: {
             ...withId,
             phase: "waiting_stt",
             last_action_at_ms: now,
-            is_staff_ptt_held: false,
             is_kiosk_ptt_held: false,
             in_flight: { ...withId.in_flight, stt_request_id: id },
           },

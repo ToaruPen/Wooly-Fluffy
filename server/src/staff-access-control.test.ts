@@ -307,7 +307,7 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/event", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+      body: JSON.stringify({ type: "STAFF_RESET_SESSION" }),
     });
     expect(response.status).toBe(403);
     expect(JSON.parse(response.body)).toEqual({
@@ -394,7 +394,7 @@ describe("staff access control", () => {
 
     const response = await sendRequest("POST", "/api/v1/staff/event", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+      body: JSON.stringify({ type: "STAFF_RESET_SESSION" }),
     });
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({

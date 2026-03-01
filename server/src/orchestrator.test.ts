@@ -31,12 +31,12 @@ describe("orchestrator", () => {
 
   it("handles PTT flow in room", () => {
     const initial = createInitialState(0);
-    const pttDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    const pttDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 100);
 
     expect(pttDown.next_state.phase).toBe("listening");
     expect(pttDown.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
 
-    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "STAFF_PTT_UP" }, 200);
+    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "KIOSK_PTT_UP" }, 200);
     const sttEffect = getEffect(pttUp.effects, "CALL_STT");
 
     expect(pttUp.next_state.phase).toBe("waiting_stt");
@@ -73,14 +73,14 @@ describe("orchestrator", () => {
     ]);
   });
 
-  it("does not emit record_start on repeated STAFF_PTT_DOWN while listening", () => {
+  it("does not emit record_start on repeated KIOSK_PTT_DOWN while listening", () => {
     const initial = createInitialState(0);
-    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
+    const staffDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 100);
     expect(staffDown.next_state.phase).toBe("listening");
 
     const staffDownAgain = reduceOrchestrator(
       staffDown.next_state,
-      { type: "STAFF_PTT_DOWN" },
+      { type: "KIOSK_PTT_DOWN" },
       110,
     );
     expect(staffDownAgain.next_state.phase).toBe("listening");
@@ -90,8 +90,8 @@ describe("orchestrator", () => {
   it("finalizes session after 5 min idle and requests session_summary once", () => {
     const initial = createInitialState(0);
 
-    const pttDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 10);
-    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "STAFF_PTT_UP" }, 20);
+    const pttDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 10);
+    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "KIOSK_PTT_UP" }, 20);
     const sttEffect = getEffect(pttUp.effects, "CALL_STT");
     expect(sttEffect?.request_id).toBe("stt-1");
 
@@ -152,39 +152,6 @@ describe("orchestrator", () => {
 
     expect(result.next_state).toEqual(initial);
     expect(result.effects).toEqual([]);
-  });
-
-  it("does not stop listening when KIOSK releases while STAFF is still holding", () => {
-    const initial = createInitialState(0);
-
-    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
-    const kioskDown = reduceOrchestrator(staffDown.next_state, { type: "KIOSK_PTT_DOWN" }, 110);
-    const kioskUp = reduceOrchestrator(kioskDown.next_state, { type: "KIOSK_PTT_UP" }, 120);
-
-    expect(kioskUp.next_state.phase).toBe("listening");
-    expect(kioskUp.effects).toEqual([]);
-  });
-
-  it("does not stop listening until both STAFF/KIOSK PTT are released", () => {
-    const initial = createInitialState(0);
-
-    const staffDown = reduceOrchestrator(initial, { type: "STAFF_PTT_DOWN" }, 100);
-    expect(staffDown.next_state.phase).toBe("listening");
-    expect(staffDown.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
-
-    const kioskDown = reduceOrchestrator(staffDown.next_state, { type: "KIOSK_PTT_DOWN" }, 110);
-    expect(kioskDown.next_state.phase).toBe("listening");
-    expect(kioskDown.effects).toEqual([]);
-
-    const staffUp = reduceOrchestrator(kioskDown.next_state, { type: "STAFF_PTT_UP" }, 120);
-    expect(staffUp.next_state.phase).toBe("listening");
-    expect(staffUp.effects).toEqual([]);
-
-    const kioskUp = reduceOrchestrator(staffUp.next_state, { type: "KIOSK_PTT_UP" }, 130);
-    const sttEffect = getEffect(kioskUp.effects, "CALL_STT");
-
-    expect(kioskUp.next_state.phase).toBe("waiting_stt");
-    expect(sttEffect?.request_id).toBe("stt-1");
   });
 
   it("ignores KIOSK_PTT_DOWN while waiting for STT", () => {
@@ -499,8 +466,8 @@ describe("orchestrator", () => {
       request_seq: 2,
     };
 
-    const pttDown = reduceOrchestrator(asking, { type: "STAFF_PTT_DOWN" }, 100);
-    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "STAFF_PTT_UP" }, 200);
+    const pttDown = reduceOrchestrator(asking, { type: "KIOSK_PTT_DOWN" }, 100);
+    const pttUp = reduceOrchestrator(pttDown.next_state, { type: "KIOSK_PTT_UP" }, 200);
     const sttEffect = getEffect(pttUp.effects, "CALL_STT");
 
     const sttResult = reduceOrchestrator(
@@ -559,7 +526,7 @@ describe("orchestrator", () => {
       memory_candidate: { kind: "food", value: "カレー" },
     };
 
-    const pttDown = reduceOrchestrator(asking, { type: "STAFF_PTT_DOWN" }, 100);
+    const pttDown = reduceOrchestrator(asking, { type: "KIOSK_PTT_DOWN" }, 100);
     expect(pttDown.next_state.phase).toBe("listening");
 
     const consentButton = reduceOrchestrator(
@@ -570,7 +537,7 @@ describe("orchestrator", () => {
     expect(consentButton.next_state).toEqual(pttDown.next_state);
     expect(consentButton.effects).toEqual([]);
 
-    const pttUp = reduceOrchestrator(consentButton.next_state, { type: "STAFF_PTT_UP" }, 120);
+    const pttUp = reduceOrchestrator(consentButton.next_state, { type: "KIOSK_PTT_UP" }, 120);
     const sttEffect = getEffect(pttUp.effects, "CALL_STT");
     expect(pttUp.next_state.phase).toBe("waiting_stt");
     expect(sttEffect?.request_id).toBe("stt-1");
@@ -640,7 +607,6 @@ describe("orchestrator", () => {
       phase: "listening",
       consent_deadline_at_ms: 1000,
       memory_candidate: { kind: "play", value: "サッカー" },
-      is_staff_ptt_held: true,
     };
 
     const result = reduceOrchestrator(listening, { type: "TICK" }, 1000);
@@ -728,7 +694,7 @@ describe("orchestrator", () => {
     expect(requested.next_state.phase).toBe("idle");
     expect(requested.next_state.in_flight.session_summary_request_id).toBe("inner-1");
 
-    const ptt = reduceOrchestrator(requested.next_state, { type: "STAFF_PTT_DOWN" }, 300001);
+    const ptt = reduceOrchestrator(requested.next_state, { type: "KIOSK_PTT_DOWN" }, 300001);
     expect(ptt.next_state.phase).toBe("listening");
     expect(ptt.effects).toEqual([{ type: "KIOSK_RECORD_START" }]);
   });
@@ -785,7 +751,6 @@ describe("orchestrator", () => {
     const state: OrchestratorState = {
       ...base,
       phase: "listening",
-      is_staff_ptt_held: true,
       in_flight: { ...base.in_flight, session_summary_request_id: "inner-1" },
     };
 
@@ -805,7 +770,6 @@ describe("orchestrator", () => {
     );
 
     expect(result.next_state.phase).toBe("listening");
-    expect(result.next_state.is_staff_ptt_held).toBe(true);
     expect(result.next_state.in_flight.session_summary_request_id).toBeNull();
     expect(result.effects).toEqual([
       {
@@ -821,7 +785,7 @@ describe("orchestrator", () => {
       },
     ]);
 
-    const pttUp = reduceOrchestrator(result.next_state, { type: "STAFF_PTT_UP" }, 1235);
+    const pttUp = reduceOrchestrator(result.next_state, { type: "KIOSK_PTT_UP" }, 1235);
     expect(pttUp.next_state.phase).toBe("waiting_stt");
     expect(getEffect(pttUp.effects, "CALL_STT")?.request_id).toBe("stt-1");
   });
@@ -1257,7 +1221,7 @@ describe("orchestrator", () => {
       motion_instance_id: "motion-emergency-stop",
     });
 
-    const ignored = reduceOrchestrator(stopped.next_state, { type: "STAFF_PTT_DOWN" }, 60);
+    const ignored = reduceOrchestrator(stopped.next_state, { type: "KIOSK_PTT_DOWN" }, 60);
 
     expect(ignored.next_state).toEqual(stopped.next_state);
     expect(ignored.effects).toEqual([]);
@@ -1401,12 +1365,12 @@ describe("orchestrator", () => {
     const base = createInitialState(0);
     const busy: OrchestratorState = { ...base, phase: "waiting_stt" };
 
-    expect(reduceOrchestrator(busy, { type: "STAFF_PTT_DOWN" }, 10)).toEqual({
+    expect(reduceOrchestrator(busy, { type: "KIOSK_PTT_DOWN" }, 10)).toEqual({
       next_state: busy,
       effects: [],
     });
 
-    expect(reduceOrchestrator(base, { type: "STAFF_PTT_UP" }, 20)).toEqual({
+    expect(reduceOrchestrator(base, { type: "KIOSK_PTT_UP" }, 20)).toEqual({
       next_state: base,
       effects: [],
     });

@@ -25,7 +25,7 @@
 - 会話はroomセッションとして扱い、最後の会話からアイドル5分でセッション終了
 - セッション終了時にセッション要約（短いタイトル + 構造化JSON）を生成し、`pending` として保存
 - pendingは7日で自動失効し、職員がConfirm/Denyできる（Confirmは永続、Denyは削除）
-- Push-to-talk（KIOSK/職員操作。KIOSK/STAFFとも hold-to-talk を前提）
+- Push-to-talk（KIOSK操作。hold-to-talk を前提）
 - KIOSK/STAFFのRealtime（SSE）と最小UI
 - STAFF最小アクセス制御（LAN内限定/共有パスコード/自動ロック）
 - 「芸事」（例: ダンス/手をふる等）の最小対応（許可リストのモーションIDのみ）
@@ -91,7 +91,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 
 コンポーネント-2
 名称: Web Frontend（KIOSK/STAFF）
-責務: KIOSK表示・入力（PTT/モーション実行）、STAFF操作（PTT/セッション要約Confirm/Deny/緊急操作）、SSE受信
+責務: KIOSK表示・入力（PTT/モーション実行）、STAFF操作（セッションリセット/セッション要約Confirm/Deny/緊急操作）、SSE受信
 デプロイ形態: 常設PC上で配信（または静的ホスティング）
 
 ### 2.3 新規技術一覧
@@ -123,7 +123,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 主要データフロー-1
 from: STAFF UI
 to: API Server
-用途: PTT/セッションリセット/緊急停止/復帰のイベント入力
+用途: セッションリセット/緊急停止/復帰のSTAFFイベント入力
 プロトコル: HTTP（`/api/v1/staff/event`）
 
 主要データフロー-2
@@ -227,7 +227,7 @@ API-3
 API-4
 エンドポイント: /api/v1/staff/event
 メソッド: POST
-説明: STAFFイベント（PTT/緊急停止/復帰）
+説明: STAFFイベント（セッションリセット/緊急停止/復帰）
 
 API-5
 エンドポイント: /api/v1/kiosk/event
@@ -332,8 +332,7 @@ SSEエンドポイント:
 - イベント
   - `POST /api/v1/staff/event`
     - body例:
-      - `{ "type": "STAFF_PTT_DOWN" }`
-      - `{ "type": "STAFF_PTT_UP" }`
+      - `{ "type": "STAFF_RESET_SESSION" }`
       - `{ "type": "STAFF_EMERGENCY_STOP" }`
       - `{ "type": "STAFF_RESUME" }`
     - response: `200 { "ok": true }`
@@ -407,8 +406,7 @@ Provider方針:
 
 - イベント（例）
   - 入力（STAFF/UI）
-    - `STAFF_PTT_DOWN`
-    - `STAFF_PTT_UP`
+    - `STAFF_RESET_SESSION`
     - `KIOSK_PTT_DOWN`
     - `KIOSK_PTT_UP`
     - `STAFF_EMERGENCY_STOP`
@@ -573,7 +571,7 @@ N/A（SLA/SLOなし。単機ローカル運用を前提）
 リスク-2
 リスク: 運用上の誤操作（子どもが触る/意図しない送信）
 影響度: 高
-対策: PTTは hold-to-talk（押下中のみ収録）を前提とし、STAFFの緊急停止により入力/出力を中断できる。STAFF画面はアクセス制御+自動ロック
+対策: KIOSK PTTは hold-to-talk（押下中のみ収録）を前提とし、STAFFの緊急停止/復帰/セッションリセットで運用復旧できる。STAFF画面はアクセス制御+自動ロック
 
 ---
 

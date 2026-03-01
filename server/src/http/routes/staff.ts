@@ -42,17 +42,8 @@ type HandleStaffRoutesInput = {
 
 const isStaffEventType = (
   value: unknown,
-): value is
-  | "STAFF_PTT_DOWN"
-  | "STAFF_PTT_UP"
-  | "STAFF_RESET_SESSION"
-  | "STAFF_EMERGENCY_STOP"
-  | "STAFF_RESUME" =>
-  value === "STAFF_PTT_DOWN" ||
-  value === "STAFF_PTT_UP" ||
-  value === "STAFF_RESET_SESSION" ||
-  value === "STAFF_EMERGENCY_STOP" ||
-  value === "STAFF_RESUME";
+): value is "STAFF_RESET_SESSION" | "STAFF_EMERGENCY_STOP" | "STAFF_RESUME" =>
+  value === "STAFF_RESET_SESSION" || value === "STAFF_EMERGENCY_STOP" || value === "STAFF_RESUME";
 
 const STAFF_SESSION_SUMMARIES_PREFIX = "/api/v1/staff/session-summaries/";
 

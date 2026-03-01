@@ -154,14 +154,14 @@ describe("http-server (async llm provider)", () => {
 
   it("rejects legacy consent event and keeps session-summary pending list empty", async () => {
     {
-      const down = await sendRequest("POST", "/api/v1/staff/event", {
+      const down = await sendRequest("POST", "/api/v1/kiosk/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+        body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
       });
       expect(down.status).toBe(200);
-      const up = await sendRequest("POST", "/api/v1/staff/event", {
+      const up = await sendRequest("POST", "/api/v1/kiosk/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+        body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
       });
       expect(up.status).toBe(200);
       const multipart = buildMultipartBody({
@@ -198,14 +198,14 @@ describe("http-server (async llm provider)", () => {
       async () => {
         // 1st utterance: enter PERSONAL
         {
-          const down = await sendRequest("POST", "/api/v1/staff/event", {
+          const down = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
           });
           expect(down.status).toBe(200);
-          const up = await sendRequest("POST", "/api/v1/staff/event", {
+          const up = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
           });
           expect(up.status).toBe(200);
           const multipart = buildMultipartBody({
@@ -221,14 +221,14 @@ describe("http-server (async llm provider)", () => {
 
         // 2nd utterance: triggers async chat with tool_calls
         {
-          const down = await sendRequest("POST", "/api/v1/staff/event", {
+          const down = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
           });
           expect(down.status).toBe(200);
-          const up = await sendRequest("POST", "/api/v1/staff/event", {
+          const up = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
           });
           expect(up.status).toBe(200);
           const multipart = buildMultipartBody({

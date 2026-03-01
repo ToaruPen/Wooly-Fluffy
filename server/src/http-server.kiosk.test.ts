@@ -444,9 +444,9 @@ describe("http-server", () => {
       "streams kiosk record_start command on PTT down",
       async () => {
         const messages = await readSseDataMessages("/api/v1/kiosk/stream", 3, async () => {
-          const response = await sendRequest("POST", "/api/v1/staff/event", {
+          const response = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
           });
           expect(response.status).toBe(200);
         });
@@ -511,15 +511,15 @@ describe("http-server", () => {
         process.env.TEST_STT_THROW = "1";
 
         const messages = await readSseDataMessages("/api/v1/kiosk/stream", 10, async () => {
-          const down = await sendRequest("POST", "/api/v1/staff/event", {
+          const down = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
           });
           expect(down.status).toBe(200);
 
-          const up = await sendRequest("POST", "/api/v1/staff/event", {
+          const up = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
           });
           expect(up.status).toBe(200);
 
@@ -550,15 +550,15 @@ describe("http-server", () => {
       async () => {
         process.env.TEST_STT_DELAY_MS = "500";
 
-        const down = await sendRequest("POST", "/api/v1/staff/event", {
+        const down = await sendRequest("POST", "/api/v1/kiosk/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
-          body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+          body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
         });
         expect(down.status).toBe(200);
 
-        const up = await sendRequest("POST", "/api/v1/staff/event", {
+        const up = await sendRequest("POST", "/api/v1/kiosk/event", {
           headers: withStaffCookie({ "content-type": "application/json" }),
-          body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+          body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
         });
         expect(up.status).toBe(200);
 
