@@ -3,6 +3,13 @@ import { nodeFsConstants } from "../file-system.js";
 
 import { runPreflight } from "./preflight.js";
 
+function expectFailure(
+  result: Awaited<ReturnType<typeof runPreflight>>,
+): asserts result is { ok: false; errors: string[] } {
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("unreachable");
+}
+
 const baseEnv = {
   STAFF_PASSCODE: "test-pass",
   WHISPER_CPP_CLI_PATH: "/usr/local/bin/whisper-cli",
@@ -26,10 +33,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("STAFF_PASSCODE"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -42,10 +46,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("WHISPER_CPP_CLI_PATH"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -65,12 +66,10 @@ describe("runPreflight", () => {
         env: baseEnv,
         fetch: okFetch,
         fs_access: failingFsAccess,
+        fs_constants: fsConstants,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("WHISPER_CPP_CLI_PATH"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -83,10 +82,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("WHISPER_CPP_MODEL_PATH"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -106,12 +102,10 @@ describe("runPreflight", () => {
         env: baseEnv,
         fetch: okFetch,
         fs_access: failingFsAccess,
+        fs_constants: fsConstants,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("WHISPER_CPP_MODEL_PATH"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -133,10 +127,7 @@ describe("runPreflight", () => {
         fs_access: okFsAccess,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("TTS_ENGINE_URL"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -158,10 +149,7 @@ describe("runPreflight", () => {
         fs_access: okFsAccess,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(
         result.errors.some((error) => error.includes("TTS_ENGINE_URL") && error.includes("502")),
       ).toBe(true);
@@ -176,10 +164,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("LLM_PROVIDER_KIND"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -192,10 +177,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(
         result.errors.some((error) => error.includes("LLM_PROVIDER_KIND") && error.includes("foo")),
       ).toBe(true);
@@ -210,10 +192,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("LLM_BASE_URL"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -226,10 +205,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("LLM_MODEL"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -251,10 +227,7 @@ describe("runPreflight", () => {
         fs_access: okFsAccess,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("LLM_BASE_URL"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -271,10 +244,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("LLM_API_KEY"))).toBe(true);
     },
     { timeout: 5_000 },
@@ -298,10 +268,7 @@ describe("runPreflight", () => {
         fs_access: failingFsAccess,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(result.errors.some((error) => error.includes("STAFF_PASSCODE"))).toBe(true);
       expect(result.errors.some((error) => error.includes("WHISPER_CPP_CLI_PATH"))).toBe(true);
       expect(result.errors.some((error) => error.includes("WHISPER_CPP_MODEL_PATH"))).toBe(true);
@@ -364,10 +331,7 @@ describe("runPreflight", () => {
         fs_access: okFsAccess,
       });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(
         result.errors.some((error) => error.includes("LLM_BASE_URL") && error.includes("503")),
       ).toBe(true);
@@ -387,10 +351,7 @@ describe("runPreflight", () => {
 
       const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
 
-      expect(result.ok).toBe(false);
-      if (result.ok) {
-        return;
-      }
+      expectFailure(result);
       expect(
         result.errors.some(
           (error) => error.includes("LLM_API_KEY") && error.includes("gemini_native"),
