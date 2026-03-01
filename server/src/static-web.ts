@@ -1,9 +1,12 @@
-// eslint-disable-next-line no-restricted-imports
-import { createReadStream } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import type { IncomingMessage, ServerResponse } from "http";
+import type { Readable } from "node:stream";
 
 export type StaticWebResult = { handled: true } | { handled: false };
+
+export type StaticWebDeps = {
+  createReadStream: (filePath: string) => Readable;
+};
 
 const SPA_PREFIXES = ["/kiosk", "/staff"];
 const ASSETS_PREFIX = "/assets/";
@@ -27,6 +30,7 @@ export function tryServeStaticWeb(
   res: ServerResponse,
   webDistPath: string,
   path: string,
+  deps: StaticWebDeps,
 ): StaticWebResult {
   const resolvedWebDistPath = resolve(webDistPath);
 
@@ -37,7 +41,7 @@ export function tryServeStaticWeb(
       sendNotFound(res);
       return { handled: true };
     }
-    serveFile(res, indexPath);
+    serveFile(res, indexPath, deps);
     return { handled: true };
   }
 
@@ -59,7 +63,7 @@ export function tryServeStaticWeb(
     return { handled: true };
   }
 
-  serveFile(res, targetPath);
+  serveFile(res, targetPath, deps);
   return { handled: true };
 }
 
@@ -93,12 +97,17 @@ const isSafePath = (targetPath: string, basePath: string): boolean => {
   return targetPath === basePath || targetPath.startsWith(`${basePath}${sep}`);
 };
 
-const serveFile = (res: ServerResponse, filePath: string) => {
+const serveFile = (res: ServerResponse, filePath: string, deps: StaticWebDeps) => {
   res.statusCode = 200;
   res.setHeader("content-type", getContentType(filePath));
 
-  const stream = createReadStream(filePath);
+  const stream = deps.createReadStream(filePath);
   stream.on("error", () => {
+    /* v8 ignore next 4 — headersSent race: headers already flushed before stream error */
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
     sendNotFound(res);
   });
   stream.pipe(res);
