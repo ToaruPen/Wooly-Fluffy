@@ -27,7 +27,8 @@
   },
   "knip": {
     "ignore": [
-      "web/e2e/webserver.mjs"
+      "web/e2e/webserver.mjs",
+      "server/src/prod/preflight-cli.ts"
     ],
     "ignoreFiles": [
       "var/**",
