@@ -71,8 +71,16 @@ const stopTestServer = async (ctx: TestServerContext) => {
 };
 
 const teardownTestEnv = () => {
-  process.env.STAFF_PASSCODE = savedEnv.STAFF_PASSCODE;
-  process.env.TTS_SPEAKER_ID = savedEnv.TTS_SPEAKER_ID;
+  if (savedEnv.STAFF_PASSCODE === undefined) {
+    delete process.env.STAFF_PASSCODE;
+  } else {
+    process.env.STAFF_PASSCODE = savedEnv.STAFF_PASSCODE;
+  }
+  if (savedEnv.TTS_SPEAKER_ID === undefined) {
+    delete process.env.TTS_SPEAKER_ID;
+  } else {
+    process.env.TTS_SPEAKER_ID = savedEnv.TTS_SPEAKER_ID;
+  }
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 };
@@ -207,7 +215,7 @@ describe("http-server static web (no web_dist_path)", () => {
 
   beforeEach(async () => {
     setupTestEnv();
-    ctx = await startTestServer("/tmp/nonexistent-wf-test-dir");
+    ctx = await startTestServer(join(tmpdir(), `wf-nonexistent-${Date.now()}`));
   });
 
   afterEach(async () => {
