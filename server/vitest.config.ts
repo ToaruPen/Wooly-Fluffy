@@ -14,7 +14,7 @@ export default defineConfig({
       },
       all: true,
       include: ["src/**/!(*.test).ts"],
-      exclude: ["src/main.ts"],
+      exclude: ["src/main.ts", "src/prod/preflight-cli.ts"],
     },
   },
 });

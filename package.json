@@ -20,6 +20,8 @@
     "lint": "npm run -w server lint && npm run -w web lint",
     "test": "npm run -w server test && npm run -w web test",
     "coverage": "npm run -w server coverage && npm run -w web coverage",
+    "prod:build": "npm run -w server build && npm run -w web build",
+    "prod:start": "bash scripts/prod/start.sh",
     "tts:eval": "node scripts/tts-eval.mjs",
     "deadcode": "knip"
   },
