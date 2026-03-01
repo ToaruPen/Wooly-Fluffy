@@ -12,20 +12,24 @@ const defaultFsAccess = async (path: string, mode: number): Promise<void> => {
   await fsPromises.access(path, mode);
 };
 
-const readFsConstants = async (): Promise<FsConstants> => {
+/* v8 ignore next 4 — trivial default; tests inject fs_constants for determinism */
+const defaultFsConstants = async (): Promise<FsConstants> => {
   const fs = await import("node:fs");
   return fs.constants;
 };
+
+const ALLOWED_LLM_PROVIDER_KINDS = ["local", "external", "gemini_native"] as const;
 
 export async function runPreflight(_options?: {
   env?: Record<string, string | undefined>;
   fetch?: typeof globalThis.fetch;
   fs_access?: (path: string, mode: number) => Promise<void>;
+  fs_constants?: FsConstants;
 }): Promise<PreflightResult> {
   /* v8 ignore next 4 — defaults only used in production; tests always inject all deps */
   const env = _options?.env ?? process.env;
   const fsAccess = _options?.fs_access ?? defaultFsAccess;
-  const fsConstants = await readFsConstants();
+  const fsConstants = _options?.fs_constants ?? (await defaultFsConstants());
   const fetchFn = _options?.fetch ?? globalThis.fetch;
   const errors: string[] = [];
   if (!(env.STAFF_PASSCODE ?? "").trim()) {
@@ -71,6 +75,10 @@ export async function runPreflight(_options?: {
   const llmProviderKind = (env.LLM_PROVIDER_KIND ?? "stub").trim();
   if (llmProviderKind === "stub") {
     errors.push("LLM_PROVIDER_KIND=stub is not allowed in production");
+  } else if (!(ALLOWED_LLM_PROVIDER_KINDS as readonly string[]).includes(llmProviderKind)) {
+    errors.push(
+      `LLM_PROVIDER_KIND=${llmProviderKind} is not a recognized provider (allowed: ${ALLOWED_LLM_PROVIDER_KINDS.join(", ")})`,
+    );
   }
 
   const llmBaseUrl = (env.LLM_BASE_URL ?? "").trim();

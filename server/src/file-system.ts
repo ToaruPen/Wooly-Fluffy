@@ -1,5 +1,5 @@
 // eslint-disable-next-line no-restricted-imports
-import { readFileSync, statSync } from "node:fs";
+import { createReadStream as nodeCreateReadStream, readFileSync, statSync } from "node:fs";
 
 export type FileSystemStat = {
   isFile: boolean;
@@ -23,3 +23,5 @@ export const nodeFileSystemAdapter: FileSystemAdapter = {
     };
   },
 };
+
+export { nodeCreateReadStream };
