@@ -22,11 +22,11 @@ const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"])
 const KIOSK_PTT_EVENT_TIMEOUT_MS = 3_000;
 const SEGMENT_TTS_PREFETCH_LIMIT = 3;
 const SEGMENT_UTTERANCE_ID_HISTORY_LIMIT = 128;
-const DEDUPE_THINKING_MOTION_BY_ID = readViteBool({
+const shouldDedupeThinkingMotionById = readViteBool({
   name: "VITE_KIOSK_MOTION_DEDUPE_THINKING",
   defaultValue: true,
 });
-const DEDUPE_NON_THINKING_MOTION_BY_ID = readViteBool({
+const shouldDedupeNonThinkingMotionById = readViteBool({
   name: "VITE_KIOSK_MOTION_DEDUPE_NON_THINKING",
   defaultValue: false,
 });
@@ -52,9 +52,9 @@ const isSseTransportError = (error: Error): boolean => error.message === "SSE co
 
 const shouldDedupeMotionId = (motionId: MotionId): boolean => {
   if (motionId === "thinking") {
-    return DEDUPE_THINKING_MOTION_BY_ID;
+    return shouldDedupeThinkingMotionById;
   }
-  return DEDUPE_NON_THINKING_MOTION_BY_ID;
+  return shouldDedupeNonThinkingMotionById;
 };
 
 type Mode = "ROOM" | "PERSONAL";

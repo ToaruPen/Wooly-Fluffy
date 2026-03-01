@@ -92,11 +92,33 @@ describe("KioskPage play_motion", () => {
       await emitPlayMotion(2, "thinking", "m-2");
       expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-1" });
 
+      await emitPlayMotion(21, "dance", "m-invalid");
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-1" });
+
       await emitPlayMotion(3, "idle", "m-3");
       expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-3" });
 
       await emitPlayMotion(4, "idle", "m-4");
       expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-4" });
+
+      await emitPlayMotion(22, "cheer", "m-dup");
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-dup" });
+
+      await emitPlayMotion(23, "idle", "m-dup");
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-dup" });
+
+      const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
+      await act(async () => {
+        w.__wfPlayMotion?.("dance");
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-dup" });
+
+      await act(async () => {
+        w.__wfPlayMotion?.("idle");
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "dev-1" });
 
       act(() => root.unmount());
       document.body.removeChild(container);
