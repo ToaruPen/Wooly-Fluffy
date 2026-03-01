@@ -92,6 +92,190 @@ Notes:
 - Expects `npm install` to be done.
 - Uses `~/Library/Application Support/wooly-fluffy/server.env` for `STAFF_PASSCODE` etc (see `server-env.example`).
 
+## Production (macOS LaunchAgent)
+
+> **Note**: This section is for the production Mac (e.g. Mac mini at the venue).
+> For development, use the `npm run -w server start` / `npm run -w web dev` workflow described above.
+>
+> **Dev vs Prod URL summary**:
+>
+> | Environment | URL                                           | Notes                          |
+> | ----------- | --------------------------------------------- | ------------------------------ |
+> | Dev (Vite)  | `http://127.0.0.1:5173/kiosk` &#124; `/staff` | HMR, proxies `/api` to `:3000` |
+> | Production  | `http://<host>:3000/kiosk` &#124; `/staff`    | Static build served by Node.js |
+>
+> Do **not** use the Vite dev URL (`5173`) on the production machine.
+
+### Prerequisites (production)
+
+- macOS Apple Silicon (M1/M2/M3)
+- Node.js LTS installed (`/opt/homebrew/bin/node` or `/usr/local/bin/node`)
+- External services running: AivisSpeech Engine (or VOICEVOX), LLM provider, whisper.cpp built
+- Env file configured (see below)
+
+### Env file (production)
+
+The production server reads environment variables from:
+
+```text
+~/Library/Application Support/wooly-fluffy/server.env
+```
+
+**Permissions**: `chmod 600` (owner-only read/write). The file contains secrets.
+
+```bash
+# Create the directory and copy the template
+mkdir -p "$HOME/Library/Application Support/wooly-fluffy"
+cp ./server-env.example "$HOME/Library/Application Support/wooly-fluffy/server.env"
+chmod 600 "$HOME/Library/Application Support/wooly-fluffy/server.env"
+
+# Edit with your values (dummy examples shown)
+# STAFF_PASSCODE="change-me-in-production"
+# LLM_PROVIDER_KIND="local"
+# LLM_BASE_URL="http://127.0.0.1:1234/v1"
+# LLM_MODEL="your-model-id"
+# WHISPER_CPP_CLI_PATH="/Users/you/whisper.cpp/build/bin/whisper-cli"
+# WHISPER_CPP_MODEL_PATH="/Users/you/whisper.cpp/models/ggml-large-v3-turbo.bin"
+```
+
+See [Required environment variables](#required-environment-variables) for the full list.
+
+### DB and log locations
+
+| Data               | Default path                               | Notes                               |
+| ------------------ | ------------------------------------------ | ----------------------------------- |
+| SQLite DB          | `var/wooly-fluffy.sqlite3` (repo-relative) | Override with `DB_PATH` env var     |
+| LaunchAgent stdout | `~/Library/Logs/wooly-fluffy/stdout.log`   | Created by `launchagent-install.sh` |
+| LaunchAgent stderr | `~/Library/Logs/wooly-fluffy/stderr.log`   | Created by `launchagent-install.sh` |
+
+### Build for production
+
+```bash
+npm run prod:build
+```
+
+This builds both `server/dist/` and `web/dist/`. The production server serves `web/dist/` as static files (no separate Vite process needed).
+
+### Manual start (foreground)
+
+```bash
+npm run prod:start
+```
+
+This runs: env file load → preflight checks → `node server/dist/main.js`.
+
+The preflight checks verify:
+
+- `STAFF_PASSCODE` is set
+- `WHISPER_CPP_CLI_PATH` exists and is executable
+- `WHISPER_CPP_MODEL_PATH` exists and is readable
+- TTS engine (`TTS_ENGINE_URL`) is reachable
+- `LLM_PROVIDER_KIND` is not `stub`
+- LLM provider is reachable (for `local`/`external`)
+- `LLM_API_KEY` is set (for `external`/`gemini_native`)
+
+If any check fails, the server will not start and the failing checks are printed to stderr.
+
+### LaunchAgent (auto-start on login)
+
+Install as a macOS LaunchAgent to start automatically on user login and restart on crash:
+
+```bash
+# Install and start
+./scripts/prod/launchagent-install.sh
+
+# Check status
+launchctl print "gui/$(id -u)/com.woolyfluffy.server"
+
+# View logs
+tail -f ~/Library/Logs/wooly-fluffy/stdout.log
+tail -f ~/Library/Logs/wooly-fluffy/stderr.log
+
+# Uninstall (stop and remove)
+./scripts/prod/launchagent-uninstall.sh
+```
+
+The LaunchAgent:
+
+- Runs `scripts/prod/launchagent-run.sh` (loads env → preflight → server)
+- Restarts on non-zero exit (crash recovery), with a 30-second throttle
+- Starts at login (`RunAtLoad`)
+- Plist installed at `~/Library/LaunchAgents/com.woolyfluffy.server.plist`
+
+### Access URLs (production)
+
+After the server is running (port 3000 by default):
+
+| Page   | URL                         |
+| ------ | --------------------------- |
+| KIOSK  | `http://<host>:3000/kiosk`  |
+| STAFF  | `http://<host>:3000/staff`  |
+| Health | `http://<host>:3000/health` |
+
+Replace `<host>` with the machine's LAN IP (e.g. `192.168.1.100`) or `127.0.0.1` for local access.
+
+### Updating
+
+```bash
+cd /path/to/Wooly-Fluffy
+git pull
+npm install
+npm run prod:build
+
+# If LaunchAgent is installed, restart it:
+launchctl kickstart -k "gui/$(id -u)/com.woolyfluffy.server"
+```
+
+### Troubleshooting (production)
+
+#### 1. Check provider health
+
+```bash
+curl -s http://127.0.0.1:3000/health | python3 -m json.tool
+```
+
+Look at `providers.stt.status`, `providers.tts.status`, `providers.llm.status` — each should be `ok`.
+
+#### 2. VOICEVOX / AivisSpeech unreachable (`providers.tts.status: unavailable`)
+
+```bash
+# AivisSpeech Engine (default, port 10101)
+curl -fsS http://127.0.0.1:10101/version
+
+# VOICEVOX Engine (alternative, port 50021)
+curl -fsS http://127.0.0.1:50021/version
+```
+
+If the command fails, the TTS engine is not running. Start it and verify again.
+
+#### 3. LLM unreachable (`providers.llm.status: unavailable`)
+
+```bash
+# Check the configured LLM_BASE_URL (must include /v1)
+curl -fsS "$LLM_BASE_URL/models"
+```
+
+Common causes: LM Studio is not running, `LLM_BASE_URL` is missing `/v1`, firewall blocking.
+
+#### 4. whisper.cpp path or permission error (`providers.stt.status: unavailable`)
+
+```bash
+# Check path exists and is executable
+ls -la "$WHISPER_CPP_CLI_PATH"
+"$WHISPER_CPP_CLI_PATH" --help
+
+# Check model file exists and is readable
+ls -la "$WHISPER_CPP_MODEL_PATH"
+```
+
+#### 5. Port 3000 already in use
+
+```bash
+lsof -i :3000
+```
+
+Kill the conflicting process or change the port via `PORT` env var.
+
 ## Main loop setup (external deps + env vars + manual smoke)
 
 This project integrates external providers for STT (whisper.cpp), TTS (VOICEVOX), and LLM (LM Studio or an external OpenAI-compatible provider), plus a VRM model for the KIOSK avatar.
