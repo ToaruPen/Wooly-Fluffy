@@ -11,14 +11,21 @@ load_env_file() {
   [ -f "$env_file" ] || return 0
 
   while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%%#*}"                             # strip inline comments
     line="${line#"${line%%[![:space:]]*}"}"         # trim leading whitespace
     line="${line%"${line##*[![:space:]]}"}"         # trim trailing whitespace
     [ -z "$line" ] && continue
+    case "$line" in \#*) continue ;; esac         # skip full-line comments
     case "$line" in
       *=*)
         key="${line%%=*}"
         value="${line#*=}"
+        # Validate key is a valid shell identifier
+        case "$key" in
+          "" | *[!A-Za-z0-9_]* | [0-9]*)
+            echo "[WARN] invalid key '$key' in $env_file" >&2
+            continue
+            ;;
+        esac
         export "$key=$value"
         ;;
       *) echo "[WARN] ignoring non-KEY=VALUE line in $env_file" >&2 ;;
