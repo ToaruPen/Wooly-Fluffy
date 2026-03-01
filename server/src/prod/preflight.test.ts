@@ -96,6 +96,25 @@ describe("runPreflight", () => {
     expect(result.errors.some((error) => error.includes("TTS_ENGINE_URL"))).toBe(true);
   });
 
+  it("fails when TTS engine returns non-ok HTTP status", async () => {
+    const failingFetch: typeof globalThis.fetch = async (input) => {
+      if (String(input).endsWith("/version")) {
+        return { ok: false, status: 502 } as Response;
+      }
+      return { ok: true, status: 200 } as Response;
+    };
+
+    const result = await runPreflight({ env: baseEnv, fetch: failingFetch, fs_access: okFsAccess });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(
+      result.errors.some((error) => error.includes("TTS_ENGINE_URL") && error.includes("502")),
+    ).toBe(true);
+  });
+
   it("fails when LLM_PROVIDER_KIND is stub", async () => {
     const env = { ...baseEnv, LLM_PROVIDER_KIND: "stub" };
 
@@ -166,9 +185,7 @@ describe("runPreflight", () => {
   });
 
   it("collects all errors instead of failing fast", async () => {
-    const env = {
-      LLM_PROVIDER_KIND: "stub",
-    };
+    const env: Record<string, string | undefined> = {};
 
     const failingFsAccess = async (): Promise<void> => {
       throw new Error("missing");
@@ -217,5 +234,45 @@ describe("runPreflight", () => {
 
     expect(result).toEqual({ ok: true });
     expect(modelCalls).toBe(0);
+  });
+
+  it("fails when LLM_BASE_URL returns non-ok HTTP status", async () => {
+    const failingFetch: typeof globalThis.fetch = async (input) => {
+      if (String(input).endsWith("/models")) {
+        return { ok: false, status: 503 } as Response;
+      }
+      return { ok: true, status: 200 } as Response;
+    };
+
+    const result = await runPreflight({ env: baseEnv, fetch: failingFetch, fs_access: okFsAccess });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(
+      result.errors.some((error) => error.includes("LLM_BASE_URL") && error.includes("503")),
+    ).toBe(true);
+  });
+
+  it("fails when gemini_native has no API keys at all", async () => {
+    const env = {
+      ...baseEnv,
+      LLM_PROVIDER_KIND: "gemini_native",
+      LLM_MODEL: "gemini-2.5-flash-lite",
+      LLM_BASE_URL: "",
+    };
+
+    const result = await runPreflight({ env, fetch: okFetch, fs_access: okFsAccess });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(
+      result.errors.some(
+        (error) => error.includes("LLM_API_KEY") && error.includes("gemini_native"),
+      ),
+    ).toBe(true);
   });
 });
