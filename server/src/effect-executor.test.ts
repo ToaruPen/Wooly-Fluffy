@@ -2001,6 +2001,7 @@ describe("effect-executor", () => {
       ]);
       expect(events).toEqual([]);
       await flushMicrotasks();
+      await waitForCondition(() => queued.length > 0, 300);
 
       expect(queued).toEqual([
         {
@@ -2212,7 +2213,7 @@ describe("effect-executor", () => {
         }),
         chatStream: async function* () {
           await new Promise<void>((resolve) => {
-            setTimeout(resolve, 10);
+            setTimeout(resolve, 180);
           });
           yield {
             get delta_text() {
@@ -2243,6 +2244,7 @@ describe("effect-executor", () => {
         },
       ]);
       await flushMicrotasks();
+      await waitForCondition(() => queued.length > 0, 300);
 
       expect(queued).toEqual([
         {
@@ -2274,7 +2276,7 @@ describe("effect-executor", () => {
         chatStream: async function* () {
           yield { delta_text: "a" };
           await new Promise<void>((resolve) => {
-            setTimeout(resolve, 10);
+            setTimeout(resolve, 180);
           });
           yield {
             get delta_text() {
@@ -2305,6 +2307,7 @@ describe("effect-executor", () => {
         },
       ]);
       await flushMicrotasks();
+      await waitForCondition(() => queued.length > 0, 300);
 
       expect(queued).toEqual([
         {
@@ -2337,7 +2340,7 @@ describe("effect-executor", () => {
         chatStream: async function* () {
           try {
             await new Promise<void>((resolve) => {
-              setTimeout(resolve, 30);
+              setTimeout(resolve, 200);
             });
             yield {
               get delta_text() {
@@ -2371,9 +2374,8 @@ describe("effect-executor", () => {
         },
       ]);
       await flushMicrotasks();
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 80);
-      });
+      await waitForCondition(() => queued.length > 0, 300);
+      await waitForCondition(() => isIteratorClosed, 500);
 
       expect(queued).toEqual([
         {
@@ -2388,6 +2390,103 @@ describe("effect-executor", () => {
       expect(hasFirstChunkBeenConsumed).toBe(false);
       expect(isIteratorClosed).toBe(true);
       expect(sent).toEqual([]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "waits briefly for first completed sentence chunk before falling back to SAY",
+    async () => {
+      const providers = createStubProviders({
+        chatCall: async () => ({
+          assistant_text: "こんにちは。",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        }),
+        chatStream: async function* () {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 20);
+          });
+          yield { delta_text: "こんにちは。" };
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-short-delay-first-sentence",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+      await waitForCondition(() => queued.length > 0, 300);
+
+      expect(queued).toEqual([
+        {
+          type: "CHAT_RESULT",
+          request_id: "chat-stream-short-delay-first-sentence",
+          assistant_text: "こんにちは。",
+          expression: "neutral",
+          motion_id: null,
+          tool_calls: [],
+        },
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: {
+            utterance_id: "chat-stream-short-delay-first-sentence",
+            chat_request_id: "chat-stream-short-delay-first-sentence",
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "chat-stream-short-delay-first-sentence",
+            chat_request_id: "chat-stream-short-delay-first-sentence",
+            segment_index: 0,
+            text: "こんにちは。",
+            is_last: false,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: {
+            utterance_id: "chat-stream-short-delay-first-sentence",
+            chat_request_id: "chat-stream-short-delay-first-sentence",
+          },
+        },
+      ]);
+
+      sent.length = 0;
+      executor.executeEffects([
+        {
+          type: "SAY",
+          text: "こんにちは。",
+          chat_request_id: "chat-stream-short-delay-first-sentence",
+        },
+      ]);
+
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "chat-stream-short-delay-first-sentence", text: "こんにちは。" },
+        },
+      ]);
     },
     STREAM_TEST_TIMEOUT_MS,
   );

@@ -41,6 +41,7 @@ type SpeechMetric = {
 const MIN_SPEECH_SEGMENT_LENGTH = 5;
 const DEFAULT_STREAMED_CHAT_REQUEST_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_STREAMED_CHAT_REQUEST_MAX_ENTRIES = 512;
+const DEFAULT_FIRST_STREAM_SEGMENT_WAIT_MS = 120;
 
 const COMMON_ENGLISH_ABBREVIATIONS = new Set([
   "mr",
@@ -169,6 +170,7 @@ export const createEffectExecutor = (deps: {
   now_ms?: () => number;
   streamedChatRequestTtlMs?: number;
   streamedChatRequestMaxEntries?: number;
+  firstStreamSegmentWaitMs?: number;
   observeSpeechMetric?: (metric: SpeechMetric) => void;
   onStreamError?: (input: {
     request_id: string;
@@ -190,6 +192,10 @@ export const createEffectExecutor = (deps: {
   const streamedChatRequestMaxEntries = Math.max(
     1,
     deps.streamedChatRequestMaxEntries ?? DEFAULT_STREAMED_CHAT_REQUEST_MAX_ENTRIES,
+  );
+  const firstStreamSegmentWaitMs = Math.max(
+    0,
+    deps.firstStreamSegmentWaitMs ?? DEFAULT_FIRST_STREAM_SEGMENT_WAIT_MS,
   );
 
   const trimStreamedChatRequestIdsBySize = () => {
@@ -370,15 +376,10 @@ export const createEffectExecutor = (deps: {
 
                   try {
                     const result = await callPromise;
-                    // If callPromise resolves before the first stream segment, we
-                    // intentionally stop waiting after one macrotask and let SAY
-                    // fallback proceed. This avoids indefinite waiting under
-                    // network/backpressure at the cost of potentially dropping
-                    // very-late first chunks when emittedSegmentCount is still 0.
                     await Promise.race([
                       firstSegmentGate,
                       new Promise<void>((resolve) => {
-                        setTimeout(resolve, 0);
+                        setTimeout(resolve, firstStreamSegmentWaitMs);
                       }),
                     ]);
                     isChatFinalized = true;
@@ -398,7 +399,7 @@ export const createEffectExecutor = (deps: {
                     await Promise.race([
                       firstSegmentGate,
                       new Promise<void>((resolve) => {
-                        setTimeout(resolve, 0);
+                        setTimeout(resolve, firstStreamSegmentWaitMs);
                       }),
                     ]);
                     isChatFinalized = true;
