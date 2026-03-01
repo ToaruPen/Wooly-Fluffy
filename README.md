@@ -540,6 +540,8 @@ Web (optional):
 - `VITE_SSE_RECONNECT_ENABLED` (optional): enable SSE reconnect (default: true)
 - `VITE_SSE_RECONNECT_BASE_DELAY_MS` (optional): reconnect base delay in ms (default: 3000; clamp: 50..60000)
 - `VITE_SSE_RECONNECT_MAX_DELAY_MS` (optional): reconnect max delay in ms (default: 30000; clamp: 50..300000)
+- `VITE_KIOSK_MOTION_DEDUPE_THINKING` (optional): dedupe repeated `thinking` play_motion by motion id (default: true)
+- `VITE_KIOSK_MOTION_DEDUPE_NON_THINKING` (optional): dedupe repeated non-thinking (`idle/greeting/cheer`) play_motion by motion id (default: false)
 
 Example (bash; placeholders):
 

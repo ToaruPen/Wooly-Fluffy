@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createNullAudioPlayerMock,
   createSseClientMockFactory,
@@ -30,128 +30,118 @@ vi.mock("./sse-client", () =>
 
 const KIOSK_PLAY_MOTION_TEST_TIMEOUT_MS = 10_000;
 
+const getEnvRecord = (): Record<string, unknown> =>
+  import.meta.env as unknown as Record<string, unknown>;
+
+const setMotionDedupeEnv = (thinking: string | undefined, nonThinking: string | undefined) => {
+  const env = getEnvRecord();
+  env.VITE_KIOSK_MOTION_DEDUPE_THINKING = thinking;
+  env.VITE_KIOSK_MOTION_DEDUPE_NON_THINKING = nonThinking;
+};
+
+const mountKioskPage = async () => {
+  vi.resetModules();
+  latestSseHandlers = null;
+  latestMotionProps = null;
+  const { KioskPage } = await import("./kiosk-page");
+
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(<KioskPage />);
+    await Promise.resolve();
+  });
+
+  expect(latestSseHandlers).toBeTruthy();
+  expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "boot-1" });
+
+  return { root, container };
+};
+
+const emitPlayMotion = async (seq: number, motionId: string, motionInstanceId: string) => {
+  await act(async () => {
+    latestSseHandlers?.onMessage?.({
+      type: "kiosk.command.play_motion",
+      seq,
+      data: { motion_id: motionId, motion_instance_id: motionInstanceId },
+    });
+    await Promise.resolve();
+  });
+};
+
 describe("KioskPage play_motion", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it(
-    "passes allowlisted play_motion to VrmAvatar and de-dupes by motion_instance_id",
+    "dedupes thinking by default while allowing repeated non-thinking motions",
     async () => {
-      vi.resetModules();
-      latestSseHandlers = null;
-      latestMotionProps = null;
+      const env = getEnvRecord();
+      const previousThinking = env.VITE_KIOSK_MOTION_DEDUPE_THINKING;
+      const previousNonThinking = env.VITE_KIOSK_MOTION_DEDUPE_NON_THINKING;
 
-      const { KioskPage } = await import("./kiosk-page");
+      setMotionDedupeEnv(undefined, undefined);
+      const { root, container } = await mountKioskPage();
 
-      const container = document.createElement("div");
-      document.body.appendChild(container);
-      const root = createRoot(container);
+      await emitPlayMotion(1, "thinking", "m-1");
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-1" });
 
-      await act(async () => {
-        root.render(<KioskPage />);
-        await Promise.resolve();
-      });
+      await emitPlayMotion(2, "thinking", "m-2");
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-1" });
 
-      expect(latestSseHandlers).toBeTruthy();
-      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "boot-1" });
+      await emitPlayMotion(3, "idle", "m-3");
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-3" });
 
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 1,
-          data: { motion_id: "idle", motion_instance_id: "m-1" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
-
-      // Same instance id -> ignore
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 2,
-          data: { motion_id: "cheer", motion_instance_id: "m-1" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-1" });
-
-      // Different instance id -> update
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 3,
-          data: { motion_id: "cheer", motion_instance_id: "m-2" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
-
-      // Non-allowlisted -> ignore
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 4,
-          data: { motion_id: "dance", motion_instance_id: "m-3" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-2" });
-
-      // thinking should be accepted.
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 5,
-          data: { motion_id: "thinking", motion_instance_id: "m-4" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
-
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 6,
-          data: { motion_id: "thinking", motion_instance_id: "m-5" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
-
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 7,
-          data: { motion_id: "idle", motion_instance_id: "m-6" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-6" });
-
-      await act(async () => {
-        latestSseHandlers?.onMessage?.({
-          type: "kiosk.command.play_motion",
-          seq: 8,
-          data: { motion_id: "thinking", motion_instance_id: "m-7" },
-        });
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-7" });
-
-      // Dev helper (if enabled): should ignore unknown and accept allowlisted.
-      const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
-      await act(async () => {
-        w.__wfPlayMotion?.("dance");
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-7" });
-
-      await act(async () => {
-        w.__wfPlayMotion?.("idle");
-        await Promise.resolve();
-      });
-      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "dev-1" });
+      await emitPlayMotion(4, "idle", "m-4");
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-4" });
 
       act(() => root.unmount());
       document.body.removeChild(container);
+      setMotionDedupeEnv(
+        typeof previousThinking === "string" ? previousThinking : undefined,
+        typeof previousNonThinking === "string" ? previousNonThinking : undefined,
+      );
+    },
+    KIOSK_PLAY_MOTION_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "supports env toggles for thinking and non-thinking dedupe",
+    async () => {
+      const env = getEnvRecord();
+      const previousThinking = env.VITE_KIOSK_MOTION_DEDUPE_THINKING;
+      const previousNonThinking = env.VITE_KIOSK_MOTION_DEDUPE_NON_THINKING;
+
+      setMotionDedupeEnv("false", "true");
+      const { root, container } = await mountKioskPage();
+
+      await emitPlayMotion(1, "thinking", "m-1");
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-1" });
+
+      await emitPlayMotion(2, "thinking", "m-2");
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-2" });
+
+      await emitPlayMotion(3, "cheer", "m-3");
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-3" });
+
+      await emitPlayMotion(4, "cheer", "m-4");
+      expect(latestMotionProps).toEqual({ motionId: "cheer", motionInstanceId: "m-3" });
+
+      await emitPlayMotion(5, "idle", "m-5");
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-5" });
+
+      await emitPlayMotion(6, "idle", "m-6");
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-5" });
+
+      act(() => root.unmount());
+      document.body.removeChild(container);
+      setMotionDedupeEnv(
+        typeof previousThinking === "string" ? previousThinking : undefined,
+        typeof previousNonThinking === "string" ? previousNonThinking : undefined,
+      );
     },
     KIOSK_PLAY_MOTION_TEST_TIMEOUT_MS,
   );

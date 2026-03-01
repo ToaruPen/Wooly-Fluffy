@@ -15,12 +15,21 @@ import {
 import { parseKioskToolCallsData, type ToolCallLite } from "./kiosk-tool-calls";
 import styles from "./styles.module.css";
 import { performGestureAudioUnlock } from "./audio-unlock";
+import { readViteBool } from "./env";
 
 const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
 
 const KIOSK_PTT_EVENT_TIMEOUT_MS = 3_000;
 const SEGMENT_TTS_PREFETCH_LIMIT = 3;
 const SEGMENT_UTTERANCE_ID_HISTORY_LIMIT = 128;
+const DEDUPE_THINKING_MOTION_BY_ID = readViteBool({
+  name: "VITE_KIOSK_MOTION_DEDUPE_THINKING",
+  defaultValue: true,
+});
+const DEDUPE_NON_THINKING_MOTION_BY_ID = readViteBool({
+  name: "VITE_KIOSK_MOTION_DEDUPE_NON_THINKING",
+  defaultValue: false,
+});
 
 const isInteractiveElement = (el: Element | null): boolean => {
   if (!el) return false;
@@ -40,6 +49,13 @@ const toKidFriendlyError = (prefix: "stream" | "audio", _raw: string): string =>
 };
 
 const isSseTransportError = (error: Error): boolean => error.message === "SSE connection error";
+
+const shouldDedupeMotionId = (motionId: MotionId): boolean => {
+  if (motionId === "thinking") {
+    return DEDUPE_THINKING_MOTION_BY_ID;
+  }
+  return DEDUPE_NON_THINKING_MOTION_BY_ID;
+};
 
 type Mode = "ROOM" | "PERSONAL";
 type Phase =
@@ -929,7 +945,10 @@ export const KioskPage = () => {
           if (lastPlayedMotionInstanceIdRef.current === parsed.motionInstanceId) {
             return;
           }
-          if (lastPlayedMotionIdRef.current === "thinking" && parsed.motionId === "thinking") {
+          if (
+            shouldDedupeMotionId(parsed.motionId) &&
+            lastPlayedMotionIdRef.current === parsed.motionId
+          ) {
             return;
           }
           lastPlayedMotionInstanceIdRef.current = parsed.motionInstanceId;
