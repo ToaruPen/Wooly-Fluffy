@@ -9,8 +9,7 @@ try {
     process.exit(1);
   }
   process.stderr.write("[preflight] all checks passed\n");
-} catch (err: unknown) {
-  const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`[preflight] unexpected error: ${message}\n`);
+} catch {
+  process.stderr.write("[preflight] unexpected error\n");
   process.exit(2);
 }
