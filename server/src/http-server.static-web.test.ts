@@ -206,7 +206,10 @@ describe("http-server static web (no web_dist_path)", () => {
     process.env.TTS_SPEAKER_ID = "2";
 
     noDistStore = createStore({ db_path: ":memory:" });
-    noDistServer = createHttpServer({ store: noDistStore, web_dist_path: "/tmp/nonexistent-wf-test-dir" });
+    noDistServer = createHttpServer({
+      store: noDistStore,
+      web_dist_path: "/tmp/nonexistent-wf-test-dir",
+    });
     await new Promise<void>((resolve) => {
       noDistServer.listen(0, "127.0.0.1", resolve);
     });
