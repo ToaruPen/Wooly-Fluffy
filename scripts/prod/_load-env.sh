@@ -8,6 +8,8 @@
 
 load_env_file() {
   local env_file="$1"
+  # Intentionally return 0 when file is absent — callers that require the file
+  # must check existence before calling this function.
   [ -f "$env_file" ] || return 0
 
   while IFS= read -r line || [ -n "$line" ]; do
