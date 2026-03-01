@@ -417,4 +417,25 @@ describe("runPreflight", () => {
     },
     { timeout: 5_000 },
   );
+
+  it(
+    "falls back to VOICEVOX_ENGINE_URL when TTS_ENGINE_URL is empty string",
+    async () => {
+      const capturedUrls: string[] = [];
+      const captureFetch: typeof globalThis.fetch = async (input) => {
+        capturedUrls.push(String(input));
+        return { ok: true, status: 200 } as Response;
+      };
+      const env = {
+        ...baseEnv,
+        TTS_ENGINE_URL: "",
+        VOICEVOX_ENGINE_URL: "http://127.0.0.1:50021",
+      };
+
+      await runPreflight({ env, fetch: captureFetch, fs_access: okFsAccess });
+
+      expect(capturedUrls.some((url) => url.includes("127.0.0.1:50021"))).toBe(true);
+    },
+    { timeout: 5_000 },
+  );
 });
