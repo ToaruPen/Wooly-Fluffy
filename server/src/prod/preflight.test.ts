@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nodeFsConstants } from "../file-system.js";
 
 import { runPreflight } from "./preflight.js";
 
@@ -15,10 +16,7 @@ const baseEnv = {
 const okFsAccess = async (): Promise<void> => {};
 const okFetch = async (): Promise<Response> => ({ ok: true, status: 200 }) as Response;
 
-const readFsConstants = async (): Promise<{ X_OK: number; R_OK: number }> => {
-  const fs = await import("node:fs");
-  return fs.constants;
-};
+const readFsConstants = async (): Promise<{ X_OK: number; R_OK: number }> => nodeFsConstants();
 
 describe("runPreflight", () => {
   it(

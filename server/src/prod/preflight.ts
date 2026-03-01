@@ -1,22 +1,18 @@
+import { nodeFsAccess, nodeFsConstants } from "../file-system.js";
+import type { FsConstants } from "../file-system.js";
+
 export type PreflightResult = { ok: true } | { ok: false; errors: string[] };
 
 const HTTP_TIMEOUT_MS = 5_000;
 
 const normalizeBaseUrl = (url: string): string => url.replace(/\/+$/, "");
 
-type FsConstants = { X_OK: number; R_OK: number };
+/* v8 ignore next 2 — trivial default; tests inject fs_access for determinism */
+const defaultFsAccess = async (path: string, mode: number): Promise<void> =>
+  nodeFsAccess(path, mode);
 
-/* v8 ignore next 4 — trivial default; tests inject fs_access for determinism */
-const defaultFsAccess = async (path: string, mode: number): Promise<void> => {
-  const fsPromises = await import("node:fs/promises");
-  await fsPromises.access(path, mode);
-};
-
-/* v8 ignore next 4 — trivial default; tests inject fs_constants for determinism */
-const defaultFsConstants = async (): Promise<FsConstants> => {
-  const fs = await import("node:fs");
-  return fs.constants;
-};
+/* v8 ignore next 2 — trivial default; tests inject fs_constants for determinism */
+const defaultFsConstants = async (): Promise<FsConstants> => nodeFsConstants();
 
 const ALLOWED_LLM_PROVIDER_KINDS = ["local", "external", "gemini_native"] as const;
 
