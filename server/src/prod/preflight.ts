@@ -53,21 +53,22 @@ export async function runPreflight(_options?: {
     }
   }
 
-  const ttsBaseUrl = normalizeBaseUrl(
-    (env.TTS_ENGINE_URL ?? "").trim() ||
-      (env.VOICEVOX_ENGINE_URL ?? "").trim() ||
-      "http://127.0.0.1:10101",
-  );
-  try {
-    const res = await fetchFn(`${ttsBaseUrl}/version`, {
-      method: "GET",
-      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      errors.push(`TTS_ENGINE_URL is not reachable: HTTP ${res.status}`);
+  const rawTtsUrl = (env.TTS_ENGINE_URL ?? "").trim() || (env.VOICEVOX_ENGINE_URL ?? "").trim();
+  if (!rawTtsUrl) {
+    errors.push("TTS_ENGINE_URL is not set (VOICEVOX_ENGINE_URL also absent)");
+  } else {
+    const ttsBaseUrl = normalizeBaseUrl(rawTtsUrl);
+    try {
+      const res = await fetchFn(`${ttsBaseUrl}/version`, {
+        method: "GET",
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        errors.push(`TTS_ENGINE_URL is not reachable: HTTP ${res.status}`);
+      }
+    } catch {
+      errors.push("TTS_ENGINE_URL is not reachable");
     }
-  } catch {
-    errors.push("TTS_ENGINE_URL is not reachable");
   }
 
   const llmProviderKind = (env.LLM_PROVIDER_KIND ?? "stub").trim();
