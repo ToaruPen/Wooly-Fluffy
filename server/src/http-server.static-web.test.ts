@@ -9,35 +9,17 @@ import { createStore } from "./store.js";
 import { createHttpTestHelpers } from "./test-helpers/http.js";
 import { createSseTestHelpers } from "./test-helpers/sse.js";
 
-let server: Server;
-let port = 0;
-let store: ReturnType<typeof createStore>;
 let webDistPath = "";
-
-const helpers = createHttpTestHelpers(() => port);
-const { sendRequest } = helpers;
-const sseHelpers = createSseTestHelpers(() => port);
-const { readFirstSseMessage } = sseHelpers;
-
-beforeAll(() => {
-  webDistPath = mkdtempSync(join(tmpdir(), "wf-static-web-"));
-  mkdirSync(join(webDistPath, "assets"), { recursive: true });
-  mkdirSync(join(webDistPath, "assets", "%2e%2e"), { recursive: true });
-  writeFileSync(join(webDistPath, "index.html"), "<!doctype html><html><body>SPA</body></html>");
-  writeFileSync(join(webDistPath, "package.json"), '{"name":"should-not-serve"}\n');
-  writeFileSync(join(webDistPath, "assets", "app.js"), "console.log('app')");
-  writeFileSync(join(webDistPath, "assets", "%2e%2e", "package.json"), '{"name":"encoded"}\n');
-  writeFileSync(join(webDistPath, "assets", "style.css"), "body{}\n");
-  writeFileSync(join(webDistPath, "assets", "data.bin"), Buffer.from([0x00, 0x01]));
-});
-
-afterAll(() => {
-  rmSync(webDistPath, { recursive: true, force: true });
-});
 
 const savedEnv: Record<string, string | undefined> = {};
 
-beforeEach(async () => {
+type TestServerContext = {
+  server: Server;
+  store: ReturnType<typeof createStore>;
+  port: number;
+};
+
+const setupTestEnv = () => {
   vi.stubGlobal("fetch", (async (input: unknown) => {
     const url = String(input);
     if (url.endsWith("/version")) {
@@ -55,9 +37,11 @@ beforeEach(async () => {
   savedEnv.TTS_SPEAKER_ID = process.env.TTS_SPEAKER_ID;
   process.env.STAFF_PASSCODE = "test-pass";
   process.env.TTS_SPEAKER_ID = "2";
+};
 
-  store = createStore({ db_path: ":memory:" });
-  server = createHttpServer({ store, web_dist_path: webDistPath });
+const startTestServer = async (webDist?: string): Promise<TestServerContext> => {
+  const store = createStore({ db_path: ":memory:" });
+  const server = createHttpServer({ store, web_dist_path: webDist });
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
   });
@@ -65,13 +49,13 @@ beforeEach(async () => {
   if (!address || typeof address === "string") {
     throw new Error("server address unavailable");
   }
-  port = address.port;
-});
+  return { server, store, port: address.port };
+};
 
-afterEach(async () => {
+const stopTestServer = async (ctx: TestServerContext) => {
   await Promise.race([
     new Promise<void>((resolve, reject) => {
-      server.close((error) => {
+      ctx.server.close((error) => {
         if (error) {
           reject(error);
           return;
@@ -83,15 +67,50 @@ afterEach(async () => {
       setTimeout(() => reject(new Error("server.close timed out")), 2_000),
     ),
   ]);
+  ctx.store.close();
+};
 
-  store.close();
+const teardownTestEnv = () => {
   process.env.STAFF_PASSCODE = savedEnv.STAFF_PASSCODE;
   process.env.TTS_SPEAKER_ID = savedEnv.TTS_SPEAKER_ID;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+};
+
+beforeAll(() => {
+  webDistPath = mkdtempSync(join(tmpdir(), "wf-static-web-"));
+  mkdirSync(join(webDistPath, "assets"), { recursive: true });
+  mkdirSync(join(webDistPath, "assets", "%2e%2e"), { recursive: true });
+  writeFileSync(join(webDistPath, "index.html"), "<!doctype html><html><body>SPA</body></html>");
+  writeFileSync(join(webDistPath, "package.json"), '{"name":"should-not-serve"}\n');
+  writeFileSync(join(webDistPath, "assets", "app.js"), "console.log('app')");
+  writeFileSync(join(webDistPath, "assets", "%2e%2e", "package.json"), '{"name":"encoded"}\n');
+  writeFileSync(join(webDistPath, "assets", "style.css"), "body{}\n");
+  writeFileSync(join(webDistPath, "assets", "data.bin"), Buffer.from([0x00, 0x01]));
+});
+
+afterAll(() => {
+  rmSync(webDistPath, { recursive: true, force: true });
 });
 
 describe("http-server static web", () => {
+  let ctx: TestServerContext;
+
+  const helpers = createHttpTestHelpers(() => ctx.port);
+  const { sendRequest } = helpers;
+  const sseHelpers = createSseTestHelpers(() => ctx.port);
+  const { readFirstSseMessage } = sseHelpers;
+
+  beforeEach(async () => {
+    setupTestEnv();
+    ctx = await startTestServer(webDistPath);
+  });
+
+  afterEach(async () => {
+    await stopTestServer(ctx);
+    teardownTestEnv();
+  });
+
   it("serves SPA index for GET /kiosk", async () => {
     const response = await sendRequest("GET", "/kiosk");
 
@@ -182,75 +201,27 @@ describe("http-server static web", () => {
 });
 
 describe("http-server static web (no web_dist_path)", () => {
-  let noDistServer: Server;
-  let noDistPort = 0;
-  let noDistStore: ReturnType<typeof createStore>;
+  let ctx: TestServerContext;
+
+  const noDistHelpers = createHttpTestHelpers(() => ctx.port);
 
   beforeEach(async () => {
-    vi.stubGlobal("fetch", (async (input: unknown) => {
-      const url = String(input);
-      if (url.endsWith("/version")) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ version: "test" }),
-          arrayBuffer: async () => new ArrayBuffer(0),
-        };
-      }
-      throw new Error(`unexpected_fetch:${url}`);
-    }) as unknown as typeof fetch);
-
-    savedEnv.STAFF_PASSCODE = process.env.STAFF_PASSCODE;
-    savedEnv.TTS_SPEAKER_ID = process.env.TTS_SPEAKER_ID;
-    process.env.STAFF_PASSCODE = "test-pass";
-    process.env.TTS_SPEAKER_ID = "2";
-
-    noDistStore = createStore({ db_path: ":memory:" });
-    noDistServer = createHttpServer({
-      store: noDistStore,
-      web_dist_path: "/tmp/nonexistent-wf-test-dir",
-    });
-    await new Promise<void>((resolve) => {
-      noDistServer.listen(0, "127.0.0.1", resolve);
-    });
-    const address = noDistServer.address();
-    if (!address || typeof address === "string") {
-      throw new Error("server address unavailable");
-    }
-    noDistPort = address.port;
+    setupTestEnv();
+    ctx = await startTestServer("/tmp/nonexistent-wf-test-dir");
   });
 
   afterEach(async () => {
-    await Promise.race([
-      new Promise<void>((resolve, reject) => {
-        noDistServer.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      }),
-      new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error("server.close timed out")), 2_000),
-      ),
-    ]);
-    noDistStore.close();
-    process.env.STAFF_PASSCODE = savedEnv.STAFF_PASSCODE;
-    process.env.TTS_SPEAKER_ID = savedEnv.TTS_SPEAKER_ID;
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
+    await stopTestServer(ctx);
+    teardownTestEnv();
   });
 
   it("returns 404 for /kiosk when web_dist_path does not exist", async () => {
-    const noDistHelpers = createHttpTestHelpers(() => noDistPort);
     const response = await noDistHelpers.sendRequest("GET", "/kiosk");
 
     expect(response.status).toBe(404);
   });
 
   it("returns 200 for /health even when web_dist_path does not exist", async () => {
-    const noDistHelpers = createHttpTestHelpers(() => noDistPort);
     const response = await noDistHelpers.sendRequest("GET", "/health");
 
     expect(response.status).toBe(200);
