@@ -1,4 +1,5 @@
-// eslint-disable-next-line no-restricted-imports
+/* v8 ignore next 2 — canonical fs boundary; DI consumers use exported adapters */
+// eslint-disable-next-line no-restricted-imports -- boundary module must import node:fs
 import { createReadStream as nodeCreateReadStream, readFileSync, statSync } from "node:fs";
 
 export type FileSystemStat = {
