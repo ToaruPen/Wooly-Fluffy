@@ -215,7 +215,9 @@ describe("http-server static web (no web_dist_path)", () => {
 
   beforeEach(async () => {
     setupTestEnv();
-    ctx = await startTestServer(join(tmpdir(), `wf-nonexistent-${Date.now()}`));
+    ctx = await startTestServer(
+      join(tmpdir(), `wf-nonexistent-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    );
   });
 
   afterEach(async () => {
@@ -233,5 +235,8 @@ describe("http-server static web (no web_dist_path)", () => {
     const response = await noDistHelpers.sendRequest("GET", "/health");
 
     expect(response.status).toBe(200);
+    expect(String(response.headers["content-type"] ?? "")).toContain("application/json");
+    const body = JSON.parse(response.body);
+    expect(body).toHaveProperty("status", "ok");
   });
 });
