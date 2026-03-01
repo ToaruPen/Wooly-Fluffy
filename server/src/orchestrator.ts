@@ -460,14 +460,15 @@ export const reduceOrchestrator = (
 
   if (event.type === "STAFF_RESET_SESSION") {
     const nextState = resetForRoom(state, now);
-    return {
-      next_state: nextState,
-      effects: [
-        { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-reset-session" },
-        { type: "SET_MODE", mode: "ROOM" },
-        { type: "SHOW_CONSENT_UI", visible: false },
-      ],
-    };
+    const effects: OrchestratorEffect[] = [
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-reset-session" },
+      { type: "SET_MODE", mode: "ROOM" },
+      { type: "SHOW_CONSENT_UI", visible: false },
+    ];
+    if (state.phase === "listening") {
+      effects.unshift({ type: "KIOSK_RECORD_STOP" });
+    }
+    return { next_state: nextState, effects };
   }
 
   if (event.type === "STAFF_EMERGENCY_STOP") {

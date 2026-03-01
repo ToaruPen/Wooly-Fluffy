@@ -1369,6 +1369,21 @@ describe("orchestrator", () => {
     ]);
   });
 
+  it("handles STAFF_RESET_SESSION while listening (emits record stop)", () => {
+    const base = createInitialState(0);
+    const listening: OrchestratorState = { ...base, phase: "listening" };
+
+    const forced = reduceOrchestrator(listening, { type: "STAFF_RESET_SESSION" }, 2000);
+
+    expect(forced.next_state.phase).toBe("idle");
+    expect(forced.effects[0]).toEqual({ type: "KIOSK_RECORD_STOP" });
+    expect(getEffect(forced.effects, "PLAY_MOTION")).toEqual({
+      type: "PLAY_MOTION",
+      motion_id: "idle",
+      motion_instance_id: "motion-reset-session",
+    });
+  });
+
   it("handles emergency stop when not listening (no record stop effect)", () => {
     const base = createInitialState(0);
 
