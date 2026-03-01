@@ -83,7 +83,7 @@ export type OrchestratorEvent =
   | { type: "KIOSK_PTT_DOWN" }
   | { type: "KIOSK_PTT_UP" }
   | { type: "UI_CONSENT_BUTTON"; answer: "yes" | "no" }
-  | { type: "STAFF_FORCE_ROOM" }
+  | { type: "STAFF_RESET_SESSION" }
   | { type: "STAFF_EMERGENCY_STOP" }
   | { type: "STAFF_RESUME" }
   | { type: "STT_RESULT"; text: string; request_id: string }
@@ -458,12 +458,12 @@ export const reduceOrchestrator = (
     return { next_state: state, effects: [] };
   }
 
-  if (event.type === "STAFF_FORCE_ROOM") {
+  if (event.type === "STAFF_RESET_SESSION") {
     const nextState = resetForRoom(state, now);
     return {
       next_state: nextState,
       effects: [
-        { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-force-room" },
+        { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-reset-session" },
         { type: "SET_MODE", mode: "ROOM" },
         { type: "SHOW_CONSENT_UI", visible: false },
       ],

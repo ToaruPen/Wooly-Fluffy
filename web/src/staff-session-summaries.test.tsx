@@ -531,7 +531,7 @@ describe("staff session summaries flows", () => {
         expect(keepaliveCallsAfterInput.length).toBeGreaterThan(1);
 
         const refresh = getButton("Refresh");
-        const forceRoom = getButton("Force ROOM");
+        const forceRoom = getButton("Reset Session");
         const emergencyStop = getButton("Emergency stop");
         const resume = getButton("Resume");
         expect(refresh).toBeTruthy();

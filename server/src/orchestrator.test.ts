@@ -1340,7 +1340,7 @@ describe("orchestrator", () => {
     expect(failed.effects).toEqual([]);
   });
 
-  it("handles STAFF_FORCE_ROOM and clears state", () => {
+  it("handles STAFF_RESET_SESSION and clears state", () => {
     const base = createInitialState(0);
     const personal: OrchestratorState = {
       ...base,
@@ -1356,14 +1356,14 @@ describe("orchestrator", () => {
       },
     };
 
-    const forced = reduceOrchestrator(personal, { type: "STAFF_FORCE_ROOM" }, 2000);
+    const forced = reduceOrchestrator(personal, { type: "STAFF_RESET_SESSION" }, 2000);
 
     expect(forced.next_state.mode).toBe("ROOM");
     expect(forced.next_state.personal_name).toBeNull();
     expect(forced.next_state.memory_candidate).toBeNull();
     expect(forced.next_state.in_flight.chat_request_id).toBeNull();
     expect(forced.effects).toEqual([
-      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-force-room" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-reset-session" },
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);

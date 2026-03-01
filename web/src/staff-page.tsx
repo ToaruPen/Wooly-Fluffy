@@ -153,7 +153,7 @@ export const StaffPage = () => {
       type:
         | "STAFF_PTT_DOWN"
         | "STAFF_PTT_UP"
-        | "STAFF_FORCE_ROOM"
+        | "STAFF_RESET_SESSION"
         | "STAFF_EMERGENCY_STOP"
         | "STAFF_RESUME",
     ) => {
@@ -494,10 +494,10 @@ export const StaffPage = () => {
                 className={styles.staffSecondaryButton}
                 onClick={() => {
                   markActivity();
-                  void sendStaffEvent("STAFF_FORCE_ROOM");
+                  void sendStaffEvent("STAFF_RESET_SESSION");
                 }}
               >
-                Force ROOM
+                Reset Session
               </button>
               <button
                 type="button"

@@ -299,10 +299,10 @@ describe("http-server", () => {
       });
     });
 
-    it("accepts STAFF_FORCE_ROOM staff event", async () => {
+    it("accepts STAFF_RESET_SESSION staff event", async () => {
       const response = await sendRequest("POST", "/api/v1/staff/event", {
         headers: withStaffCookie({ "content-type": "application/json" }),
-        body: JSON.stringify({ type: "STAFF_FORCE_ROOM" }),
+        body: JSON.stringify({ type: "STAFF_RESET_SESSION" }),
       });
 
       expect(response.status).toBe(200);
