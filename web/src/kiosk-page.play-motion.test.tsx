@@ -106,13 +106,43 @@ describe("KioskPage play_motion", () => {
       });
       expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
 
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 6,
+          data: { motion_id: "thinking", motion_instance_id: "m-5" },
+        });
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
+
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 7,
+          data: { motion_id: "idle", motion_instance_id: "m-6" },
+        });
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "idle", motionInstanceId: "m-6" });
+
+      await act(async () => {
+        latestSseHandlers?.onMessage?.({
+          type: "kiosk.command.play_motion",
+          seq: 8,
+          data: { motion_id: "thinking", motion_instance_id: "m-7" },
+        });
+        await Promise.resolve();
+      });
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-7" });
+
       // Dev helper (if enabled): should ignore unknown and accept allowlisted.
       const w = window as unknown as { __wfPlayMotion?: (motionId: unknown) => void };
       await act(async () => {
         w.__wfPlayMotion?.("dance");
         await Promise.resolve();
       });
-      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-4" });
+      expect(latestMotionProps).toEqual({ motionId: "thinking", motionInstanceId: "m-7" });
 
       await act(async () => {
         w.__wfPlayMotion?.("idle");

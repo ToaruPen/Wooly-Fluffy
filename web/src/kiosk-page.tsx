@@ -194,6 +194,7 @@ export const KioskPage = () => {
     motionInstanceId: "boot-1",
   }));
   const lastPlayedMotionInstanceIdRef = useRef<string | null>(null);
+  const lastPlayedMotionIdRef = useRef<MotionId>("idle");
   const devMotionSeqRef = useRef(0);
   const pttSessionRef = useRef<PttSession | null>(null);
   const pttStartRef = useRef<Promise<PttSession> | null>(null);
@@ -719,6 +720,7 @@ export const KioskPage = () => {
           return;
         }
         devMotionSeqRef.current += 1;
+        lastPlayedMotionIdRef.current = motionId;
         setMotion({ motionId, motionInstanceId: `dev-${devMotionSeqRef.current}` });
       };
     }
@@ -927,7 +929,11 @@ export const KioskPage = () => {
           if (lastPlayedMotionInstanceIdRef.current === parsed.motionInstanceId) {
             return;
           }
+          if (lastPlayedMotionIdRef.current === "thinking" && parsed.motionId === "thinking") {
+            return;
+          }
           lastPlayedMotionInstanceIdRef.current = parsed.motionInstanceId;
+          lastPlayedMotionIdRef.current = parsed.motionId;
           setMotion(parsed);
           return;
         }
