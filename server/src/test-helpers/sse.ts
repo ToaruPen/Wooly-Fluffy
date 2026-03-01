@@ -52,8 +52,6 @@ export const createSseTestHelpers = (getPort: () => number) => {
   ) =>
     new Promise<JsonSseMessage[]>((resolve, reject) => {
       let isDone = false;
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      let req: ReturnType<typeof request> | undefined;
 
       const finish = (err?: Error, result?: JsonSseMessage[]) => {
         if (isDone) {
@@ -71,7 +69,7 @@ export const createSseTestHelpers = (getPort: () => number) => {
       };
 
       const messages: JsonSseMessage[] = [];
-      req = request({ host: "127.0.0.1", port: getPort(), method: "GET", path }, (res) => {
+      const req = request({ host: "127.0.0.1", port: getPort(), method: "GET", path }, (res) => {
         let buffer = "";
         res.setEncoding("utf8");
         res.on("data", (chunk) => {
@@ -126,7 +124,7 @@ export const createSseTestHelpers = (getPort: () => number) => {
         }
       }
 
-      timeout = setTimeout(() => {
+      const timeout = setTimeout(() => {
         req?.destroy();
         finish(new Error("sse_timeout"));
       }, options?.timeout_ms ?? 2000);

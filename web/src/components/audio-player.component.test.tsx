@@ -118,15 +118,15 @@ describe("AudioPlayer (component)", () => {
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(instances.length).toBe(1);
-    expect(instances[0]!.src).toBe("blob:tts");
-    expect(instances[0]!.play).toHaveBeenCalled();
+    expect(instances[0].src).toBe("blob:tts");
+    expect(instances[0].play).toHaveBeenCalled();
     expect(onLevel).toHaveBeenCalledWith(7, expect.any(Number));
 
     expect(
       (window as unknown as { AudioContext?: { prototype?: unknown } }).AudioContext,
     ).toBeTruthy();
 
-    instances[0]!.onended?.();
+    instances[0].onended?.();
     expect(onEnded).toHaveBeenCalledWith(7);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:tts");
 
@@ -249,7 +249,7 @@ describe("AudioPlayer (component)", () => {
       root.render(<AudioPlayer wav={new ArrayBuffer(1)} playId={1} onEnded={onEnded} />);
     });
     expect(instances.length).toBe(1);
-    const oldOnEnded = instances[0]!.onended;
+    const oldOnEnded = instances[0].onended;
 
     await act(async () => {
       root.render(<AudioPlayer wav={new ArrayBuffer(2)} playId={2} onEnded={onEnded} />);
@@ -301,7 +301,7 @@ describe("AudioPlayer (component)", () => {
     });
 
     expect(FakeAudio.instances.length).toBe(1);
-    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(FakeAudio.instances[0].play).toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -363,10 +363,10 @@ describe("AudioPlayer (component)", () => {
     });
 
     expect(FakeAudio.instances.length).toBe(1);
-    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(FakeAudio.instances[0].play).toHaveBeenCalled();
     // If resume fails, do not route the media element through AudioContext.
     expect(ctxInstances.length).toBe(1);
-    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+    expect(ctxInstances[0].createMediaElementSource).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -427,10 +427,10 @@ describe("AudioPlayer (component)", () => {
     });
 
     expect(FakeAudio.instances.length).toBe(1);
-    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(FakeAudio.instances[0].play).toHaveBeenCalled();
     expect(ctxInstances.length).toBe(1);
-    expect(ctxInstances[0]!.close).toHaveBeenCalled();
-    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+    expect(ctxInstances[0].close).toHaveBeenCalled();
+    expect(ctxInstances[0].createMediaElementSource).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -492,9 +492,9 @@ describe("AudioPlayer (component)", () => {
     });
 
     expect(FakeAudio.instances.length).toBe(1);
-    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(FakeAudio.instances[0].play).toHaveBeenCalled();
     expect(ctxInstances.length).toBe(1);
-    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+    expect(ctxInstances[0].createMediaElementSource).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -554,10 +554,10 @@ describe("AudioPlayer (component)", () => {
     });
 
     expect(FakeAudio.instances.length).toBe(1);
-    expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+    expect(FakeAudio.instances[0].play).toHaveBeenCalled();
     expect(ctxInstances.length).toBe(1);
-    expect(ctxInstances[0]!.close).toHaveBeenCalled();
-    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+    expect(ctxInstances[0].close).toHaveBeenCalled();
+    expect(ctxInstances[0].createMediaElementSource).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -632,8 +632,8 @@ describe("AudioPlayer (component)", () => {
     await Promise.resolve();
 
     expect(ctxInstances.length).toBe(2);
-    expect(ctxInstances[0]!.close).toHaveBeenCalled();
-    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+    expect(ctxInstances[0].close).toHaveBeenCalled();
+    expect(ctxInstances[0].createMediaElementSource).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -706,8 +706,8 @@ describe("AudioPlayer (component)", () => {
     await Promise.resolve();
 
     expect(ctxInstances.length).toBe(2);
-    expect(ctxInstances[0]!.close).toHaveBeenCalled();
-    expect(ctxInstances[0]!.createMediaElementSource).not.toHaveBeenCalled();
+    expect(ctxInstances[0].close).toHaveBeenCalled();
+    expect(ctxInstances[0].createMediaElementSource).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

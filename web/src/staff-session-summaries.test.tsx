@@ -61,7 +61,7 @@ const bootStaffPage = async (
     appRoot = mainModule.appRoot;
   });
 
-  const input = document.querySelector("input") as HTMLInputElement | null;
+  const input = document.querySelector("input");
   const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
     (b.textContent ?? "").includes("Sign in"),
   );
@@ -147,9 +147,7 @@ describe("staff session summaries flows", () => {
       );
 
     const staffEvCount = () =>
-      (fetchMock as ReturnType<typeof vi.fn>).mock.calls.filter(
-        (c) => String(c[0]) === "/api/v1/staff/event",
-      ).length;
+      fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/v1/staff/event").length;
 
     return { appRoot, handlers, fetchMock, closeSpy, getButton, staffEvCount };
   };
@@ -361,7 +359,7 @@ describe("staff session summaries flows", () => {
           ptt?.focus();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-          (document.body as HTMLElement).focus();
+          document.body.focus();
         });
         expect(staffEvCount()).toBe(beforeBtn);
 
@@ -374,7 +372,7 @@ describe("staff session summaries flows", () => {
           roleBtn.focus();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-          (document.body as HTMLElement).focus();
+          document.body.focus();
         });
         expect(staffEvCount()).toBe(beforeRole);
         document.body.removeChild(roleBtn);
@@ -387,7 +385,7 @@ describe("staff session summaries flows", () => {
           editDiv.focus();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-          (document.body as HTMLElement).focus();
+          document.body.focus();
         });
         expect(staffEvCount()).toBe(beforeEdit);
         document.body.removeChild(editDiv);
@@ -401,7 +399,7 @@ describe("staff session summaries flows", () => {
           nonEditDiv.focus();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-          (document.body as HTMLElement).focus();
+          document.body.focus();
         });
         expect(staffEvCount()).toBeGreaterThan(beforeNonEdit);
         document.body.removeChild(nonEditDiv);
@@ -413,7 +411,7 @@ describe("staff session summaries flows", () => {
           textarea.focus();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-          (document.body as HTMLElement).focus();
+          document.body.focus();
         });
         expect(staffEvCount()).toBe(beforeTa);
         document.body.removeChild(textarea);
@@ -425,7 +423,7 @@ describe("staff session summaries flows", () => {
           selectEl.focus();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
           window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
-          (document.body as HTMLElement).focus();
+          document.body.focus();
         });
         expect(staffEvCount()).toBe(beforeSel);
         document.body.removeChild(selectEl);
@@ -518,7 +516,7 @@ describe("staff session summaries flows", () => {
         await act(async () => {
           vi.advanceTimersByTime(30_000);
         });
-        const keepaliveCalls = (fetchMock as ReturnType<typeof vi.fn>).mock.calls.filter(
+        const keepaliveCalls = fetchMock.mock.calls.filter(
           (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
         );
         expect(keepaliveCalls).toHaveLength(1);
@@ -527,7 +525,7 @@ describe("staff session summaries flows", () => {
           window.dispatchEvent(new Event("pointerdown"));
           vi.advanceTimersByTime(30_000);
         });
-        const keepaliveCallsAfterInput = (fetchMock as ReturnType<typeof vi.fn>).mock.calls.filter(
+        const keepaliveCallsAfterInput = fetchMock.mock.calls.filter(
           (c) => String(c[0]) === "/api/v1/staff/auth/keepalive",
         );
         expect(keepaliveCallsAfterInput.length).toBeGreaterThan(1);

@@ -26,7 +26,7 @@ export const computeRmsFromByteTimeDomainData = (data: Uint8Array) => {
 
   let sum = 0;
   for (let i = 0; i < data.length; i += 1) {
-    const centered = (data[i]! - 128) / 128;
+    const centered = (data[i] - 128) / 128;
     sum += centered * centered;
   }
   const mean = sum / data.length;

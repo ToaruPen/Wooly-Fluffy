@@ -16,18 +16,18 @@
     "start": "node dist/main.js",
     "dev": "npm run start",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint --cache --max-warnings 0 .",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.30",
-    "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0",
     "@vitest/coverage-v8": "^1.6.0",
     "eslint": "^9.33.0",
     "typescript": "^5.5.4",
+    "typescript-eslint": "^8.56.1",
     "vitest": "^1.6.0"
   }
 }

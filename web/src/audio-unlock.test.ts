@@ -58,8 +58,8 @@ describe("performGestureAudioUnlock", () => {
     });
     await flushMicrotasks();
     expect(created.length).toBe(1);
-    expect(created[0]!.play).toHaveBeenCalled();
-    expect(created[0]!.pause).toHaveBeenCalled();
+    expect(created[0].play).toHaveBeenCalled();
+    expect(created[0].pause).toHaveBeenCalled();
   });
 
   it("ignores HTMLAudioElement play() rejections", async () => {

@@ -57,7 +57,7 @@ const totalChars = (buffer: SessionBuffer): number => {
 };
 
 const foldOne = (buffer: SessionBuffer, limits: SessionBufferLimits): SessionBuffer => {
-  const first = buffer.messages[0]!;
+  const first = buffer.messages[0];
   const rest = buffer.messages.slice(1);
   const tag = first.role === "user" ? "U" : "A";
   const piece = `${tag}:${excerptForFold(first.text, limits.fold_excerpt_chars)}`;
