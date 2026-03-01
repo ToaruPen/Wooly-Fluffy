@@ -134,7 +134,7 @@ export const createWhisperCppSttProvider = (
           },
           (err, stdout) => {
             if (err) {
-              reject(err);
+              reject(err as Error);
               return;
             }
             resolve(String(stdout));

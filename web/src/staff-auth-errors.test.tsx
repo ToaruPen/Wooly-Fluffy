@@ -43,7 +43,7 @@ const setNativeInputValue = (input: HTMLInputElement, value: string) => {
 };
 
 const signInStaffPage = async () => {
-  const input = document.querySelector("input") as HTMLInputElement | null;
+  const input = document.querySelector("input");
   const signIn = Array.from(document.querySelectorAll("button")).find((b) =>
     (b.textContent ?? "").includes("Sign in"),
   );

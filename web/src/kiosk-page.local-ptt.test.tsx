@@ -126,7 +126,7 @@ describe("KioskPage local PTT", () => {
 
       const button = Array.from(container.querySelectorAll("button")).find((el) =>
         (el.textContent ?? "").includes("おして"),
-      ) as HTMLButtonElement | undefined;
+      );
       expect(button).toBeTruthy();
 
       await act(async () => {
@@ -211,7 +211,7 @@ describe("KioskPage local PTT", () => {
 
     const button = Array.from(container.querySelectorAll("button")).find((el) =>
       (el.textContent ?? "").includes("おして"),
-    ) as HTMLButtonElement | undefined;
+    );
     expect(button).toBeTruthy();
 
     await act(async () => {
@@ -1260,7 +1260,7 @@ describe("KioskPage local PTT", () => {
       // Verify error state shows reconnect button
       const reconnectBtn = Array.from(container.querySelectorAll("button")).find((el) =>
         (el.textContent ?? "").includes("もういちどつなぐ"),
-      ) as HTMLButtonElement | undefined;
+      );
       expect(reconnectBtn).toBeTruthy();
 
       // Click reconnect button

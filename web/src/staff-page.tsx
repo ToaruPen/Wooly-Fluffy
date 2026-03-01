@@ -397,7 +397,7 @@ export const StaffPage = () => {
     <div className={styles.staffPage}>
       <header className={styles.staffHeader}>
         <h1 className={styles.staffHeaderTitle}>{title}</h1>
-        <DevDebugLink isDev={import.meta.env.DEV as boolean} />
+        <DevDebugLink isDev={import.meta.env.DEV} />
       </header>
 
       {view !== "logged_in" ? (

@@ -20,7 +20,7 @@ export const getPage = (pathname: string, isDev: boolean): Page => {
 };
 
 export const App = () => {
-  const page = getPage(window.location.pathname, import.meta.env.DEV as boolean);
+  const page = getPage(window.location.pathname, import.meta.env.DEV);
   if (page === "debug" && DebugPageLazy) {
     return (
       <Suspense fallback={null}>

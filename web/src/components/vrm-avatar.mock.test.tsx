@@ -21,7 +21,7 @@ const createdMixers: unknown[] = [];
 const createdActions: unknown[] = [];
 
 let rafCalls = 0;
-let rafCallbacks: FrameRequestCallback[] = [];
+const rafCallbacks: FrameRequestCallback[] = [];
 
 const flushMicrotasks = async (count: number) => {
   for (let i = 0; i < count; i += 1) {
@@ -981,7 +981,7 @@ describe("VrmAvatar (coverage)", () => {
     await waitFor(() => countAction("play") >= 3);
     shouldRemoveEventListenerThrow = false;
 
-    const mixer = createdMixers[0] as unknown as {
+    const mixer = createdMixers[0] as {
       __wfDispatchFinished: (action: unknown) => void;
     };
     expect(mixer).toBeTruthy();
@@ -1080,7 +1080,7 @@ describe("VrmAvatar (coverage)", () => {
 
     // Dispatch after unmount -> handler should run but early-return due to disposed.
     shouldRemoveEventListenerThrow = false;
-    const mixer = createdMixers[0] as unknown as {
+    const mixer = createdMixers[0] as {
       __wfDispatchFinished: (action: unknown) => void;
     };
     const greetingAction = createdActions[1];

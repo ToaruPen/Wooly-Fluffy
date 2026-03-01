@@ -1031,7 +1031,7 @@ export const KioskPage = () => {
   };
 
   const vrmExpression: ExpressionLabel = speech?.expression ?? "neutral";
-  const vrmUrl = import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm";
+  const vrmUrl = String(import.meta.env.VITE_VRM_URL ?? "/assets/vrm/mascot.vrm");
 
   const stageBgEnv = import.meta.env.VITE_KIOSK_STAGE_BG_URL as string | undefined;
   const defaultStageBgUrl = "/assets/stage-bg/kenney-uncolored-hills.png";

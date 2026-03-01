@@ -258,9 +258,9 @@ const parseAndNormalizeSessionSummaryJsonText = (jsonText: string): SessionSumma
   ) {
     throw new Error("invalid_session_summary_summary_json_keys");
   }
-  const rawSummary = (parsed.summary_json as Record<string, unknown>).summary;
-  const rawTopics = (parsed.summary_json as Record<string, unknown>).topics;
-  const rawStaffNotes = (parsed.summary_json as Record<string, unknown>).staff_notes;
+  const rawSummary = parsed.summary_json.summary;
+  const rawTopics = parsed.summary_json.topics;
+  const rawStaffNotes = parsed.summary_json.staff_notes;
   if (typeof rawSummary !== "string") {
     throw new Error("invalid_session_summary_summary");
   }
@@ -462,7 +462,7 @@ const readWithAbort = async <T>(input: {
       })
       .catch((err) => {
         signal.removeEventListener("abort", onAbort);
-        reject(err);
+        reject(err as Error);
       });
   });
 };
@@ -493,8 +493,8 @@ const readSseDataEvents = async function* (
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let streamReadError: unknown = null;
-  let streamCancelError: unknown = null;
+  let streamReadError: Error | null = null;
+  let streamCancelError: Error | null = null;
   try {
     while (true) {
       const { value, done: isDone } = await readWithAbort({
@@ -523,23 +523,19 @@ const readSseDataEvents = async function* (
       }
     }
   } catch (err) {
-    streamReadError = err;
+    streamReadError = err as Error;
   } finally {
     try {
       await reader.cancel();
     } catch (err) {
       if (!isAbortLikeError(err) && !(err instanceof TypeError)) {
-        streamCancelError = err;
+        streamCancelError = err as Error;
       }
     }
     reader.releaseLock();
   }
-  if (streamReadError !== null) {
-    throw streamReadError;
-  }
-  if (streamCancelError !== null) {
-    throw streamCancelError;
-  }
+  if (streamReadError !== null) throw streamReadError;
+  if (streamCancelError !== null) throw streamCancelError;
 };
 
 const createAuthHeader = (kind: "local" | "external", apiKey?: string): Record<string, string> => {
@@ -1530,20 +1526,22 @@ export const createLlmProviderFromEnv = (options?: {
       return withClose({
         kind,
         chat: {
-          call: async () => {
-            throw new Error(
-              "llm is not configured: set LLM_MODEL and LLM_API_KEY (or GEMINI_API_KEY/GOOGLE_API_KEY)",
-            );
-          },
+          call: () =>
+            Promise.reject(
+              new Error(
+                "llm is not configured: set LLM_MODEL and LLM_API_KEY (or GEMINI_API_KEY/GOOGLE_API_KEY)",
+              ),
+            ),
         },
         inner_task: {
-          call: async () => {
-            throw new Error(
-              "llm is not configured: set LLM_MODEL and LLM_API_KEY (or GEMINI_API_KEY/GOOGLE_API_KEY)",
-            );
-          },
+          call: () =>
+            Promise.reject(
+              new Error(
+                "llm is not configured: set LLM_MODEL and LLM_API_KEY (or GEMINI_API_KEY/GOOGLE_API_KEY)",
+              ),
+            ),
         },
-        health: async () => ({ status: "unavailable" }),
+        health: () => Promise.resolve({ status: "unavailable" }),
       });
     }
     return withClose(
@@ -1611,16 +1609,14 @@ export const createLlmProviderFromEnv = (options?: {
     return withClose({
       kind,
       chat: {
-        call: async () => {
-          throw new Error("llm is not configured: set LLM_BASE_URL and LLM_MODEL");
-        },
+        call: () =>
+          Promise.reject(new Error("llm is not configured: set LLM_BASE_URL and LLM_MODEL")),
       },
       inner_task: {
-        call: async () => {
-          throw new Error("llm is not configured: set LLM_BASE_URL and LLM_MODEL");
-        },
+        call: () =>
+          Promise.reject(new Error("llm is not configured: set LLM_BASE_URL and LLM_MODEL")),
       },
-      health: async () => ({ status: "unavailable" }),
+      health: () => Promise.resolve({ status: "unavailable" }),
     });
   }
 

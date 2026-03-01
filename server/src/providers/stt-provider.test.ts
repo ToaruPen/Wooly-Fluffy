@@ -240,7 +240,7 @@ describe("stt-provider (whisper.cpp)", () => {
     const result = await stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") });
     expect(result).toEqual({ text: "こんにちは" });
     expect(createdWavPaths.length).toBe(1);
-    expect(fs.existsSync(createdWavPaths[0]!)).toBe(false);
+    expect(fs.existsSync(createdWavPaths[0])).toBe(false);
   });
 
   it("retries without -np when whisper-cli rejects the flag", async () => {
@@ -463,7 +463,7 @@ describe("stt-provider (whisper.cpp)", () => {
 
     await expect(stt.transcribe({ mode: "ROOM", wav: Buffer.from("dummy") })).rejects.toBeTruthy();
     expect(createdWavPaths.length).toBe(1);
-    expect(fs.existsSync(createdWavPaths[0]!)).toBe(false);
+    expect(fs.existsSync(createdWavPaths[0])).toBe(false);
   });
 
   it("classifies timeout as SttTimeoutError", async () => {

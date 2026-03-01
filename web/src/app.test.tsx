@@ -119,7 +119,7 @@ describe("app", () => {
 
         expect(connectSseMock).toHaveBeenCalledWith("/api/v1/kiosk/stream", expect.any(Object));
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
 
         await act(async () => {
           handlers.onSnapshot({
@@ -260,7 +260,7 @@ describe("app", () => {
         expect(document.body.textContent ?? "").toContain("つながらないよ");
         const kioskPtt = Array.from(document.querySelectorAll("button")).find((b) =>
           /おして はなす|はなして とめる/.test(b.textContent ?? ""),
-        ) as HTMLButtonElement | undefined;
+        );
         expect(kioskPtt?.disabled).toBe(true);
 
         await act(async () => {
@@ -327,7 +327,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -355,16 +355,14 @@ describe("app", () => {
           expect.objectContaining({ method: "POST" }),
         );
         expect(FakeAudio.instances.length).toBe(1);
-        expect(FakeAudio.instances[0]!.src).toBe("blob:tts");
-        expect(FakeAudio.instances[0]!.play).toHaveBeenCalled();
+        expect(FakeAudio.instances[0].src).toBe("blob:tts");
+        expect(FakeAudio.instances[0].play).toHaveBeenCalled();
 
         act(() => {
           FakeAudio.latest?.onended?.();
         });
         expect(FakeAudio.latest?.pause).toHaveBeenCalled();
-        expect(
-          (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL as unknown,
-        ).toBeTruthy();
+        expect((URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL).toBeTruthy();
 
         await act(async () => {
           handlers.onMessage?.({ type: "kiosk.command.stop_output", seq: 2, data: {} });
@@ -432,7 +430,7 @@ describe("app", () => {
           await import("./main");
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -527,7 +525,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -610,7 +608,7 @@ describe("app", () => {
         void mainModule.appRoot;
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onSnapshot({
           state: {
@@ -691,7 +689,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -807,7 +805,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -897,7 +895,7 @@ describe("app", () => {
         appRoot = mainModule.appRoot;
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onSnapshot({
           state: {
@@ -993,7 +991,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -1080,7 +1078,7 @@ describe("app", () => {
         appRoot = mainModule.appRoot;
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onSnapshot({
           state: {
@@ -1187,7 +1185,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -1389,7 +1387,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -1517,7 +1515,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -1620,7 +1618,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -1693,7 +1691,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -1795,7 +1793,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -1934,7 +1932,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -2051,7 +2049,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -2139,7 +2137,7 @@ describe("app", () => {
           appRoot = mainModule.appRoot;
         });
 
-        const handlers = connectSseMock.mock.calls[0]![1];
+        const handlers = connectSseMock.mock.calls[0][1];
         await act(async () => {
           handlers.onSnapshot({
             state: {
@@ -2234,7 +2232,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -2362,7 +2360,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -2479,7 +2477,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -2614,7 +2612,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -2762,7 +2760,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -2851,7 +2849,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 1, data: {} });
       });
@@ -2880,7 +2878,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 1, data: null });
       });
@@ -2919,7 +2917,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         handlers.onMessage?.({
@@ -2964,7 +2962,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3013,7 +3011,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3064,7 +3062,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         handlers.onMessage?.({ type: "kiosk.command.record_stop", seq: 2, data: {} });
@@ -3117,7 +3115,7 @@ describe("app", () => {
         appRoot = mainModule.appRoot;
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3153,7 +3151,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({
           type: "kiosk.command.record_stop",
@@ -3194,7 +3192,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3242,7 +3240,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
 
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
@@ -3298,7 +3296,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3345,7 +3343,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3388,7 +3386,7 @@ describe("app", () => {
         await import("./main");
       });
 
-      const handlers = connectSseMock.mock.calls[0]![1];
+      const handlers = connectSseMock.mock.calls[0][1];
       await act(async () => {
         handlers.onMessage?.({ type: "kiosk.command.record_start", seq: 1, data: {} });
         await Promise.resolve();
@@ -3574,7 +3572,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -3787,7 +3785,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -3912,7 +3910,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {
@@ -4040,7 +4038,7 @@ describe("app", () => {
             appRoot = mainModule.appRoot;
           });
 
-          const handlers = connectSseMock.mock.calls[0]![1];
+          const handlers = connectSseMock.mock.calls[0][1];
           await act(async () => {
             handlers.onSnapshot({
               state: {

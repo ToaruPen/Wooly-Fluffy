@@ -55,7 +55,7 @@ export const connectSse = (url: string, handlers: SseHandlers) => {
     source.onmessage = (event) => {
       let parsed: ServerMessage;
       try {
-        parsed = JSON.parse(event.data) as ServerMessage;
+        parsed = JSON.parse(String(event.data)) as ServerMessage;
       } catch (error) {
         reportError(error instanceof Error ? error : new Error("Failed to parse SSE message"));
         return;
