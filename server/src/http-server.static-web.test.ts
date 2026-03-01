@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Server } from "http";
-// eslint-disable-next-line no-restricted-imports
+// eslint-disable-next-line no-restricted-imports -- test-only fixture setup (same as stt-provider.test.ts)
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -65,15 +65,20 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
+  await Promise.race([
+    new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    }),
+    new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error("server.close timed out")), 2_000),
+    ),
+  ]);
 
   store.close();
   delete process.env.STAFF_PASSCODE;
