@@ -25,7 +25,10 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 # Run preflight
-node server/dist/prod/preflight-cli.js
+node server/dist/prod/preflight-cli.js || {
+  echo "[PREFLIGHT FAILED] Exit code: $?" >&2
+  exit 1
+}
 
 # Start server (exec replaces shell process)
 exec node server/dist/main.js
