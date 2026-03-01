@@ -54,7 +54,9 @@ export async function runPreflight(_options?: {
   }
 
   const ttsBaseUrl = normalizeBaseUrl(
-    (env.TTS_ENGINE_URL ?? env.VOICEVOX_ENGINE_URL ?? "http://127.0.0.1:10101").trim(),
+    (env.TTS_ENGINE_URL ?? "").trim() ||
+      (env.VOICEVOX_ENGINE_URL ?? "").trim() ||
+      "http://127.0.0.1:10101",
   );
   try {
     const res = await fetchFn(`${ttsBaseUrl}/version`, {
