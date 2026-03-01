@@ -462,7 +462,8 @@ const readWithAbort = async <T>(input: {
       })
       .catch((err) => {
         signal.removeEventListener("abort", onAbort);
-        reject(err as Error);
+        /* v8 ignore next -- defensive: run() always throws Error */
+        reject(err instanceof Error ? err : new Error("llm run failed"));
       });
   });
 };
@@ -523,13 +524,15 @@ const readSseDataEvents = async function* (
       }
     }
   } catch (err) {
-    streamReadError = err as Error;
+    /* v8 ignore next -- defensive: reader.read() always throws Error */
+    streamReadError = err instanceof Error ? err : new Error("stream read error");
   } finally {
     try {
       await reader.cancel();
     } catch (err) {
       if (!isAbortLikeError(err) && !(err instanceof TypeError)) {
-        streamCancelError = err as Error;
+        /* v8 ignore next -- defensive: reader.cancel() always throws Error */
+        streamCancelError = err instanceof Error ? err : new Error("stream cancel error");
       }
     }
     reader.releaseLock();

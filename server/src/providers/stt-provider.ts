@@ -134,7 +134,8 @@ export const createWhisperCppSttProvider = (
           },
           (err, stdout) => {
             if (err) {
-              reject(err as Error);
+              /* v8 ignore next -- defensive: execFile always passes ExecException */
+              reject(err instanceof Error ? err : new Error("execFile failed"));
               return;
             }
             resolve(String(stdout));
