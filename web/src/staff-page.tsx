@@ -55,18 +55,6 @@ const isPendingListData = (data: unknown): data is { items: PendingItem[] } => {
   return Array.isArray(record.items);
 };
 
-const INTERACTIVE_TAGS = new Set(["input", "textarea", "select", "button", "a"]);
-
-const isInteractiveElement = (el: Element | null): boolean => {
-  if (!el) return false;
-  const tag = el.tagName.toLowerCase();
-  if (INTERACTIVE_TAGS.has(tag)) return true;
-  if (el.getAttribute("role") === "button") return true;
-  const ce = el.getAttribute("contenteditable");
-  if (ce !== null && ce !== "false") return true;
-  return false;
-};
-
 const getPhaseCategory = (phase: Phase): "idle" | "active" | "waiting" => {
   if (phase === "idle") return "idle";
   if (phase === "listening") return "active";
@@ -130,10 +118,7 @@ export const StaffPage = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [pendingError, setPendingError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [isPttHeld, setIsPttHeld] = useState(false);
   const [lastActivityAtMs, setLastActivityAtMs] = useState(() => Date.now());
-
-  const isPttHeldRef = useRef(false);
 
   const activitySeqRef = useRef(0);
   const keepaliveSeqRef = useRef(0);
@@ -143,20 +128,8 @@ export const StaffPage = () => {
     setLastActivityAtMs(Date.now());
   }, []);
 
-  const setIsPttHeldSafe = useCallback((isHeld: boolean) => {
-    isPttHeldRef.current = isHeld;
-    setIsPttHeld(isHeld);
-  }, []);
-
   const sendStaffEvent = useCallback(
-    async (
-      type:
-        | "STAFF_PTT_DOWN"
-        | "STAFF_PTT_UP"
-        | "STAFF_RESET_SESSION"
-        | "STAFF_EMERGENCY_STOP"
-        | "STAFF_RESUME",
-    ) => {
+    async (type: "STAFF_RESET_SESSION" | "STAFF_EMERGENCY_STOP" | "STAFF_RESUME") => {
       setActionError(null);
       try {
         const res = await postJson("/api/v1/staff/event", { type });
@@ -173,15 +146,6 @@ export const StaffPage = () => {
     },
     [],
   );
-
-  const releasePtt = useCallback(() => {
-    if (!isPttHeldRef.current) {
-      return;
-    }
-    markActivity();
-    setIsPttHeldSafe(false);
-    void sendStaffEvent("STAFF_PTT_UP");
-  }, [markActivity, setIsPttHeldSafe, sendStaffEvent]);
 
   const refreshPending = async () => {
     setPendingError(null);
@@ -309,7 +273,6 @@ export const StaffPage = () => {
 
   useEffect(() => {
     if (view !== "logged_in") {
-      setIsPttHeld(false);
       return;
     }
     const client = connectSse("/api/v1/staff/stream", {
@@ -334,57 +297,6 @@ export const StaffPage = () => {
       client.close();
     };
   }, [view]);
-
-  /* Space key PTT: keyrepeat guard, input focus guard, blur/visibility release */
-  useEffect(() => {
-    if (view !== "logged_in") {
-      return;
-    }
-
-    const isSpaceKey = (e: KeyboardEvent) => e.code === "Space" || e.key === " ";
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isSpaceKey(e)) return;
-
-      const el = document.activeElement as HTMLElement | null;
-      if (isInteractiveElement(el)) return;
-
-      if (e.repeat) {
-        if (isPttHeldRef.current) e.preventDefault();
-        return;
-      }
-
-      if (!isPttHeldRef.current) {
-        e.preventDefault();
-        markActivity();
-        setIsPttHeldSafe(true);
-        void sendStaffEvent("STAFF_PTT_DOWN");
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (!isSpaceKey(e)) return;
-      if (!isPttHeldRef.current) return;
-      e.preventDefault();
-      releasePtt();
-    };
-
-    const handleBlurOrVisibility = () => {
-      releasePtt();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlurOrVisibility);
-    document.addEventListener("visibilitychange", handleBlurOrVisibility);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlurOrVisibility);
-      document.removeEventListener("visibilitychange", handleBlurOrVisibility);
-    };
-  }, [view, markActivity, setIsPttHeldSafe, sendStaffEvent, releasePtt]);
 
   const title = view === "logged_in" ? "STAFF" : view === "locked" ? "STAFF (Locked)" : "STAFF";
 
@@ -460,35 +372,6 @@ export const StaffPage = () => {
 
           <section className={styles.staffControls}>
             <div className={styles.staffControlGrid}>
-              <button
-                type="button"
-                className={isPttHeld ? styles.pttButtonActive : styles.pttButton}
-                aria-pressed={isPttHeld}
-                onPointerDown={() => {
-                  markActivity();
-                  setIsPttHeldSafe(true);
-                  void sendStaffEvent("STAFF_PTT_DOWN");
-                }}
-                onPointerUp={() => {
-                  releasePtt();
-                }}
-                onPointerCancel={() => {
-                  releasePtt();
-                }}
-                onPointerLeave={() => {
-                  releasePtt();
-                }}
-              >
-                {isPttHeld ? (
-                  <>
-                    <span aria-hidden="true">🎙️ </span>
-                    話しています...
-                  </>
-                ) : (
-                  "Push to talk"
-                )}
-              </button>
-
               <button
                 type="button"
                 className={styles.staffSecondaryButton}

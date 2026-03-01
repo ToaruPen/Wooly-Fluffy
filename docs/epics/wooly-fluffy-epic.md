@@ -27,7 +27,7 @@ NOTE: このEpicは過去の設計（`PERSONAL(name)` や同意フロー等）�
 **含む:**
 
 - `ROOM` / `PERSONAL(name)` のモード遷移（無操作300秒で `ROOM` に戻る）
-- Push-to-talk（KIOSK/職員操作）で録音開始/停止を制御し、待機中は無反応にできる（KIOSK/STAFFとも hold-to-talk を前提、STAFFは緊急停止を維持）
+- Push-to-talk（KIOSK操作）で録音開始/停止を制御し、待機中は無反応にできる（KIOSKは hold-to-talk を前提。STAFFはセッションリセット/緊急停止/復帰を操作する）
 - 記憶候補（低センシティブのみ）の提示 → 子どもの「はい/いいえ」 → 「はい」のみ `pending` 作成 → 職員Confirm/Deny
 - `pending` 一覧の取得と、Confirm/Deny 操作（STAFF画面）
 - STAFFアクセス制御（LAN内限定 + 共有パスコード + 自動ロック）
@@ -83,7 +83,7 @@ Epic対応: インターネット公開を前提としない（LAN内限定 + �
 
 コンポーネント-2
 名称: Web Frontend（KIOSK/STAFF）
-責務: KIOSK表示・入力（録音/同意UI/モーション実行）、STAFF操作（PTT/Confirm/Deny/緊急停止/ログイン）、SSE受信
+責務: KIOSK表示・入力（録音/同意UI/モーション実行）、STAFF操作（セッションリセット/Confirm/Deny/緊急停止/ログイン）、SSE受信
 デプロイ形態: 常設PC上で配信（同一LAN内ブラウザ）
 
 ### 2.3 新規技術一覧
@@ -105,7 +105,7 @@ Epic対応: インターネット公開を前提としない（LAN内限定 + �
 主要データフロー-1
 from: STAFF UI
 to: API Server
-用途: PTT開始/終了、セッションリセット、緊急停止/復帰などのイベント入力
+用途: セッションリセット、緊急停止/復帰などのSTAFFイベント入力
 プロトコル: HTTP
 
 主要データフロー-2
@@ -188,7 +188,7 @@ API-3
 API-4
 エンドポイント: `/api/v1/staff/event`
 メソッド: POST
-説明: PTT/セッションリセット/緊急停止/復帰などのSTAFFイベント入力
+説明: セッションリセット/緊急停止/復帰などのSTAFFイベント入力
 
 API-5
 エンドポイント: `/api/v1/kiosk/event`
@@ -301,8 +301,8 @@ Issue名: STAFFアクセス制御（LAN内限定 + セッション + 自動ロ�
 
 Issue-6
 番号: 6
-Issue名: Web（STAFF）: ログイン + PTT操作 + pending一覧/Confirm/Deny
-概要: STAFF画面でログイン/自動ロック、PTTボタン、pending表示とConfirm/Denyを実装する
+Issue名: Web（STAFF）: ログイン + セッション制御 + pending一覧/Confirm/Deny
+概要: STAFF画面でログイン/自動ロック、セッションリセット/緊急停止/復帰、pending表示とConfirm/Denyを実装する
 推定行数: 200-300行
 依存: #4, #5
 

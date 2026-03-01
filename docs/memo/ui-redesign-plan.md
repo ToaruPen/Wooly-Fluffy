@@ -370,7 +370,7 @@ Three.js 側の `scene.background` も `#efe7d8` → `#f0f4ff`（薄い空色）
 │                                     │
 │  ╭─────────────────────────────╮    │
 │  │                             │    │
-│  │      🎙️ Push to Talk       │    │  ← 大型 円形 PTTボタン
+│  │   Session Control Panel    │    │  ← Reset/Resume/Emergency操作
 │  │                             │    │
 │  ╰─────────────────────────────╯    │
 │                                     │
@@ -477,16 +477,16 @@ background: #f8fafc;
 }
 ```
 
-#### Push-to-Talk ボタン
+#### Session Control ボタン
 ```css
-/* After: 大型円形ボタン + リップル効果 */
-.pttButton {
+/* After: Session操作（Reset / Resume / Emergency）用の標準アクションボタン */
+.sessionControlButton {
   width: 100%;
-  max-width: 280px;
-  aspect-ratio: 1;
+  max-width: 320px;
+  min-height: 52px;
   margin: 0 auto;
-  border-radius: 50%;
-  border: 4px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  border: 1px solid #1d4ed8;
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: #fff;
   font-family: var(--font-display);
@@ -498,46 +498,30 @@ background: #f8fafc;
   justify-content: center;
   gap: 8px;
   cursor: pointer;
-  touch-action: none;
-  user-select: none;
   box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
   transition: all 0.15s ease;
 }
 
-.pttButton::before {
-  content: '🎙️';
-  font-size: 32px;
-}
-
-.pttButtonActive {
-  /* 押下中 */
-  composes: pttButton;
+.sessionControlButtonActive {
+  /* Active state（処理中の視覚フィードバック） */
+  composes: sessionControlButton;
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  transform: scale(0.95);
-  box-shadow:
-    0 4px 12px rgba(59, 130, 246, 0.4),
-    inset 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
   border-color: rgba(59, 130, 246, 0.5);
 }
 
-/* 押下中のリップルリング */
-.pttButtonActive::after {
-  content: '';
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  border: 2px solid rgba(59, 130, 246, 0.4);
-  animation: ripple 1s ease-out infinite;
-}
-
-@keyframes ripple {
-  0% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(1.3); opacity: 0; }
+.sessionControlButtonDisabled {
+  composes: sessionControlButton;
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 ```
 
-デスクトップでは最大 280px に制限して無駄な横幅を防止。
-モバイルでは `max-width: 200px` でコンパクトに。
+デスクトップでは最大 320px、モバイルでは `max-width: 100%` で自然に縮む設定。
+Session Control は操作種別ごとにラベル（Reset / Resume / Emergency）を明示し、
+状態は `active` / `disabled` クラスで表現する。
 
 #### 緊急停止ボタン（分離配置）
 ```css

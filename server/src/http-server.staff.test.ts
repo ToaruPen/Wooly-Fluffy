@@ -406,9 +406,9 @@ describe("http-server", () => {
           "/api/v1/staff/stream",
           2,
           async () => {
-            const response = await sendRequest("POST", "/api/v1/staff/event", {
+            const response = await sendRequest("POST", "/api/v1/kiosk/event", {
               headers: withStaffCookie({ "content-type": "application/json" }),
-              body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+              body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
             });
             expect(response.status).toBe(200);
             expect(JSON.parse(response.body)).toEqual({ ok: true });
@@ -476,14 +476,14 @@ describe("http-server", () => {
           await loginStaffLocal();
 
           {
-            const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            const down = await sendRequestLocal("POST", "/api/v1/kiosk/event", {
               headers: withLocalStaffCookie({ "content-type": "application/json" }),
-              body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+              body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
             });
             expect(down.status).toBe(200);
-            const up = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            const up = await sendRequestLocal("POST", "/api/v1/kiosk/event", {
               headers: withLocalStaffCookie({ "content-type": "application/json" }),
-              body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+              body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
             });
             expect(up.status).toBe(200);
             const multipart = buildMultipartBody({
@@ -610,15 +610,15 @@ describe("http-server", () => {
           };
 
           const messages = await waitForPendingSnapshot(0, 1, 1, async () => {
-            const down = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            const down = await sendRequestLocal("POST", "/api/v1/kiosk/event", {
               headers: withLocalStaffCookie({ "content-type": "application/json" }),
-              body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+              body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
             });
             expect(down.status).toBe(200);
 
-            const up = await sendRequestLocal("POST", "/api/v1/staff/event", {
+            const up = await sendRequestLocal("POST", "/api/v1/kiosk/event", {
               headers: withLocalStaffCookie({ "content-type": "application/json" }),
-              body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+              body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
             });
             expect(up.status).toBe(200);
 
@@ -674,17 +674,17 @@ describe("http-server", () => {
     );
 
     it(
-      "returns 400 invalid_request for UI_CONSENT_BUTTON after staff PTT cycle",
+      "returns 400 invalid_request for UI_CONSENT_BUTTON after kiosk PTT cycle",
       async () => {
         {
-          const down = await sendRequest("POST", "/api/v1/staff/event", {
+          const down = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_DOWN" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_DOWN" }),
           });
           expect(down.status).toBe(200);
-          const up = await sendRequest("POST", "/api/v1/staff/event", {
+          const up = await sendRequest("POST", "/api/v1/kiosk/event", {
             headers: withStaffCookie({ "content-type": "application/json" }),
-            body: JSON.stringify({ type: "STAFF_PTT_UP" }),
+            body: JSON.stringify({ type: "KIOSK_PTT_UP" }),
           });
           expect(up.status).toBe(200);
           const multipart = buildMultipartBody({
