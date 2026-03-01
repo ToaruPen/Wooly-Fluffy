@@ -45,12 +45,12 @@ const isStaffEventType = (
 ): value is
   | "STAFF_PTT_DOWN"
   | "STAFF_PTT_UP"
-  | "STAFF_FORCE_ROOM"
+  | "STAFF_RESET_SESSION"
   | "STAFF_EMERGENCY_STOP"
   | "STAFF_RESUME" =>
   value === "STAFF_PTT_DOWN" ||
   value === "STAFF_PTT_UP" ||
-  value === "STAFF_FORCE_ROOM" ||
+  value === "STAFF_RESET_SESSION" ||
   value === "STAFF_EMERGENCY_STOP" ||
   value === "STAFF_RESUME";
 

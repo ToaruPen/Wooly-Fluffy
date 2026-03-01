@@ -114,7 +114,7 @@ describe("staff auth and error flows", () => {
       expect(document.body.textContent ?? "").toContain("HTTP 500");
 
       const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Force ROOM"),
+        (b.textContent ?? "").includes("Reset Session"),
       );
       expect(forceRoom).toBeTruthy();
 
@@ -194,7 +194,7 @@ describe("staff auth and error flows", () => {
       await signInStaffPage();
 
       const forceRoom = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").includes("Force ROOM"),
+        (b.textContent ?? "").includes("Reset Session"),
       );
       expect(forceRoom).toBeTruthy();
       await act(async () => {

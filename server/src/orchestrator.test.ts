@@ -1340,7 +1340,7 @@ describe("orchestrator", () => {
     expect(failed.effects).toEqual([]);
   });
 
-  it("handles STAFF_FORCE_ROOM and clears state", () => {
+  it("handles STAFF_RESET_SESSION and clears state", () => {
     const base = createInitialState(0);
     const personal: OrchestratorState = {
       ...base,
@@ -1356,17 +1356,32 @@ describe("orchestrator", () => {
       },
     };
 
-    const forced = reduceOrchestrator(personal, { type: "STAFF_FORCE_ROOM" }, 2000);
+    const forced = reduceOrchestrator(personal, { type: "STAFF_RESET_SESSION" }, 2000);
 
     expect(forced.next_state.mode).toBe("ROOM");
     expect(forced.next_state.personal_name).toBeNull();
     expect(forced.next_state.memory_candidate).toBeNull();
     expect(forced.next_state.in_flight.chat_request_id).toBeNull();
     expect(forced.effects).toEqual([
-      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-force-room" },
+      { type: "PLAY_MOTION", motion_id: "idle", motion_instance_id: "motion-reset-session" },
       { type: "SET_MODE", mode: "ROOM" },
       { type: "SHOW_CONSENT_UI", visible: false },
     ]);
+  });
+
+  it("handles STAFF_RESET_SESSION while listening (emits record stop)", () => {
+    const base = createInitialState(0);
+    const listening: OrchestratorState = { ...base, phase: "listening" };
+
+    const forced = reduceOrchestrator(listening, { type: "STAFF_RESET_SESSION" }, 2000);
+
+    expect(forced.next_state.phase).toBe("idle");
+    expect(forced.effects[0]).toEqual({ type: "KIOSK_RECORD_STOP" });
+    expect(getEffect(forced.effects, "PLAY_MOTION")).toEqual({
+      type: "PLAY_MOTION",
+      motion_id: "idle",
+      motion_instance_id: "motion-reset-session",
+    });
   });
 
   it("handles emergency stop when not listening (no record stop effect)", () => {
