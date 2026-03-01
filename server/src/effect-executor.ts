@@ -41,6 +41,7 @@ type SpeechMetric = {
 const MIN_SPEECH_SEGMENT_LENGTH = 5;
 const DEFAULT_STREAMED_CHAT_REQUEST_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_STREAMED_CHAT_REQUEST_MAX_ENTRIES = 512;
+const DEFAULT_FIRST_STREAM_SEGMENT_WAIT_MS = 120;
 
 const COMMON_ENGLISH_ABBREVIATIONS = new Set([
   "mr",
@@ -161,6 +162,27 @@ const extractCompleteSentencePrefix = (text: string): { complete: string; rest: 
   };
 };
 
+const waitForFirstSegmentOrTimeout = (
+  firstSegmentGate: Promise<void>,
+  timeoutMs: number,
+): Promise<void> =>
+  new Promise<void>((resolve) => {
+    let isSettled = false;
+    const finish = () => {
+      if (isSettled) {
+        return;
+      }
+      isSettled = true;
+      resolve();
+    };
+
+    const timer = setTimeout(finish, timeoutMs);
+    void firstSegmentGate.then(() => {
+      clearTimeout(timer);
+      finish();
+    });
+  });
+
 export const createEffectExecutor = (deps: {
   providers: Providers;
   sendKioskCommand: KioskCommandSender;
@@ -169,6 +191,7 @@ export const createEffectExecutor = (deps: {
   now_ms?: () => number;
   streamedChatRequestTtlMs?: number;
   streamedChatRequestMaxEntries?: number;
+  firstStreamSegmentWaitMs?: number;
   observeSpeechMetric?: (metric: SpeechMetric) => void;
   onStreamError?: (input: {
     request_id: string;
@@ -190,6 +213,10 @@ export const createEffectExecutor = (deps: {
   const streamedChatRequestMaxEntries = Math.max(
     1,
     deps.streamedChatRequestMaxEntries ?? DEFAULT_STREAMED_CHAT_REQUEST_MAX_ENTRIES,
+  );
+  const firstStreamSegmentWaitMs = Math.max(
+    0,
+    deps.firstStreamSegmentWaitMs ?? DEFAULT_FIRST_STREAM_SEGMENT_WAIT_MS,
   );
 
   const trimStreamedChatRequestIdsBySize = () => {
@@ -370,17 +397,12 @@ export const createEffectExecutor = (deps: {
 
                   try {
                     const result = await callPromise;
-                    // If callPromise resolves before the first stream segment, we
-                    // intentionally stop waiting after one macrotask and let SAY
-                    // fallback proceed. This avoids indefinite waiting under
-                    // network/backpressure at the cost of potentially dropping
-                    // very-late first chunks when emittedSegmentCount is still 0.
-                    await Promise.race([
-                      firstSegmentGate,
-                      new Promise<void>((resolve) => {
-                        setTimeout(resolve, 0);
-                      }),
-                    ]);
+                    if (result.tool_calls.length === 0) {
+                      await waitForFirstSegmentOrTimeout(
+                        firstSegmentGate,
+                        firstStreamSegmentWaitMs,
+                      );
+                    }
                     isChatFinalized = true;
                     if (emittedSegmentCount > 0 && result.tool_calls.length === 0) {
                       markStreamedChatRequest(effect.request_id);
@@ -395,12 +417,6 @@ export const createEffectExecutor = (deps: {
                       tool_calls: result.tool_calls,
                     });
                   } catch {
-                    await Promise.race([
-                      firstSegmentGate,
-                      new Promise<void>((resolve) => {
-                        setTimeout(resolve, 0);
-                      }),
-                    ]);
                     isChatFinalized = true;
                     streamAbortController.abort();
                     deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });
