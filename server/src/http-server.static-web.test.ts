@@ -35,6 +35,8 @@ afterAll(() => {
   rmSync(webDistPath, { recursive: true, force: true });
 });
 
+const savedEnv: Record<string, string | undefined> = {};
+
 beforeEach(async () => {
   vi.stubGlobal("fetch", (async (input: unknown) => {
     const url = String(input);
@@ -49,6 +51,8 @@ beforeEach(async () => {
     throw new Error(`unexpected_fetch:${url}`);
   }) as unknown as typeof fetch);
 
+  savedEnv.STAFF_PASSCODE = process.env.STAFF_PASSCODE;
+  savedEnv.TTS_SPEAKER_ID = process.env.TTS_SPEAKER_ID;
   process.env.STAFF_PASSCODE = "test-pass";
   process.env.TTS_SPEAKER_ID = "2";
 
@@ -81,8 +85,8 @@ afterEach(async () => {
   ]);
 
   store.close();
-  delete process.env.STAFF_PASSCODE;
-  delete process.env.TTS_SPEAKER_ID;
+  process.env.STAFF_PASSCODE = savedEnv.STAFF_PASSCODE;
+  process.env.TTS_SPEAKER_ID = savedEnv.TTS_SPEAKER_ID;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -133,7 +137,7 @@ describe("http-server static web", () => {
   });
 
   it("does not intercept GET /api/v1/kiosk/stream with static route", async () => {
-    const response = await readFirstSseMessage("/api/v1/kiosk/stream");
+    const response = await readFirstSseMessage("/api/v1/kiosk/stream", { timeout_ms: 5_000 });
 
     expect(response.status).toBe(200);
     expect(response.contentType).toContain("text/event-stream");
@@ -168,5 +172,84 @@ describe("http-server static web", () => {
 
     expect(response.status).toBe(200);
     expect(String(response.headers["content-type"] ?? "")).toContain("application/octet-stream");
+  });
+
+  it("returns 404 for GET /assets/%5C..%5Cpackage.json (backslash traversal)", async () => {
+    const response = await sendRequest("GET", "/assets/%5C..%5Cpackage.json");
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("http-server static web (no web_dist_path)", () => {
+  let noDistServer: Server;
+  let noDistPort = 0;
+  let noDistStore: ReturnType<typeof createStore>;
+
+  beforeEach(async () => {
+    vi.stubGlobal("fetch", (async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/version")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ version: "test" }),
+          arrayBuffer: async () => new ArrayBuffer(0),
+        };
+      }
+      throw new Error(`unexpected_fetch:${url}`);
+    }) as unknown as typeof fetch);
+
+    savedEnv.STAFF_PASSCODE = process.env.STAFF_PASSCODE;
+    savedEnv.TTS_SPEAKER_ID = process.env.TTS_SPEAKER_ID;
+    process.env.STAFF_PASSCODE = "test-pass";
+    process.env.TTS_SPEAKER_ID = "2";
+
+    noDistStore = createStore({ db_path: ":memory:" });
+    noDistServer = createHttpServer({ store: noDistStore, web_dist_path: "/tmp/nonexistent-wf-test-dir" });
+    await new Promise<void>((resolve) => {
+      noDistServer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = noDistServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("server address unavailable");
+    }
+    noDistPort = address.port;
+  });
+
+  afterEach(async () => {
+    await Promise.race([
+      new Promise<void>((resolve, reject) => {
+        noDistServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      }),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("server.close timed out")), 2_000),
+      ),
+    ]);
+    noDistStore.close();
+    process.env.STAFF_PASSCODE = savedEnv.STAFF_PASSCODE;
+    process.env.TTS_SPEAKER_ID = savedEnv.TTS_SPEAKER_ID;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("returns 404 for /kiosk when web_dist_path does not exist", async () => {
+    const noDistHelpers = createHttpTestHelpers(() => noDistPort);
+    const response = await noDistHelpers.sendRequest("GET", "/kiosk");
+
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 200 for /health even when web_dist_path does not exist", async () => {
+    const noDistHelpers = createHttpTestHelpers(() => noDistPort);
+    const response = await noDistHelpers.sendRequest("GET", "/health");
+
+    expect(response.status).toBe(200);
   });
 });

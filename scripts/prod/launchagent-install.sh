@@ -14,8 +14,15 @@ if launchctl print "gui/$(id -u)/${LABEL}" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Verify template exists
+if [ ! -f "$TEMPLATE" ]; then
+  echo "[ERROR] Template not found: $TEMPLATE" >&2
+  exit 1
+fi
+
 # Create log directory
 mkdir -p "$LOG_DIR"
+mkdir -p "$(dirname "$PLIST_DEST")"
 
 # Generate plist from template
 sed \

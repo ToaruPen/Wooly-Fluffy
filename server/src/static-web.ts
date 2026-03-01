@@ -56,9 +56,10 @@ export function tryServeStaticWeb(
     return { handled: true };
   }
 
+  const assetsBasePath = resolve(resolvedWebDistPath, "assets");
   const targetPath = resolve(resolvedWebDistPath, decodedRelativeAssetPath);
   /* v8 ignore next 4 — hasTraversalSegment already catches ".." before here */
-  if (!isSafePath(targetPath, resolvedWebDistPath)) {
+  if (!isSafePath(targetPath, assetsBasePath)) {
     sendNotFound(res);
     return { handled: true };
   }
@@ -90,7 +91,7 @@ const decodePathSegment = (value: string): string | null => {
 };
 
 const hasTraversalSegment = (relativePath: string): boolean => {
-  return relativePath.split("/").includes("..");
+  return relativePath.split(/[\\/]+/).includes("..");
 };
 
 const isSafePath = (targetPath: string, basePath: string): boolean => {
@@ -98,10 +99,12 @@ const isSafePath = (targetPath: string, basePath: string): boolean => {
 };
 
 const serveFile = (res: ServerResponse, filePath: string, deps: StaticWebDeps) => {
-  res.statusCode = 200;
-  res.setHeader("content-type", getContentType(filePath));
-
   const stream = deps.createReadStream(filePath);
+  stream.on("open", () => {
+    res.statusCode = 200;
+    res.setHeader("content-type", getContentType(filePath));
+    stream.pipe(res);
+  });
   stream.on("error", () => {
     /* v8 ignore next 4 — headersSent race: headers already flushed before stream error */
     if (res.headersSent) {
@@ -110,7 +113,6 @@ const serveFile = (res: ServerResponse, filePath: string, deps: StaticWebDeps) =
     }
     sendNotFound(res);
   });
-  stream.pipe(res);
 };
 
 const getContentType = (filePath: string): string => {
