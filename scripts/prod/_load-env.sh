@@ -26,7 +26,7 @@ load_env_file() {
             continue
             ;;
         esac
-        export "$key=$value"
+        eval "export ${key}=\"\${value}\""
         ;;
       *) echo "[WARN] ignoring non-KEY=VALUE line in $env_file" >&2 ;;
     esac
