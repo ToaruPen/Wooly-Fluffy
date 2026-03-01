@@ -116,7 +116,7 @@ Notes:
 
 The production server reads environment variables from:
 
-```
+```text
 ~/Library/Application Support/wooly-fluffy/server.env
 ```
 
