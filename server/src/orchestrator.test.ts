@@ -75,16 +75,16 @@ describe("orchestrator", () => {
 
   it("does not emit record_start on repeated KIOSK_PTT_DOWN while listening", () => {
     const initial = createInitialState(0);
-    const staffDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 100);
-    expect(staffDown.next_state.phase).toBe("listening");
+    const kioskDown = reduceOrchestrator(initial, { type: "KIOSK_PTT_DOWN" }, 100);
+    expect(kioskDown.next_state.phase).toBe("listening");
 
-    const staffDownAgain = reduceOrchestrator(
-      staffDown.next_state,
+    const kioskDownAgain = reduceOrchestrator(
+      kioskDown.next_state,
       { type: "KIOSK_PTT_DOWN" },
       110,
     );
-    expect(staffDownAgain.next_state.phase).toBe("listening");
-    expect(staffDownAgain.effects).toEqual([]);
+    expect(kioskDownAgain.next_state.phase).toBe("listening");
+    expect(kioskDownAgain.effects).toEqual([]);
   });
 
   it("finalizes session after 5 min idle and requests session_summary once", () => {

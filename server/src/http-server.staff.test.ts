@@ -674,7 +674,7 @@ describe("http-server", () => {
     );
 
     it(
-      "returns 400 invalid_request for UI_CONSENT_BUTTON after staff PTT cycle",
+      "returns 400 invalid_request for UI_CONSENT_BUTTON after kiosk PTT cycle",
       async () => {
         {
           const down = await sendRequest("POST", "/api/v1/kiosk/event", {

@@ -477,10 +477,10 @@ background: #f8fafc;
 }
 ```
 
-#### Push-to-Talk ボタン
+#### Session Control ボタン
 ```css
-/* After: 大型円形ボタン + リップル効果 */
-.pttButton {
+/* After: セッション操作用の大型円形ボタン + リップル効果 */
+.sessionControlButton {
   width: 100%;
   max-width: 280px;
   aspect-ratio: 1;
@@ -504,14 +504,14 @@ background: #f8fafc;
   transition: all 0.15s ease;
 }
 
-.pttButton::before {
+.sessionControlButton::before {
   content: '🎙️';
   font-size: 32px;
 }
 
-.pttButtonActive {
+.sessionControlButtonActive {
   /* 押下中 */
-  composes: pttButton;
+  composes: sessionControlButton;
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   transform: scale(0.95);
   box-shadow:
@@ -521,7 +521,7 @@ background: #f8fafc;
 }
 
 /* 押下中のリップルリング */
-.pttButtonActive::after {
+.sessionControlButtonActive::after {
   content: '';
   position: absolute;
   inset: -8px;
