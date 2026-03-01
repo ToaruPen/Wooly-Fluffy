@@ -98,6 +98,7 @@ Notes:
 > For development, use the `npm run -w server start` / `npm run -w web dev` workflow described above.
 >
 > **Dev vs Prod URL summary**:
+>
 > | Environment | URL | Notes |
 > |---|---|---|
 > | Dev (Vite) | `http://127.0.0.1:5173/kiosk` &#124; `/staff` | HMR, proxies `/api` to `:3000` |
