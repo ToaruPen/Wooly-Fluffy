@@ -1,6 +1,8 @@
 import { createServer } from "http";
 import type { IncomingMessage, ServerResponse } from "http";
 import { timingSafeEqual } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { parseSttAudioUploadMultipart } from "./multipart.js";
 import {
@@ -24,6 +26,8 @@ import { createLlmProviderFromEnv } from "./providers/llm-provider.js";
 import { readEnvInt } from "./env.js";
 import { createStaffSessionStore, getStaffSessionToken } from "./http/staff-session.js";
 import { handleStaffRoutes } from "./http/routes/staff.js";
+import { nodeCreateReadStream } from "./file-system.js";
+import { tryServeStaticWeb, type StaticWebDeps } from "./static-web.js";
 
 const createErrorBody = (code: string, message: string) =>
   JSON.stringify({ error: { code, message } });
@@ -60,6 +64,8 @@ type CreateHttpServerOptions = {
   now_ms?: () => number;
   get_remote_address?: (req: IncomingMessage) => string;
   stt_provider?: Providers["stt"];
+  web_dist_path?: string;
+  create_read_stream?: StaticWebDeps["createReadStream"];
 };
 
 const STAFF_SESSION_TTL_MS_DEFAULT = 180_000;
@@ -246,10 +252,15 @@ const mapSessionSummaryToDto = (item: {
 
 export const createHttpServer = (options: CreateHttpServerOptions) => {
   const { store } = options;
+  const webDistPath =
+    options.web_dist_path ?? resolve(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
   const nowMs = options.now_ms ?? (() => Date.now());
   const getRemoteAddress =
     options.get_remote_address ?? ((req: IncomingMessage) => String(req.socket.remoteAddress));
 
+  const staticWebDeps: StaticWebDeps = {
+    createReadStream: options.create_read_stream ?? nodeCreateReadStream,
+  };
   const staffSessionTtlMs = readEnvInt(process.env, {
     name: "WF_STAFF_SESSION_TTL_MS",
     defaultValue: STAFF_SESSION_TTL_MS_DEFAULT,
@@ -693,6 +704,13 @@ export const createHttpServer = (options: CreateHttpServerOptions) => {
           safeSendError(res, 400, "invalid_request", "Invalid request");
         });
       return;
+    }
+
+    if (req.method === "GET") {
+      const result = tryServeStaticWeb(req, res, webDistPath, path, staticWebDeps);
+      if (result.handled) {
+        return;
+      }
     }
 
     sendJson(res, 404, notFoundBody);
