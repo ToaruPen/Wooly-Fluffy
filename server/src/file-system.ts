@@ -25,3 +25,18 @@ export const nodeFileSystemAdapter: FileSystemAdapter = {
 };
 
 export { nodeCreateReadStream };
+
+// --- fs boundary for preflight (lazy-loaded) ---
+
+/* v8 ignore next 4 — thin fs boundary; tests inject mocks via DI */
+export const nodeFsAccess = async (path: string, mode: number): Promise<void> => {
+  const fsPromises = await import("node:fs/promises");
+  await fsPromises.access(path, mode);
+};
+
+export type FsConstants = { X_OK: number; R_OK: number };
+
+export const nodeFsConstants = async (): Promise<FsConstants> => {
+  const fs = await import("node:fs");
+  return fs.constants;
+};
