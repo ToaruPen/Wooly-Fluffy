@@ -167,12 +167,12 @@ const waitForFirstSegmentOrTimeout = (
   timeoutMs: number,
 ): Promise<void> =>
   new Promise<void>((resolve) => {
-    let settled = false;
+    let isSettled = false;
     const finish = () => {
-      if (settled) {
+      if (isSettled) {
         return;
       }
-      settled = true;
+      isSettled = true;
       resolve();
     };
 
@@ -417,7 +417,6 @@ export const createEffectExecutor = (deps: {
                       tool_calls: result.tool_calls,
                     });
                   } catch {
-                    await waitForFirstSegmentOrTimeout(firstSegmentGate, firstStreamSegmentWaitMs);
                     isChatFinalized = true;
                     streamAbortController.abort();
                     deps.enqueueEvent({ type: "CHAT_FAILED", request_id: effect.request_id });

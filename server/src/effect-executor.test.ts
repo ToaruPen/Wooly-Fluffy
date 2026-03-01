@@ -1888,6 +1888,110 @@ describe("effect-executor", () => {
   );
 
   it(
+    "does not emit streamed segments when chat call fails before first chunk",
+    async () => {
+      let hasFirstChunkBeenConsumed = false;
+      let isIteratorClosed = false;
+      const providers = createStubProviders({
+        chatCall: async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
+          throw new Error("chat_failed");
+        },
+        chatStream: async function* () {
+          try {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 20);
+            });
+            yield {
+              get delta_text() {
+                hasFirstChunkBeenConsumed = true;
+                return "late stream sentence.";
+              },
+            };
+          } finally {
+            isIteratorClosed = true;
+          }
+        },
+      });
+
+      const queued: OrchestratorEvent[] = [];
+      const sent: Array<{ type: string; data: object }> = [];
+      const executor = createEffectExecutor({
+        providers,
+        sendKioskCommand: (type, data) => {
+          sent.push({ type, data });
+        },
+        enqueueEvent: (event) => queued.push(event),
+        onSttRequested: () => {},
+        storeWritePending: () => {},
+      });
+
+      const events = executor.executeEffects([
+        {
+          type: "CALL_CHAT",
+          request_id: "chat-stream-call-failed-before-first-chunk",
+          input: { mode: "ROOM", personal_name: null, text: "hi" },
+        },
+      ]);
+      expect(events).toEqual([]);
+      await flushMicrotasks();
+      await waitForCondition(() => queued.length > 0, QUEUE_WAIT_AFTER_FINALIZE_MS);
+      await waitForCondition(() => isIteratorClosed, ITERATOR_CLOSE_WAIT_MS);
+
+      expect(hasFirstChunkBeenConsumed).toBe(false);
+      expect(queued).toEqual([
+        {
+          type: "CHAT_FAILED",
+          request_id: "chat-stream-call-failed-before-first-chunk",
+        },
+      ]);
+      expect(sent).toEqual([]);
+
+      sent.length = 0;
+      executor.executeEffects([
+        {
+          type: "SAY",
+          text: "fallback text",
+          chat_request_id: "chat-stream-call-failed-before-first-chunk",
+        },
+      ]);
+      expect(sent).toEqual([
+        {
+          type: "kiosk.command.speech.start",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-call-failed-before-first-chunk",
+          },
+        },
+        {
+          type: "kiosk.command.speech.segment",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-call-failed-before-first-chunk",
+            segment_index: 0,
+            text: "fallback text",
+            is_last: true,
+          },
+        },
+        {
+          type: "kiosk.command.speech.end",
+          data: {
+            utterance_id: "say-1",
+            chat_request_id: "chat-stream-call-failed-before-first-chunk",
+          },
+        },
+        {
+          type: "kiosk.command.speak",
+          data: { say_id: "say-1", text: "fallback text" },
+        },
+      ]);
+    },
+    STREAM_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "ends streaming utterance when chat finishes but stream keeps hanging",
     async () => {
       const providers = createStubProviders({
