@@ -93,7 +93,7 @@
 - [ ] Epic `docs/epics/wooly-fluffy-mvp-epic.md` の API を実装できている
   - [ ] `POST /api/v1/kiosk/event`（例: `UI_CONSENT_BUTTON`）
   - [ ] `POST /api/v1/kiosk/stt-audio`（multipart。音声は永続保存しない）
-  - [ ] `POST /api/v1/staff/event`（PTT/Force ROOM/緊急停止/復帰）
+  - [ ] `POST /api/v1/staff/event`（PTT/Reset Session/緊急停止/復帰）
   - [ ] `GET /api/v1/staff/pending`
   - [ ] `POST /api/v1/staff/pending/:id/confirm` / `deny`
 - [ ] Epic `docs/epics/wooly-fluffy-mvp-epic.md` のセキュリティ設計（STAFF最小アクセス制御）を実装できている
@@ -120,7 +120,7 @@
   - [ ] ログイン（共有パスコード）
   - [ ] 無操作3分でロック（keepalive + UI 操作検知）
   - [ ] PTT（`Space` 長押しを基本、画面ボタンはフォールバック）
-  - [ ] pending 一覧、Confirm/Deny、Force ROOM、緊急停止/復帰ができる
+  - [ ] pending 一覧、Confirm/Deny、Reset Session、緊急停止/復帰ができる
   - [ ] 診断（疎通）ページで DB/Provider の状態が分かる
 - [ ] Evidence: 現場手順（起動/復旧/最低限の操作）が「1枚」で説明できる
 

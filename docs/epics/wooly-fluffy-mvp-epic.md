@@ -123,7 +123,7 @@ Epic対応: 常設PC上のローカル稼働 + 同一LAN内ブラウザ
 主要データフロー-1
 from: STAFF UI
 to: API Server
-用途: PTT/強制ROOM/緊急停止/復帰のイベント入力
+用途: PTT/セッションリセット/緊急停止/復帰のイベント入力
 プロトコル: HTTP（`/api/v1/staff/event`）
 
 主要データフロー-2
@@ -401,7 +401,7 @@ Provider方針:
 
 - timeout: STT=15s, Chat=12s, InnerTask=4s（いずれも環境変数で調整可能）
 - retry: 0（MVP）
-- cancel: 状態変化（force-room / emergency stop 等）でベストエフォートキャンセル
+- cancel: 状態変化（reset-session / emergency stop 等）でベストエフォートキャンセル
 
 イベント/Effect（MVPで扱う最小セット）:
 

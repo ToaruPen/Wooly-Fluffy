@@ -374,7 +374,7 @@ Three.js 側の `scene.background` も `#efe7d8` → `#f0f4ff`（薄い空色）
 │  │                             │    │
 │  ╰─────────────────────────────╯    │
 │                                     │
-│  [Force ROOM]  [Resume]            │  ← セカンダリ操作
+│  [Reset Session]  [Resume]            │  ← セカンダリ操作
 │                                     │
 │  ╔═══════════════════════════════╗  │
 │  ║ ⚠️  EMERGENCY STOP           ║  │  ← 緊急停止（分離配置）
@@ -835,7 +835,7 @@ KIOSK の技術エラー（"SSE error", "Audio error"）は子ども向けに:
 | 3-5 | Pending カードのリデザイン（左ボーダー + hover） | styles.module.css | M |
 | 3-6 | Pending リストのスクロール対応 | styles.module.css | S |
 | 3-7 | ログイン画面の中央寄せカード化 | styles.module.css, staff-page.tsx | S |
-| 3-8 | Force ROOM / Resume ボタンの整理 | styles.module.css | S |
+| 3-8 | Reset Session / Resume ボタンの整理 | styles.module.css | S |
 
 ### Phase 4: 仕上げ
 
