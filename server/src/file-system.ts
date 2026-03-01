@@ -28,6 +28,7 @@ export { nodeCreateReadStream };
 
 // --- fs boundary for preflight (lazy-loaded) ---
 
+/* v8 ignore next 4 — thin fs boundary; tests inject mocks via DI */
 export const nodeFsAccess = async (path: string, mode: number): Promise<void> => {
   const fsPromises = await import("node:fs/promises");
   await fsPromises.access(path, mode);
